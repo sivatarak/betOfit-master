@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "betofit",
+    "slug": "betofit",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "betofit",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "com.sivatarak.betofit",
+      "adaptiveIcon": {
+        "backgroundColor": "#0D0D0D",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "permissions": []
+    },
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0D0D0D"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-web-browser",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.dummy" 
+        }
+      ]
+    ]
+    ,
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "8d2cfb71-c23e-4901-ac73-789f2d263046"
+      }
+    }
+  }
+}
