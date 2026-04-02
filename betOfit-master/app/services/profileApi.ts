@@ -9,7 +9,8 @@ const API_BASE = 'https://fitness-backend-iota.vercel.app/'; // UPDATE THIS!
 
 export async function saveProfile(profileData: any) {
   try {
-
+    console.log("Saving profile data:", profileData);
+    
     const payload = {
       userId: profileData.userId,
       name: profileData.name,
@@ -17,23 +18,18 @@ export async function saveProfile(profileData: any) {
       weight: profileData.weight,
       height: profileData.height,
       gender: profileData.gender,
-
-      targetWeight: profileData.targetWeight,
-      timeline: profileData.timeline,
-      weeklyWeightLoss: profileData.weeklyWeightLoss,
-      dailyDeficit: profileData.dailyDeficit,
-
-      workoutDaysPerWeek: profileData.workoutDaysPerWeek,
-      workoutDays: profileData.workoutDays,
-      restDays: profileData.restDays,
-
-      waterGoal: profileData.waterGoal,
-      bmr: profileData.bmr,
-      tdee: profileData.tdee,
-      dailyCalorieGoal: profileData.dailyCalorieGoal
+      targetWeight: profileData.targetWeight || null,
+      timeline: profileData.timeline || null,
+      activityLevel: profileData.activityLevel || 1.55,
+      workoutDays: profileData.workoutDays || [],
+      dailyCalorieGoal: profileData.dailyCalorieGoal || null,
+      // Section completion flags
+      basic_completed: profileData.basic_completed || false,
+      goals_completed: profileData.goals_completed || false,
+      workout_completed: profileData.workout_completed || false,
     };
 
-    console.log("Saving profile data to backend:", payload);
+    console.log("Sending payload:", payload);
 
     const response = await fetch(`${API_BASE}/api/profile`, {
       method: "POST",
@@ -42,7 +38,7 @@ export async function saveProfile(profileData: any) {
       },
       body: JSON.stringify(payload),
     });
-    console.log("Backend response status:", response.status);
+    
     if (!response.ok) {
       const text = await response.text();
       console.log("Backend error:", text);
@@ -61,6 +57,12 @@ export async function getProfile(userId: string) {
   try {
     const response = await fetch(`${API_BASE}/api/profile/${userId}`);
 
+    // If 404, return null (no profile found)
+    if (response.status === 404) {
+      console.log('📝 No profile found in database');
+      return null;
+    }
+
     if (!response.ok) {
       throw new Error('Failed to get profile');
     }
@@ -68,24 +70,36 @@ export async function getProfile(userId: string) {
     return await response.json();
   } catch (error) {
     console.error('Get profile error:', error);
-    throw error;
+    // Return null instead of throwing
+    return null;
   }
 }
-
 // ================================
 // DASHBOARD API
 // ================================
 export async function getDashboard(userId: string) {
   try {
+    console.log('📡 Fetching dashboard for userId:', userId);
+    console.log('🔗 URL:', `${API_BASE}/api/dashboard/${userId}`);
+
     const response = await fetch(`${API_BASE}/api/dashboard/${userId}`);
 
+    console.log('📊 Response status:', response.status);
+    console.log('📊 Response ok:', response.ok);
+
     if (!response.ok) {
+      const errorText = await response.text();
+      console.log('❌ Error response body:', errorText);
       throw new Error('Failed to get dashboard data');
     }
 
-    return await response.json();
+    const data = await response.json();
+    console.log('✅ Dashboard data received:', data);
+    return data;
+
   } catch (error) {
-    console.error('Dashboard error:', error);
+    console.error('❌ Dashboard error:', error.message);
+    console.error('❌ Full error:', error);
     return null;
   }
 }

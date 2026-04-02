@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useMemo } from "react";
+// app/(tabs)/water.tsx
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -9,14 +10,14 @@ import {
   ScrollView,
   StatusBar,
   Platform,
+  Alert,
+  Animated as RNAnimated,
 } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
-  withRepeat,
   withTiming,
-  Easing,
   interpolate,
   runOnJS,
 } from "react-native-reanimated";
@@ -25,9 +26,9 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
-import Svg, { Circle } from "react-native-svg";
-
-import { useThemedColors } from "@/theme";
+import { BlurView } from "expo-blur";
+import { CustomLoader } from '../../components/CustomLoader';
+import { useTheme } from "../../context/themecontext";
 import {
   loadWaterData,
   addWaterIntake,
@@ -35,92 +36,53 @@ import {
   WATER_KEY,
   WaterData,
 } from "../utils/waterUtils";
-import { useWeeklyAverages } from "../../hooks/useOverallstats";
-import SingleStatGraph from "../../components/singlestatsgraph";
 
 const { width } = Dimensions.get("window");
 const CIRCLE_SIZE = Math.min(width * 0.65, 280);
 
-const WATER_PRIMARY = "#00B4D8";
-const WATER_ACCENT = "#90E0EF";
-
-/* ---------------------------------------------------------
-   MODERN CIRCULAR PROGRESS
---------------------------------------------------------- */
-interface ModernCircularProgressProps {
-  percentage: number;
-  current: number;
-  size?: number;
-}
-
-function ModernCircularProgress({ 
-  percentage, 
-  current, 
-  size = CIRCLE_SIZE 
-}: ModernCircularProgressProps) {
-  const progress = useSharedValue(0);
-  const strokeWidth = 12;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-
-  useEffect(() => {
-    progress.value = withSpring(percentage / 100, {
-      damping: 20,
-      stiffness: 90,
-    });
-
-    if (percentage >= 100) {
-      runOnJS(Haptics.notificationAsync)(
-        Haptics.NotificationFeedbackType.Success
-      );
-    }
-  }, [percentage]);
-
-  // We'll use progress.value for animation
-  const animatedStrokeDashoffset = circumference * (1 - (percentage / 100));
+// Custom amount modal (will be implemented)
+const CustomAmountModal = ({ visible, onClose, onAdd }: any) => {
+  const [amount, setAmount] = useState("250");
+  if (!visible) return null;
 
   return (
-    <View style={[styles.circularProgress, { width: size, height: size }]}>
-      {/* Background Circle */}
-      <Svg width={size} height={size} style={styles.svgCircle}>
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke="#E5E7EB"
-          strokeWidth={strokeWidth}
-          fill="none"
-        />
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke={WATER_PRIMARY}
-          strokeWidth={strokeWidth}
-          fill="none"
-          strokeDasharray={circumference}
-          strokeDashoffset={animatedStrokeDashoffset}
-          strokeLinecap="round"
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        />
-      </Svg>
-
-      {/* Center Content */}
-      <View style={styles.circleCenter}>
-        <Ionicons name="water" size={32} color={WATER_PRIMARY} />
-        <Text style={styles.circleAmount}>{current}</Text>
-        <Text style={styles.circleLabel}>ml today</Text>
-      </View>
+    <View style={styles.modalOverlay}>
+      <BlurView intensity={80} tint="dark" style={styles.modalContainer}>
+        <Text style={styles.modalTitle}>Custom Amount</Text>
+        <View style={styles.modalInputContainer}>
+          <TextInput
+            style={styles.modalInput}
+            value={amount}
+            onChangeText={setAmount}
+            keyboardType="numeric"
+            placeholder="Enter ml"
+          />
+          <Text style={styles.modalUnit}>ml</Text>
+        </View>
+        <View style={styles.modalButtons}>
+          <TouchableOpacity style={styles.modalCancel} onPress={onClose}>
+            <Text style={styles.modalCancelText}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modalAdd, { backgroundColor: colors.primary }]}
+            onPress={() => {
+              const val = parseInt(amount);
+              if (val > 0) onAdd(val);
+              onClose();
+            }}
+          >
+            <Text style={styles.modalAddText}>Add</Text>
+          </TouchableOpacity>
+        </View>
+      </BlurView>
     </View>
   );
-}
+};
 
-/* ---------------------------------------------------------
-   MAIN SCREEN
---------------------------------------------------------- */
-export default function HydroSyncScreen() {
-  const colors = useThemedColors();
-  const weekly = useWeeklyAverages();
+export default function WaterScreen() {
+  const { colors, theme } = useTheme();
+  const isDark = theme === "dark";
+
   const [loading, setLoading] = useState(true);
   const [weightKg, setWeightKg] = useState<number | null>(null);
   const [waterData, setWaterData] = useState<WaterData>({
@@ -130,11 +92,54 @@ export default function HydroSyncScreen() {
     history: [],
     streak: 0,
   });
+  const [showCustomModal, setShowCustomModal] = useState(false);
+
+  // Animated liquid fill value
+  const liquidFill = useSharedValue(0);
+  // For bubble animation
+  const bubbleAnim = useRef(new RNAnimated.Value(0)).current;
 
   const percentage = useMemo(() => {
     if (waterData.goal === 0) return 0;
     return Math.min((waterData.current / waterData.goal) * 100, 100);
   }, [waterData.current, waterData.goal]);
+
+  const remaining = Math.max(waterData.goal - waterData.current, 0);
+
+  // Animate liquid fill when percentage changes
+  useEffect(() => {
+    liquidFill.value = withTiming(percentage / 100, {
+      duration: 800,
+    });
+  }, [percentage]);
+
+  // Bubble animation loop
+  useEffect(() => {
+    const animateBubbles = () => {
+      RNAnimated.loop(
+        RNAnimated.sequence([
+          RNAnimated.timing(bubbleAnim, {
+            toValue: 1,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+          RNAnimated.timing(bubbleAnim, {
+            toValue: 0,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    };
+    animateBubbles();
+  }, []);
+
+  const liquidStyle = useAnimatedStyle(() => {
+    const fillHeight = interpolate(liquidFill.value, [0, 1], [0, 100]);
+    return {
+      clipPath: `inset(${100 - fillHeight}% 0 0 0)`,
+    };
+  });
 
   useEffect(() => {
     const load = async () => {
@@ -182,220 +187,372 @@ export default function HydroSyncScreen() {
 
   const reset = async () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    const today = new Date().toISOString().split("T")[0];
-    const resetData: WaterData = {
-      date: today,
-      current: 0,
-      goal: waterData.goal,
-      history: [],
-      streak: waterData.streak,
-    };
-    await AsyncStorage.setItem(WATER_KEY, JSON.stringify(resetData));
-    setWaterData(resetData);
+    Alert.alert(
+      "Reset Today's Water",
+      "Are you sure you want to reset all water intake for today?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reset",
+          style: "destructive",
+          onPress: async () => {
+            const today = new Date().toISOString().split("T")[0];
+            const resetData: WaterData = {
+              date: today,
+              current: 0,
+              goal: waterData.goal,
+              history: [],
+              streak: waterData.streak,
+            };
+            await AsyncStorage.setItem(WATER_KEY, JSON.stringify(resetData));
+            setWaterData(resetData);
+          },
+        },
+      ]
+    );
   };
 
   if (loading) {
-    return (
-      <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.text }}>Loading…</Text>
-      </View>
-    );
+    return <CustomLoader fullScreen={true} />;
   }
 
   const statusMessage =
     percentage < 30
       ? "Let's start hydrating!"
       : percentage < 60
-      ? "Almost halfway there!"
-      : percentage < 90
-      ? "You're doing great!"
-      : percentage === 100
-      ? "Goal achieved! 🎉"
-      : "Keep it up!";
+        ? "Almost halfway there!"
+        : percentage < 90
+          ? "You're doing great!"
+          : percentage === 100
+            ? "Goal achieved! 🎉"
+            : "Keep it up!";
 
   return (
-    <View style={[styles.screen, { backgroundColor: "#F9FAFB" }]}>
-      <StatusBar barStyle="dark-content" />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <LinearGradient
+        colors={isDark ? ['#1a1a2e', '#16213e'] : [colors.background, colors.card]}
+        style={StyleSheet.absoluteFill}
+      />
+
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
 
       <SafeAreaView style={styles.safeArea}>
-        <ScrollView 
+        <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* HEADER
+          {/* Header */}
           <View style={styles.header}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.headerIcon}>
+              <Ionicons name="arrow-back" size={24} color={colors.text} />
+            </TouchableOpacity>
+            <Text style={[styles.headerTitle, { color: colors.text }]}>Hydration</Text>
             <TouchableOpacity style={styles.headerIcon}>
-              <Ionicons name="person-circle-outline" size={28} color="#1F2937" />
+              <Ionicons name="settings-outline" size={24} color={colors.text} />
             </TouchableOpacity>
-
-            <Text style={styles.headerTitle}>Hydration</Text>
-
-            <TouchableOpacity
-              style={styles.headerIcon}
-              onPress={() => router.push("/(auth)/profile-setup?tab=water")}
-            >
-              <Ionicons name="settings-outline" size={28} color="#1F2937" />
-            </TouchableOpacity>
-          </View> */}
-
-          {/* CIRCULAR PROGRESS */}
-          <View style={styles.progressSection}>
-            <ModernCircularProgress
-              percentage={percentage}
-              current={waterData.current}
-              size={CIRCLE_SIZE}
-            />
           </View>
 
-          {/* DAILY GOAL SECTION */}
-          <View style={styles.goalSection}>
-            <View style={styles.goalHeader}>
-              <View>
-                <Text style={styles.goalTitle}>Daily Goal</Text>
-                <Text style={styles.goalSubtitle}>{statusMessage}</Text>
-              </View>
-              <Text style={styles.goalAmount}>
-                <Text style={styles.goalCurrent}>{waterData.current}</Text>
-                <Text style={styles.goalSeparator}> / </Text>
-                <Text style={styles.goalTarget}>{waterData.goal}</Text>
-                <Text style={styles.goalUnit}> ml</Text>
-              </Text>
-            </View>
+          {/* Interactive Liquid Ring Section */}
+          <View style={styles.liquidRingSection}>
+            <View style={[styles.liquidRing, { borderColor: colors.surfaceContainerLow }]}>
+              {/* Background Pulse */}
+              <LinearGradient
+                colors={[colors.primary, colors.primary + 'cc']}
+                style={[styles.liquidRingPulse, { opacity: 0.1 }]}
+              />
 
-            {/* Progress Bar */}
-            <View style={styles.progressBar}>
-              <View
+              {/* Liquid Fill */}
+              <Animated.View style={[styles.liquidFill, liquidStyle]}>
+                <LinearGradient
+                  colors={[colors.primary + '40', colors.primary + '20']}
+                  style={StyleSheet.absoluteFill}
+                />
+              </Animated.View>
+
+              {/* Center Content */}
+              <View style={styles.liquidRingCenter}>
+                <Ionicons name="water-drop-outline" size={40} color={colors.primary} />
+                <View style={styles.amountRow}>
+                  <Text style={[styles.currentAmount, { color: colors.text }]}>
+                    {waterData.current}
+                  </Text>
+                  <Text style={[styles.amountUnit, { color: colors.textSecondary }]}>ml</Text>
+                </View>
+                <Text style={[styles.goalText, { color: colors.textSecondary }]}>
+                  Goal: {waterData.goal}ml
+                </Text>
+              </View>
+
+              {/* Floating Bubbles */}
+              <RNAnimated.View
                 style={[
-                  styles.progressBarFill,
-                  { width: `${percentage}%` },
+                  styles.bubble,
+                  styles.bubble1,
+                  {
+                    opacity: bubbleAnim.interpolate({
+                      inputRange: [0, 0.5, 1],
+                      outputRange: [0.3, 0.8, 0.3],
+                    }),
+                  }
+                ]}
+              />
+              <RNAnimated.View
+                style={[
+                  styles.bubble,
+                  styles.bubble2,
+                  {
+                    opacity: bubbleAnim.interpolate({
+                      inputRange: [0, 0.5, 1],
+                      outputRange: [0.2, 0.6, 0.2],
+                    }),
+                  }
+                ]}
+              />
+              <RNAnimated.View
+                style={[
+                  styles.bubble,
+                  styles.bubble3,
+                  {
+                    opacity: bubbleAnim.interpolate({
+                      inputRange: [0, 0.4, 0.8],
+                      outputRange: [0.4, 0.9, 0.4],
+                    }),
+                  }
                 ]}
               />
             </View>
+
+            {/* Contextual Stats Card */}
+            <BlurView
+              intensity={80}
+              tint={isDark ? "dark" : "light"}
+              style={[styles.statsCard, { borderColor: colors.border }]}
+            >
+              <View style={styles.statsCardHeader}>
+                <View>
+                  <Text style={[styles.statsCardTitle, { color: colors.text }]}>Hydration Goal</Text>
+                  <Text style={[styles.statsCardSubtitle, { color: colors.textSecondary }]}>
+                    {statusMessage}
+                  </Text>
+                </View>
+                <Text style={[styles.statsCardPercent, { color: colors.primary }]}>
+                  {Math.round(percentage)}%
+                </Text>
+              </View>
+              <View style={[styles.progressBarBg, { backgroundColor: colors.surfaceContainerHigh }]}>
+                <LinearGradient
+                  colors={[colors.primary, colors.primary + 'cc']}
+                  style={[styles.progressBarFill, { width: `${percentage}%` }]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                />
+              </View>
+            </BlurView>
           </View>
 
-          {/* QUICK ADD BUTTONS */}
+          {/* Quick Add Grid */}
           <View style={styles.quickAddSection}>
-            <Text style={styles.sectionLabel}>QUICK ADD</Text>
-
+            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Quick Add</Text>
             <View style={styles.quickAddGrid}>
               <TouchableOpacity
-                style={styles.quickAddBtn}
+                style={[styles.quickAddButton, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.border }]}
                 onPress={() => add(250)}
+                activeOpacity={0.9}
               >
-                <Ionicons name="water-outline" size={24} color={WATER_PRIMARY} />
-                <Text style={styles.quickAddText}>250ml</Text>
+                <Ionicons name="water-outline" size={24} color={colors.primary} />
+                <Text style={[styles.quickAddText, { color: colors.text }]}>250ml</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.quickAddBtn}
+                style={[styles.quickAddButton, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.border }]}
                 onPress={() => add(500)}
+                activeOpacity={0.9}
               >
-                <Ionicons name="water" size={24} color={WATER_PRIMARY} />
-                <Text style={styles.quickAddText}>500ml</Text>
+                <Ionicons name="water" size={24} color={colors.primary} />
+                <Text style={[styles.quickAddText, { color: colors.text }]}>500ml</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.quickAddBtn}
+                style={[styles.quickAddButton, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.border }]}
                 onPress={() => add(750)}
+                activeOpacity={0.9}
               >
-                <Ionicons name="beer-outline" size={24} color={WATER_PRIMARY} />
-                <Text style={styles.quickAddText}>750ml</Text>
+                <Ionicons name="beer-outline" size={24} color={colors.primary} />
+                <Text style={[styles.quickAddText, { color: colors.text }]}>750ml</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.quickAddBtn, styles.customBtn]}
-                onPress={() => add(100)}
+                style={[styles.quickAddButton, styles.customButton, { backgroundColor: colors.primary }]}
+                onPress={() => {
+                  Alert.prompt(
+                    "Custom Amount",
+                    "Enter amount in ml",
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Add",
+                        onPress: (amount) => {
+                          const val = parseInt(amount || "0");
+                          if (val > 0) add(val);
+                        },
+                      },
+                    ],
+                    "plain-text",
+                    "250"
+                  );
+                }}
+                activeOpacity={0.9}
               >
                 <Ionicons name="add-circle" size={24} color="#FFFFFF" />
-                <Text style={styles.customBtnText}>+ Custom</Text>
+                <Text style={styles.customButtonText}>Custom</Text>
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* HYDRATION HISTORY */}
+          {/* Activity & Streak Stats */}
+          <View style={styles.statsGrid}>
+            <BlurView
+              intensity={80}
+              tint={isDark ? "dark" : "light"}
+              style={[styles.statCard, { borderColor: colors.border }]}
+            >
+              <View style={styles.statIconContainer}>
+                <View style={[styles.statIconBg, { backgroundColor: colors.primary + '15' }]}>
+                  <Ionicons name="hourglass-outline" size={20} color={colors.primary} />
+                </View>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Remaining</Text>
+              </View>
+              <View style={styles.statValueRow}>
+                <Text style={[styles.statValue, { color: colors.text }]}>{remaining}</Text>
+                <Text style={[styles.statUnit, { color: colors.textSecondary }]}>ml</Text>
+              </View>
+            </BlurView>
+
+            <BlurView
+              intensity={80}
+              tint={isDark ? "dark" : "light"}
+              style={[styles.statCard, { borderColor: colors.border }]}
+            >
+              <View style={styles.statIconContainer}>
+                <View style={[styles.statIconBg, { backgroundColor: colors.secondary + '20' }]}>
+                  <Ionicons name="flame-outline" size={20} color={colors.secondary} />
+                </View>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Streak</Text>
+              </View>
+              <View style={styles.statValueRow}>
+                <Text style={[styles.statValue, { color: colors.text }]}>{waterData.streak}</Text>
+                <Text style={[styles.statUnit, { color: colors.textSecondary }]}>Days</Text>
+              </View>
+            </BlurView>
+          </View>
+
+          {/* Daily History Log */}
           {waterData.history.length > 0 && (
             <View style={styles.historySection}>
-              <View style={styles.historySectionHeader}>
-                <Text style={styles.historyTitle}>Hydration History</Text>
+              <View style={styles.historyHeader}>
+                <Text style={[styles.historyTitle, { color: colors.text }]}>Today's Logs</Text>
                 <TouchableOpacity onPress={removeLast}>
-                  <Text style={styles.viewAllText}>View All</Text>
+                  <Ionicons name="trash-outline" size={20} color={colors.primary} />
                 </TouchableOpacity>
               </View>
 
-              {waterData.history.slice(0, 4).map((item, i) => (
-                <View key={i} style={styles.historyItem}>
-                  <View style={styles.historyIconContainer}>
-                    <Ionicons
-                      name={
-                        item.ml >= 500
-                          ? "water"
-                          : item.ml >= 300
-                          ? "water-outline"
-                          : "fitness-outline"
-                      }
-                      size={20}
-                      color={WATER_PRIMARY}
-                    />
+              {waterData.history.slice(0, 5).map((item, index) => (
+                <BlurView
+                  key={index}
+                  intensity={80}
+                  tint={isDark ? "dark" : "light"}
+                  style={[styles.historyItem, { borderColor: colors.border }]}
+                >
+                  <View style={styles.historyIcon}>
+                    <View style={[styles.historyIconBg, { backgroundColor: colors.primary + '10' }]}>
+                      <Ionicons
+                        name={item.ml >= 500 ? "water" : item.ml >= 300 ? "water-outline" : "cafe-outline"}
+                        size={22}
+                        color={colors.primary}
+                      />
+                    </View>
+                    <View>
+                      <Text style={[styles.historyTitleText, { color: colors.text }]}>
+                        {item.ml >= 500 ? "Pure Water" : item.ml >= 300 ? "Water" : "Small Sip"}
+                      </Text>
+                      <Text style={[styles.historyTime, { color: colors.textSecondary }]}>{item.time}</Text>
+                    </View>
                   </View>
-
-                  <View style={styles.historyContent}>
-                    <Text style={styles.historyAmount}>{item.ml} ml</Text>
-                    <Text style={styles.historyTime}>{item.time}</Text>
-                  </View>
-
-                  <TouchableOpacity style={styles.historyMenu}>
-                    <Ionicons
-                      name="ellipsis-vertical"
-                      size={18}
-                      color="#9CA3AF"
-                    />
-                  </TouchableOpacity>
-                </View>
+                  <Text style={[styles.historyAmount, { color: colors.primary }]}>+{item.ml}ml</Text>
+                </BlurView>
               ))}
             </View>
           )}
 
-          
-        
-
-          {/* STREAK & STATS */}
-          <View style={styles.statsGrid}>
-            <View style={styles.statCard}>
-              <Text style={styles.statLabel}>Remaining</Text>
-              <Text style={styles.statValue}>
-                {Math.max(waterData.goal - waterData.current, 0)} ml
-              </Text>
-            </View>
-
-            <View style={styles.statCard}>
-              <Text style={styles.statLabel}>Streak</Text>
-              <Text style={styles.statValue}>{waterData.streak} days</Text>
-            </View>
-          </View>
-
-          {/* RESET BUTTON */}
-          <TouchableOpacity style={styles.resetButton} onPress={reset}>
-            <Text style={styles.resetButtonText}>Reset Today's Water</Text>
+          {/* Reset Button */}
+          <TouchableOpacity
+            style={[styles.resetButton, { backgroundColor: colors.error + '10', borderColor: colors.error }]}
+            onPress={reset}
+          >
+            <Ionicons name="refresh-outline" size={20} color={colors.error} />
+            <Text style={[styles.resetButtonText, { color: colors.error }]}>Reset Today's Water</Text>
           </TouchableOpacity>
 
           <View style={{ height: 40 }} />
         </ScrollView>
       </SafeAreaView>
+
+      {/* Bottom Navigation */}
+      <BlurView intensity={90} tint={isDark ? "dark" : "light"} style={[styles.bottomNav, { borderTopColor: colors.border }]}>
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => router.push('/(tabs)/home')}
+        >
+          <Ionicons name="home-outline" size={24} color={colors.textSecondary} />
+          <Text style={[styles.navText, { color: colors.textSecondary }]}>Home</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => router.push('/(tabs)/stats')}
+        >
+          <Ionicons name="bar-chart-outline" size={24} color={colors.textSecondary} />
+          <Text style={[styles.navText, { color: colors.textSecondary }]}>Stats</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={[styles.navItem, styles.navItemActive]}>
+          <LinearGradient
+            colors={[colors.primary, colors.primary + 'cc']}
+            style={styles.activeNavIcon}
+          >
+            <Ionicons name="water" size={24} color="#FFFFFF" />
+          </LinearGradient>
+          <Text style={[styles.navText, { color: colors.primary }]}>Hydrate</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => router.push('/(tabs)/workout')}
+        >
+          <Ionicons name="fitness-outline" size={24} color={colors.textSecondary} />
+          <Text style={[styles.navText, { color: colors.textSecondary }]}>Activity</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => router.push('/(auth)/profile-setup?mode=all')}
+        >
+          <Ionicons name="person-outline" size={24} color={colors.textSecondary} />
+          <Text style={[styles.navText, { color: colors.textSecondary }]}>Profile</Text>
+        </TouchableOpacity>
+      </BlurView>
     </View>
   );
 }
 
-/* ---------------------------------------------------------
-   STYLES
---------------------------------------------------------- */
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
   center: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-  },
-  screen: {
-    flex: 1,
   },
   safeArea: {
     flex: 1,
@@ -403,6 +560,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
+    paddingBottom: 100,
   },
 
   // Header
@@ -410,7 +568,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 16,
+    marginBottom: 20,
   },
   headerIcon: {
     width: 40,
@@ -420,93 +578,117 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: "700",
-    color: "#1F2937",
+    fontWeight: "800",
   },
 
-  // Circular Progress
-  progressSection: {
+  // Liquid Ring Section
+  liquidRingSection: {
     alignItems: "center",
-    paddingVertical: 30,
+    marginBottom: 24,
   },
-  circularProgress: {
+  liquidRing: {
+    width: CIRCLE_SIZE,
+    height: CIRCLE_SIZE,
+    borderRadius: CIRCLE_SIZE / 2,
+    borderWidth: 12,
     justifyContent: "center",
     alignItems: "center",
+    overflow: "hidden",
     position: "relative",
+    marginBottom: 20,
   },
-  svgCircle: {
+  liquidRingPulse: {
     position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
-  circleCenter: {
+  liquidFill: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(170, 46, 19, 0.2)",
+  },
+  liquidRingCenter: {
     alignItems: "center",
+    zIndex: 10,
   },
-  circleAmount: {
+  amountRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 4,
+  },
+  currentAmount: {
     fontSize: 48,
     fontWeight: "800",
-    color: "#1F2937",
-    marginTop: 8,
   },
-  circleLabel: {
-    fontSize: 14,
-    color: "#6B7280",
+  amountUnit: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  goalText: {
+    fontSize: 12,
     marginTop: 4,
   },
-
-  // Goal Section
-  goalSection: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+  bubble: {
+    position: "absolute",
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.4)",
   },
-  goalHeader: {
+  bubble1: {
+    width: 12,
+    height: 12,
+    bottom: 30,
+    left: 30,
+  },
+  bubble2: {
+    width: 20,
+    height: 20,
+    top: 40,
+    right: 25,
+  },
+  bubble3: {
+    width: 8,
+    height: 8,
+    bottom: 60,
+    right: 40,
+  },
+
+  // Stats Card
+  statsCard: {
+    width: "100%",
+    borderRadius: 20,
+    padding: 20,
+    overflow: "hidden",
+    borderWidth: 1,
+  },
+  statsCardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  goalTitle: {
+  statsCardTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#1F2937",
   },
-  goalSubtitle: {
-    fontSize: 14,
-    color: "#6B7280",
+  statsCardSubtitle: {
+    fontSize: 12,
     marginTop: 2,
   },
-  goalAmount: {
-    fontSize: 18,
+  statsCardPercent: {
+    fontSize: 28,
+    fontWeight: "800",
   },
-  goalCurrent: {
-    color: "#FF6B4A",
-    fontWeight: "700",
-  },
-  goalSeparator: {
-    color: "#9CA3AF",
-  },
-  goalTarget: {
-    color: "#FF6B4A",
-    fontWeight: "400",
-  },
-  goalUnit: {
-    color: "#6B7280",
-    fontSize: 14,
-  },
-  progressBar: {
+  progressBarBg: {
     height: 8,
-    backgroundColor: "#E5E7EB",
     borderRadius: 4,
     overflow: "hidden",
   },
   progressBarFill: {
     height: "100%",
-    backgroundColor: WATER_PRIMARY,
     borderRadius: 4,
   },
 
@@ -516,106 +698,42 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     fontSize: 12,
-    fontWeight: "600",
-    color: "#9CA3AF",
-    letterSpacing: 1,
+    fontWeight: "700",
+    letterSpacing: 0.5,
     marginBottom: 12,
   },
   quickAddGrid: {
     flexDirection: "row",
     gap: 12,
   },
-  quickAddBtn: {
+  quickAddButton: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 20,
+    aspectRatio: 1,
+    borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 6,
+    borderWidth: 1,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 8,
+    shadowRadius: 4,
     elevation: 2,
   },
   quickAddText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "700",
-    color: "#1F2937",
   },
-  customBtn: {
-    backgroundColor: "#FF6B4A",
+  customButton: {
+    shadowColor: "#aa2e13",
   },
-  customBtnText: {
-    fontSize: 14,
+  customButtonText: {
+    fontSize: 12,
     fontWeight: "700",
     color: "#FFFFFF",
   },
 
-  // History Section
-  historySection: {
-    marginBottom: 24,
-  },
-  historySectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  historyTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#1F2937",
-  },
-  viewAllText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#FF6B4A",
-  },
-  historyItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  historyIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#EFF6FF",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-  },
-  historyContent: {
-    flex: 1,
-  },
-  historyAmount: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#1F2937",
-  },
-  historyTime: {
-    fontSize: 13,
-    color: "#6B7280",
-    marginTop: 2,
-  },
-  historyMenu: {
-    padding: 4,
-  },
-
-  // Stats Section
-  statsSection: {
-    marginBottom: 24,
-  },
+  // Stats Grid
   statsGrid: {
     flexDirection: "row",
     gap: 12,
@@ -623,38 +741,143 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 16,
+    overflow: "hidden",
+    borderWidth: 1,
+  },
+  statIconContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+  statIconBg: {
+    width: 32,
+    height: 32,
     borderRadius: 16,
-    padding: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    justifyContent: "center",
+    alignItems: "center",
   },
   statLabel: {
-    fontSize: 14,
-    color: "#6B7280",
-    marginBottom: 8,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  statValueRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 4,
   },
   statValue: {
     fontSize: 24,
+    fontWeight: "800",
+  },
+  statUnit: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
+  // History Section
+  historySection: {
+    marginBottom: 24,
+  },
+  historyHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  historyTitle: {
+    fontSize: 16,
     fontWeight: "700",
-    color: "#1F2937",
+  },
+  historyItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 14,
+    borderRadius: 16,
+    marginBottom: 10,
+    overflow: "hidden",
+    borderWidth: 1,
+  },
+  historyIcon: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  historyIconBg: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  historyTitleText: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  historyTime: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  historyAmount: {
+    fontSize: 16,
+    fontWeight: "700",
   },
 
   // Reset Button
   resetButton: {
-    backgroundColor: "#FEF2F2",
-    borderRadius: 12,
-    padding: 16,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderRadius: 16,
+    padding: 14,
     borderWidth: 1,
-    borderColor: "#FEE2E2",
   },
   resetButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#DC2626",
+  },
+
+  // Bottom Navigation
+  bottomNav: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingBottom: Platform.OS === "ios" ? 34 : 12,
+    borderTopWidth: 1,
+    zIndex: 1000,
+    elevation: 10,
+  },
+  navItem: {
+    alignItems: "center",
+    gap: 4,
+  },
+  navItemActive: {
+    marginTop: -8,
+  },
+  activeNavIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#aa2e13",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  navText: {
+    fontSize: 10,
+    fontWeight: "600",
   },
 });

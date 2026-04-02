@@ -29,7 +29,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import { STORAGE_KEYS } from "../../constants/storageKeys";
 import { useTheme } from '../../context/themecontext';
-
+import { CustomLoader } from '../../components/CustomLoader';
 const { width } = Dimensions.get('window');
 
 interface TodayStats {
@@ -122,17 +122,7 @@ export default function WorkoutDashboard() {
   }, []);
 
 
-  useEffect(() => {
-    checkWorkoutSetup();
-  }, []);
-
-  const checkWorkoutSetup = async () => {
-    const workoutDone = await AsyncStorage.getItem(STORAGE_KEYS.SETUP_WORKOUT_DONE);
-
-    if (!workoutDone) {
-      router.replace("/(auth)/profile-setup?mode=workout");
-    }
-  };
+  
   useFocusEffect(
     useCallback(() => {
       loadDashboardData();
@@ -322,18 +312,11 @@ export default function WorkoutDashboard() {
     transform: [{ scale: pulseAnim.value }],
   }));
 
-  if (loading) {
-    return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <LinearGradient colors={[colors.secondary, colors.primary]} style={styles.loadingGradient}>
-          <Animated.View style={[styles.loadingIcon, animatedPulse, { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
-            <Ionicons name="barbell" size={64} color="#fff" />
-          </Animated.View>
-          <Text style={styles.loadingText}>Building your dashboard...</Text>
-        </LinearGradient>
-      </SafeAreaView>
-    );
-  }
+ 
+   if (loading) {
+     return <CustomLoader fullScreen={true} />;
+   }
+ 
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>

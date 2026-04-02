@@ -17,6 +17,7 @@ import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import Animated, { FadeInDown } from "react-native-reanimated";
+import { CustomLoader } from "@/components/CustomLoader";
 
 const { width } = Dimensions.get("window");
 
@@ -204,6 +205,14 @@ export default function HistoryScreen() {
         }, [loadHistoryData])
     );
 
+
+      if (loading) {
+        return (
+            <CustomLoader 
+                fullScreen={true} 
+            />
+        );
+    }
     const handleDateSelect = (date: DailyDate) => {
         setDates(prev =>
             prev.map(d => ({

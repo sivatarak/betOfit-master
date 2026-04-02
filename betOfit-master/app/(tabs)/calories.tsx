@@ -148,17 +148,6 @@ export default function CaloriesScreen() {
     );
   }
 
-  useEffect(() => {
-    checkGoalSetup();
-  }, []);
-
-  const checkGoalSetup = async () => {
-    const goalsDone = await AsyncStorage.getItem(STORAGE_KEYS.SETUP_GOALS_DONE);
-
-    if (!goalsDone) {
-      router.replace("/(auth)/profile-setup?mode=goals");
-    }
-  };
 
   useEffect(() => {
 

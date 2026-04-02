@@ -21,7 +21,7 @@ import { BlurView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path, Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import { WebView } from 'react-native-webview';
-
+import { CustomLoader } from '../../components/CustomLoader';
 import { useTheme } from '../../context/themecontext';
 
 const { width, height } = Dimensions.get('window');
@@ -473,16 +473,13 @@ export default function ExerciseDetailScreen() {
     return path;
   };
 
-  if (loading) {
-    return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading exercise...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+ if ( loading) {
+  return (
+    <CustomLoader 
+      fullScreen={true} 
+    />
+  );
+}
 
   if (!exercise) {
     return (

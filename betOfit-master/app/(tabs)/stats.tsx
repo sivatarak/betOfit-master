@@ -16,31 +16,21 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { Svg, Circle, Path, Line, Polygon, Text as SvgText } from "react-native-svg";
+import { Svg, Circle, Path, Line, Rect, G, Text as SvgText } from "react-native-svg";
 import { BlurView } from "expo-blur";
-import Animated, { FadeInDown } from "react-native-reanimated";
-
+import { useTheme } from "../../context/themecontext";
+import { CustomLoader } from '../../components/CustomLoader';
 const { width } = Dimensions.get("window");
 
 // Types
-interface FoodEntry {
-    calories: number;
-    date: string;
-}
-
 interface WorkoutLog {
     id: string;
     exerciseName: string;
     date: string;
     duration: number;
     caloriesBurned: number;
-    totalVolume?: number;
-}
-
-interface WaterEntry {
-    ml: number;
-    timestamp: number;
-    date: string;
+    sets?: number;
+    reps?: number;
 }
 
 interface UserProfile {
@@ -49,47 +39,65 @@ interface UserProfile {
     age: number;
     gender: 'male' | 'female';
     targetWeight: number;
+    name: string;
+    initialWeight?: number;
 }
 
-interface WeeklyData {
-    calories: number[];
-    workouts: number[];
-    water: number[];
-    labels: string[];
+interface ExerciseStat {
+    name: string;
+    sets: number;
+    totalVolume?: number;
 }
 
-// Time Period Type
 type PeriodType = 'week' | 'month' | 'year';
 
 export default function StatsScreen() {
-    const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('month');
+    const { colors, theme } = useTheme();
+    const isDark = theme === 'dark';
+
+    const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('week');
     const [userName, setUserName] = useState('Alex');
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+
+    // Weight Progress
+    const [currentWeight, setCurrentWeight] = useState(78);
+    const [targetWeight, setTargetWeight] = useState(75);
+    const [initialWeight, setInitialWeight] = useState(82);
 
     // Stats Data
     const [totalCalories, setTotalCalories] = useState(0);
     const [totalActiveMinutes, setTotalActiveMinutes] = useState(0);
-    const [totalSteps, setTotalSteps] = useState(75000); // Mock data - replace with actual step tracking
-    const [weeklyData, setWeeklyData] = useState<WeeklyData>({
-        calories: [2450, 2100, 2300, 2800, 1900, 2600, 3100],
-        workouts: [45, 30, 60, 45, 30, 75, 45],
-        water: [2.1, 1.8, 2.5, 2.2, 1.9, 2.8, 3.0],
-        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-    });
+    const [totalWater, setTotalWater] = useState(0);
 
-    // Body Composition
-    const [currentWeight, setCurrentWeight] = useState(78);
-    const [bodyFat, setBodyFat] = useState(14);
-    const [muscleMass, setMuscleMass] = useState(42);
-    const [targetWeight, setTargetWeight] = useState(75);
+    // Weekly Data for Charts
+    const [weeklyCalories, setWeeklyCalories] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
+    const [weeklyWorkouts, setWeeklyWorkouts] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
+    const [weeklyWater, setWeeklyWater] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
+    const [weekLabels, setWeekLabels] = useState<string[]>(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']);
+
+    // Quick Stats
+    const [workoutDaysThisWeek, setWorkoutDaysThisWeek] = useState(0);
+    const [restDaysThisWeek, setRestDaysThisWeek] = useState(0);
+    const [totalWaterThisWeek, setTotalWaterThisWeek] = useState(0);
+
+    // Top Exercises
+    const [topExercises, setTopExercises] = useState<ExerciseStat[]>([]);
+
+    // Streaks
+    const [workoutStreak, setWorkoutStreak] = useState(0);
+    const [waterStreak, setWaterStreak] = useState(0);
+    const [calorieStreak, setCalorieStreak] = useState(0);
 
     // Trend percentage
     const [trendPercentage, setTrendPercentage] = useState(12);
 
-    // Consistency score
-    const [consistencyScore, setConsistencyScore] = useState(92);
-
     const [loading, setLoading] = useState(true);
+
+    // Calculated values
+    const weightLost = initialWeight - currentWeight;
+    const weightToGo = currentWeight - targetWeight;
+    const progressPercentage = Math.min(100, Math.max(0, ((initialWeight - currentWeight) / (initialWeight - targetWeight)) * 100));
+    const weeksToGoal = weightToGo > 0 ? Math.round(weightToGo / 0.5) : 0;
 
     const loadStatsData = useCallback(async () => {
         try {
@@ -101,30 +109,29 @@ export default function StatsScreen() {
                 setCurrentWeight(profile.weight || 78);
                 setTargetWeight(profile.targetWeight || 75);
                 setUserName(profile.name || 'Alex');
+                setInitialWeight(profile.initialWeight || profile.weight || 82);
             } else {
                 const name = await AsyncStorage.getItem('USER_NAME');
                 if (name) setUserName(name);
-
                 const weight = await AsyncStorage.getItem('BF_WEIGHT_KG');
                 if (weight) setCurrentWeight(parseFloat(weight));
+            }
+
+            const now = new Date();
+            let startDate = new Date();
+
+            if (selectedPeriod === 'week') {
+                startDate.setDate(now.getDate() - 7);
+            } else if (selectedPeriod === 'month') {
+                startDate.setMonth(now.getMonth() - 1);
+            } else if (selectedPeriod === 'year') {
+                startDate.setFullYear(now.getFullYear() - 1);
             }
 
             // Load workout history
             const historyStr = await AsyncStorage.getItem('WORKOUT_HISTORY');
             if (historyStr) {
                 const history: WorkoutLog[] = JSON.parse(historyStr);
-
-                // Calculate totals based on selected period
-                const now = new Date();
-                let startDate = new Date();
-
-                if (selectedPeriod === 'week') {
-                    startDate.setDate(now.getDate() - 7);
-                } else if (selectedPeriod === 'month') {
-                    startDate.setMonth(now.getMonth() - 1);
-                } else if (selectedPeriod === 'year') {
-                    startDate.setFullYear(now.getFullYear() - 1);
-                }
 
                 const filtered = history.filter(item => new Date(item.date) >= startDate);
 
@@ -134,10 +141,9 @@ export default function StatsScreen() {
                 setTotalCalories(totalCals);
                 setTotalActiveMinutes(totalMins);
 
-                // Calculate weekly data for chart
+                // Calculate weekly data
                 const weeklyCals: number[] = [];
-                const weeklyWorkouts: number[] = [];
-                const weeklyWater: number[] = [];
+                const weeklyMins: number[] = [];
 
                 // Get last 7 days
                 for (let i = 6; i >= 0; i--) {
@@ -150,20 +156,62 @@ export default function StatsScreen() {
                     const dayMins = dayWorkouts.reduce((sum, w) => sum + (w.duration || 0), 0);
 
                     weeklyCals.push(dayCals);
-                    weeklyWorkouts.push(dayMins);
-
-                    // Mock water data - replace with actual water tracking
-                    weeklyWater.push(Math.round(Math.random() * 1.5 + 1.5) * 10 / 10);
+                    weeklyMins.push(dayMins);
                 }
 
-                setWeeklyData({
-                    calories: weeklyCals,
-                    workouts: weeklyWorkouts,
-                    water: weeklyWater,
-                    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                setWeeklyCalories(weeklyCals);
+                setWeeklyWorkouts(weeklyMins);
+
+                // Calculate workout days this week
+                const workoutDaysSet = new Set();
+                history.filter(w => {
+                    const workoutDate = new Date(w.date);
+                    const weekAgo = new Date();
+                    weekAgo.setDate(weekAgo.getDate() - 7);
+                    return workoutDate >= weekAgo;
+                }).forEach(w => workoutDaysSet.add(w.date));
+
+                const workoutDays = workoutDaysSet.size;
+                setWorkoutDaysThisWeek(workoutDays);
+                setRestDaysThisWeek(7 - workoutDays);
+
+                // Calculate top exercises
+                const exerciseMap = new Map<string, number>();
+                history.filter(w => {
+                    const workoutDate = new Date(w.date);
+                    const weekAgo = new Date();
+                    weekAgo.setDate(weekAgo.getDate() - 7);
+                    return workoutDate >= weekAgo;
+                }).forEach(w => {
+                    const count = exerciseMap.get(w.exerciseName) || 0;
+                    exerciseMap.set(w.exerciseName, count + (w.sets || 1));
                 });
 
-                // Calculate trend percentage
+                const sortedExercises = Array.from(exerciseMap.entries())
+                    .map(([name, sets]) => ({ name, sets }))
+                    .sort((a, b) => b.sets - a.sets)
+                    .slice(0, 5);
+
+                setTopExercises(sortedExercises);
+
+                // Calculate workout streak
+                let streak = 0;
+                let checkDate = new Date();
+                checkDate.setHours(0, 0, 0, 0);
+
+                while (true) {
+                    const dateStr = checkDate.toISOString().split('T')[0];
+                    const hasWorkout = history.some(w => w.date === dateStr);
+                    if (hasWorkout) {
+                        streak++;
+                        checkDate.setDate(checkDate.getDate() - 1);
+                    } else {
+                        break;
+                    }
+                }
+                setWorkoutStreak(streak);
+
+                // Calculate trend
                 if (filtered.length > 1) {
                     const mid = Math.floor(filtered.length / 2);
                     const firstHalf = filtered.slice(0, mid);
@@ -179,19 +227,44 @@ export default function StatsScreen() {
                 }
             }
 
-            // Load calories data for nutrition tracking
+            // Load water data
+            const waterHistoryStr = await AsyncStorage.getItem('WATER_HISTORY');
+            if (waterHistoryStr) {
+                const waterHistory = JSON.parse(waterHistoryStr);
+                const weeklyWaterData: number[] = [];
+                let totalWaterWeekly = 0;
+
+                for (let i = 6; i >= 0; i--) {
+                    const date = new Date();
+                    date.setDate(date.getDate() - i);
+                    const dateStr = date.toISOString().split('T')[0];
+
+                    const dayWater = waterHistory.filter((w: any) => w.date === dateStr)
+                        .reduce((sum: number, w: any) => sum + (w.ml || 0), 0);
+                    weeklyWaterData.push(dayWater / 1000);
+                    totalWaterWeekly += dayWater;
+                }
+
+                setWeeklyWater(weeklyWaterData);
+                setTotalWaterThisWeek(totalWaterWeekly / 1000);
+                setTotalWater(totalWaterWeekly / 1000);
+            }
+
+            // Load calorie streak
             const calDataStr = await AsyncStorage.getItem('CALORIES_DATA_V2');
             if (calDataStr) {
                 const calData = JSON.parse(calDataStr);
-                // Use for nutrition line in chart if needed
+                setCalorieStreak(calData.streak || 0);
             }
+
+            setWaterStreak(workoutStreak - 2 > 0 ? workoutStreak - 2 : 3);
 
         } catch (error) {
             console.error('Error loading stats:', error);
         } finally {
             setLoading(false);
         }
-    }, [selectedPeriod]);
+    }, [selectedPeriod, workoutStreak]);
 
     useEffect(() => {
         loadStatsData();
@@ -203,62 +276,104 @@ export default function StatsScreen() {
         }, [loadStatsData])
     );
 
-    // Calculate max value for chart scaling
-    const maxChartValue = Math.max(...weeklyData.calories, ...weeklyData.workouts.map(m => m * 10), 3000);
+    // Bar chart component
+    const BarChart = ({ data, color, maxValue, height = 100 }: { data: number[]; color: string; maxValue: number; height?: number }) => {
+        const maxDataValue = Math.max(...data, maxValue);
+        const barWidth = (width - 80) / 7 - 8;
 
-    // Chart path for activity line
-    const getActivityPath = () => {
-        const points = weeklyData.calories.map((value, index) => {
-            const x = (index / 6) * 380 + 10;
-            const y = 120 - (value / maxChartValue) * 100;
-            return `${index === 0 ? 'M' : 'L'} ${x},${y}`;
-        }).join(' ');
-        return points;
+        return (
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', height, marginVertical: 10 }}>
+                {data.map((value, index) => {
+                    const barHeight = (value / maxDataValue) * (height - 20);
+                    return (
+                        <View key={index} style={{ alignItems: 'center', width: barWidth }}>
+                            <LinearGradient
+                                colors={[color, color + 'cc']}
+                                start={{ x: 0, y: 1 }}
+                                end={{ x: 0, y: 0 }}
+                                style={{ height: barHeight, width: barWidth - 4, borderRadius: 6 }}
+                            />
+                            <Text style={[styles.barLabel, { color: colors.textSecondary }]}>{weekLabels[index]}</Text>
+                        </View>
+                    );
+                })}
+            </View>
+        );
     };
 
-    // Chart path for weight line (mock data - replace with actual)
-    const getWeightPath = () => {
-        const weightPoints = [currentWeight, currentWeight - 0.5, currentWeight - 1, currentWeight - 1.2, currentWeight - 1.5, currentWeight - 1.8, currentWeight - 2];
-        const points = weightPoints.map((value, index) => {
-            const x = (index / 6) * 380 + 10;
-            const y = 100 - ((value - 70) / 20) * 50;
-            return `${index === 0 ? 'M' : 'L'} ${x},${y}`;
-        }).join(' ');
-        return points;
-    };
+    // Line chart component for calories
+    const LineChart = ({ data, color, maxValue }: { data: number[]; color: string; maxValue: number }) => {
+        const maxDataValue = Math.max(...data, maxValue);
+        const chartWidth = width - 60;
+        const stepX = chartWidth / 6;
 
-    // Chart path for nutrition line (mock data - replace with actual)
-    const getNutritionPath = () => {
-        const nutritionPoints = [2200, 2100, 2300, 2400, 2100, 2200, 2300];
-        const points = nutritionPoints.map((value, index) => {
-            const x = (index / 6) * 380 + 10;
-            const y = 110 - (value / maxChartValue) * 80;
-            return `${index === 0 ? 'M' : 'L'} ${x},${y}`;
+        const points = data.map((value, index) => {
+            const x = 20 + (index * stepX);
+            const y = 100 - (value / maxDataValue) * 80;
+            return `${x},${y}`;
         }).join(' ');
-        return points;
+
+        return (
+            <View style={{ height: 120, marginVertical: 10 }}>
+                <Svg width="100%" height="100%" viewBox={`0 0 ${width - 40} 110`}>
+                    {/* Grid lines */}
+                    <Line x1="10" y1="20" x2={width - 50} y2="20" stroke={colors.border} strokeWidth="1" />
+                    <Line x1="10" y1="50" x2={width - 50} y2="50" stroke={colors.border} strokeWidth="1" />
+                    <Line x1="10" y1="80" x2={width - 50} y2="80" stroke={colors.border} strokeWidth="1" />
+
+                    {/* Gradient Line */}
+                    <Path
+                        d={`M ${points}`}
+                        fill="none"
+                        stroke={color}
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                    />
+
+                    {/* Dots */}
+                    {data.map((value, index) => {
+                        const x = 20 + (index * stepX);
+                        const y = 100 - (value / maxDataValue) * 80;
+                        return (
+                            <Circle key={index} cx={x} cy={y} r="4" fill={color} />
+                        );
+                    })}
+                </Svg>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8, paddingHorizontal: 10 }}>
+                    {weekLabels.map((label, i) => (
+                        <Text key={i} style={[styles.chartLabel, { color: colors.textSecondary }]}>{label}</Text>
+                    ))}
+                </View>
+            </View>
+        );
     };
 
     if (loading) {
         return (
-            <View style={styles.centerContainer}>
-                <Text>Loading your stats...</Text>
-            </View>
+            <CustomLoader
+                fullScreen={true}
+            />
         );
     }
 
     return (
-        <View style={styles.container}>
-            <StatusBar barStyle="dark-content" />
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+            <LinearGradient
+                colors={isDark ? ['#1a1a2e', '#16213e'] : [colors.background, colors.card]}
+                style={StyleSheet.absoluteFill}
+            />
+
+            <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
 
             <SafeAreaView style={styles.safeArea}>
                 {/* Header */}
-                <BlurView intensity={80} tint="light" style={styles.header}>
+                <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={styles.header}>
                     <TouchableOpacity onPress={() => router.back()} style={styles.headerIcon}>
-                        <Ionicons name="arrow-back" size={24} color="#1F2937" />
+                        <Ionicons name="arrow-back" size={24} color={colors.text} />
                     </TouchableOpacity>
-                    <Text style={styles.headerTitle}>Activity Analytics</Text>
+                    <Text style={[styles.headerTitle, { color: colors.text }]}>Your Progress</Text>
                     <TouchableOpacity style={styles.headerIcon}>
-                        <Ionicons name="notifications-outline" size={24} color="#1F2937" />
+                        <Ionicons name="settings-outline" size={24} color={colors.text} />
                     </TouchableOpacity>
                 </BlurView>
 
@@ -267,326 +382,230 @@ export default function StatsScreen() {
                     showsVerticalScrollIndicator={false}
                 >
                     {/* Time Period Selector */}
-                    <View style={styles.periodSelector}>
+                    <View style={[styles.periodSelector, { backgroundColor: colors.primaryContainerLow, borderColor: colors.border }]}>
                         <TouchableOpacity
-                            style={[styles.periodButton, selectedPeriod === 'week' && styles.periodButtonActive]}
+                            style={[styles.periodButton, selectedPeriod === 'week' && [styles.periodButtonActive, { backgroundColor: colors.primary, shadowColor: colors.primary }]]}
                             onPress={() => setSelectedPeriod('week')}
                         >
-                            <Text style={[styles.periodText, selectedPeriod === 'week' && styles.periodTextActive]}>Week</Text>
+                            <Text style={[styles.periodText, { color: colors.textSecondary }, selectedPeriod === 'week' && { color: colors.background, fontWeight: '700' }]}>Week</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                            style={[styles.periodButton, selectedPeriod === 'month' && styles.periodButtonActive]}
+                            style={[styles.periodButton, selectedPeriod === 'month' && [styles.periodButtonActive, { backgroundColor: colors.primary, shadowColor: colors.primary }]]}
                             onPress={() => setSelectedPeriod('month')}
                         >
-                            <Text style={[styles.periodText, selectedPeriod === 'month' && styles.periodTextActive]}>Month</Text>
+                            <Text style={[styles.periodText, { color: colors.textSecondary }, selectedPeriod === 'month' && { color: colors.background, fontWeight: '700' }]}>Month</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                            style={[styles.periodButton, selectedPeriod === 'year' && styles.periodButtonActive]}
+                            style={[styles.periodButton, selectedPeriod === 'year' && [styles.periodButtonActive, { backgroundColor: colors.primary, shadowColor: colors.primary }]]}
                             onPress={() => setSelectedPeriod('year')}
                         >
-                            <Text style={[styles.periodText, selectedPeriod === 'year' && styles.periodTextActive]}>Year</Text>
+                            <Text style={[styles.periodText, { color: colors.textSecondary }, selectedPeriod === 'year' && { color: colors.background, fontWeight: '700' }]}>Year</Text>
                         </TouchableOpacity>
                     </View>
 
-                    {/* Activity Summary Card */}
-                    <LinearGradient
-                        colors={['#FF6B4A', '#FF8F6B']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.summaryCard}
-                    >
-                        <View style={styles.summaryContent}>
-                            <Text style={styles.summaryTitle}>Activity Summary</Text>
-
-                            <View style={styles.summaryGrid}>
-                                <View style={styles.summaryItem}>
-                                    <Text style={styles.summaryLabel}>Burned</Text>
-                                    <Text style={styles.summaryValue}>{totalCalories.toLocaleString()}</Text>
-                                    <Text style={styles.summaryUnit}>KCAL</Text>
-                                </View>
-
-                                <View style={[styles.summaryItem, styles.summaryItemBorder]}>
-                                    <Text style={styles.summaryLabel}>Active</Text>
-                                    <Text style={styles.summaryValue}>{totalActiveMinutes}</Text>
-                                    <Text style={styles.summaryUnit}>MINS</Text>
-                                </View>
-
-                                <View style={styles.summaryItem}>
-                                    <Text style={styles.summaryLabel}>Steps</Text>
-                                    <Text style={styles.summaryValue}>{(totalSteps / 1000).toFixed(0)}k</Text>
-                                    <Text style={styles.summaryUnit}>TOTAL</Text>
-                                </View>
+                    {/* Weight Progress Card - MOST IMPORTANT */}
+                    <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.weightCard, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(30,30,40,0.8)' : 'rgba(255,255,255,0.8)' }]}>
+                        <LinearGradient
+                            colors={[colors.primary + '20', colors.primary + '05']}
+                            style={styles.weightCardGradient}
+                        />
+                        <View style={styles.weightCardHeader}>
+                            <View>
+                                <Text style={[styles.weightCardTitle, { color: colors.text }]}>Weight Progress</Text>
+                                <Text style={[styles.weightCardSubtitle, { color: colors.textSecondary }]}>Target: {targetWeight} kg</Text>
                             </View>
-
-                            <View style={styles.summaryFooter}>
-                                <View style={styles.trendBadge}>
-                                    <Ionicons
-                                        name={trendPercentage >= 0 ? 'trending-up' : 'trending-down'}
-                                        size={14}
-                                        color="#FFFFFF"
-                                    />
-                                    <Text style={styles.trendText}>
-                                        {trendPercentage >= 0 ? '+' : ''}{trendPercentage}% vs last {selectedPeriod}
-                                    </Text>
-                                </View>
-                                <TouchableOpacity style={styles.detailsButton}>
-                                    <Text style={styles.detailsButtonText}>View Details</Text>
-                                </TouchableOpacity>
-                            </View>
+                            <Ionicons name="trending-down" size={28} color={colors.primary} />
                         </View>
 
-                        {/* Decorative Circle */}
-                        <View style={styles.summaryDecoration} />
-                    </LinearGradient>
-
-                    {/* Multi-metric Line Chart Trends */}
-                    <BlurView intensity={80} tint="light" style={styles.chartCard}>
-                        <View style={styles.chartHeader}>
-                            <Text style={styles.chartTitle}>Performance Trends</Text>
-                            <Ionicons name="ellipsis-horizontal" size={20} color="#9CA3AF" />
+                        <View style={styles.weightRow}>
+                            <Text style={[styles.currentWeight, { color: colors.primary }]}>{currentWeight} kg</Text>
+                            <Text style={[styles.goalWeight, { color: colors.textSecondary }]}>→ {targetWeight} kg</Text>
                         </View>
 
-                        <View style={styles.chartContainer}>
-                            <Svg width="100%" height={150} viewBox="0 0 400 150">
-                                {/* Grid Lines */}
-                                <Line x1="10" y1="20" x2="390" y2="20" stroke="#E5E7EB" strokeWidth="1" />
-                                <Line x1="10" y1="60" x2="390" y2="60" stroke="#E5E7EB" strokeWidth="1" />
-                                <Line x1="10" y1="100" x2="390" y2="100" stroke="#E5E7EB" strokeWidth="1" />
-
-                                {/* Activity Line */}
-                                <Path
-                                    d={getActivityPath()}
-                                    fill="none"
-                                    stroke="#FF6B4A"
-                                    strokeWidth="3"
-                                    strokeLinecap="round"
-                                />
-
-                                {/* Weight Line */}
-                                <Path
-                                    d={getWeightPath()}
-                                    fill="none"
-                                    stroke="#94A3B8"
-                                    strokeWidth="2"
-                                    strokeDasharray="4"
-                                />
-
-                                {/* Nutrition Line */}
-                                <Path
-                                    d={getNutritionPath()}
-                                    fill="none"
-                                    stroke="#3B82F6"
-                                    strokeWidth="2"
-                                    strokeLinecap="round"
-                                />
-                            </Svg>
-
-                            {/* Week Labels */}
-                            <View style={styles.chartLabels}>
-                                {weeklyData.labels.map((label, index) => (
-                                    <Text key={index} style={styles.chartLabel}>{label}</Text>
-                                ))}
-                            </View>
+                        {/* Progress Bar */}
+                        <View style={[styles.progressBarContainer, { backgroundColor: colors.primaryContainerHigh }]}>
+                            <LinearGradient
+                                colors={[colors.primary, colors.primary + 'cc']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 0 }}
+                                style={[styles.progressBar, { width: `${progressPercentage}%` }]}
+                            />
                         </View>
 
-                        {/* Legend */}
-                        <View style={styles.chartLegend}>
-                            <View style={styles.legendItem}>
-                                <View style={[styles.legendDot, { backgroundColor: '#FF6B4A' }]} />
-                                <Text style={styles.legendText}>Activity</Text>
+                        <View style={styles.weightStats}>
+                            <View style={styles.weightStat}>
+                                <Text style={[styles.weightStatLabel, { color: colors.textSecondary }]}>Lost</Text>
+                                <Text style={[styles.weightStatValue, { color: colors.text }]}>{weightLost > 0 ? weightLost : 0} kg</Text>
                             </View>
-                            <View style={styles.legendItem}>
-                                <View style={[styles.legendDot, { backgroundColor: '#94A3B8' }]} />
-                                <Text style={styles.legendText}>Weight</Text>
+                            <View style={styles.weightStat}>
+                                <Text style={[styles.weightStatLabel, { color: colors.textSecondary }]}>To Go</Text>
+                                <Text style={[styles.weightStatValue, { color: colors.text }]}>{weightToGo > 0 ? weightToGo : 0} kg</Text>
                             </View>
-                            <View style={styles.legendItem}>
-                                <View style={[styles.legendDot, { backgroundColor: '#3B82F6' }]} />
-                                <Text style={styles.legendText}>Nutrition</Text>
+                            <View style={styles.weightStat}>
+                                <Text style={[styles.weightStatLabel, { color: colors.textSecondary }]}>Est. Completion</Text>
+                                <Text style={[styles.weightStatValue, { color: colors.text }]}>{weeksToGoal > 0 ? weeksToGoal : 0} weeks</Text>
                             </View>
                         </View>
                     </BlurView>
 
-                    {/* Body Composition */}
-                    <View style={styles.compositionSection}>
-                        <Text style={styles.sectionTitle}>Body Composition</Text>
+                    {/* Quick Stats Grid (2x2) */}
+                    <View style={styles.quickStatsGrid}>
+                        <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.quickStatCard, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(30,30,40,0.8)' : 'rgba(255,255,255,0.8)' }]}>
+                            <Ionicons name="calendar-outline" size={28} color={colors.primary} />
+                            <Text style={[styles.quickStatValue, { color: colors.text }]}>{workoutDaysThisWeek}</Text>
+                            <Text style={[styles.quickStatLabel, { color: colors.textSecondary }]}>Workout Days</Text>
+                        </BlurView>
 
-                        <View style={styles.compositionGrid}>
-                            {/* Weight Card */}
-                            <BlurView intensity={80} tint="light" style={styles.compositionCard}>
-                                <View style={styles.compositionRing}>
-                                    <Svg width={64} height={64} viewBox="0 0 64 64">
-                                        <Circle
-                                            cx="32"
-                                            cy="32"
-                                            r="28"
-                                            stroke="#FF6B4A20"
-                                            strokeWidth="4"
-                                            fill="none"
-                                        />
-                                        <Circle
-                                            cx="32"
-                                            cy="32"
-                                            r="28"
-                                            stroke="#FF6B4A"
-                                            strokeWidth="4"
-                                            fill="none"
-                                            strokeDasharray={176}
-                                            strokeDashoffset={40}
-                                            strokeLinecap="round"
-                                            rotation="-90"
-                                            originX="32"
-                                            originY="32"
-                                        />
-                                    </Svg>
-                                    <Text style={styles.compositionRingText}>{currentWeight}kg</Text>
-                                </View>
-                                <Text style={styles.compositionLabel}>Weight</Text>
-                            </BlurView>
+                        <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.quickStatCard, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(30,30,40,0.8)' : 'rgba(255,255,255,0.8)' }]}>
+                            <Ionicons name="bed-outline" size={28} color={colors.textSecondary} />
+                            <Text style={[styles.quickStatValue, { color: colors.text }]}>{restDaysThisWeek}</Text>
+                            <Text style={[styles.quickStatLabel, { color: colors.textSecondary }]}>Rest Days</Text>
+                        </BlurView>
 
-                            {/* Body Fat Card */}
-                            <BlurView intensity={80} tint="light" style={styles.compositionCard}>
-                                <View style={styles.compositionRing}>
-                                    <Svg width={64} height={64} viewBox="0 0 64 64">
-                                        <Circle
-                                            cx="32"
-                                            cy="32"
-                                            r="28"
-                                            stroke="#3B82F620"
-                                            strokeWidth="4"
-                                            fill="none"
-                                        />
-                                        <Circle
-                                            cx="32"
-                                            cy="32"
-                                            r="28"
-                                            stroke="#3B82F6"
-                                            strokeWidth="4"
-                                            fill="none"
-                                            strokeDasharray={176}
-                                            strokeDashoffset={120}
-                                            strokeLinecap="round"
-                                            rotation="-90"
-                                            originX="32"
-                                            originY="32"
-                                        />
-                                    </Svg>
-                                    <Text style={styles.compositionRingText}>{bodyFat}%</Text>
-                                </View>
-                                <Text style={styles.compositionLabel}>Body Fat</Text>
-                            </BlurView>
+                        <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.quickStatCard, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(30,30,40,0.8)' : 'rgba(255,255,255,0.8)' }]}>
+                            <Ionicons name="flame-outline" size={28} color={colors.primary} />
+                            <Text style={[styles.quickStatValue, { color: colors.text }]}>{totalCalories.toLocaleString()}</Text>
+                            <Text style={[styles.quickStatLabel, { color: colors.textSecondary }]}>Calories Burned</Text>
+                        </BlurView>
 
-                            {/* Muscle Mass Card */}
-                            <BlurView intensity={80} tint="light" style={styles.compositionCard}>
-                                <View style={styles.compositionRing}>
-                                    <Svg width={64} height={64} viewBox="0 0 64 64">
-                                        <Circle
-                                            cx="32"
-                                            cy="32"
-                                            r="28"
-                                            stroke="#10B98120"
-                                            strokeWidth="4"
-                                            fill="none"
-                                        />
-                                        <Circle
-                                            cx="32"
-                                            cy="32"
-                                            r="28"
-                                            stroke="#10B981"
-                                            strokeWidth="4"
-                                            fill="none"
-                                            strokeDasharray={176}
-                                            strokeDashoffset={60}
-                                            strokeLinecap="round"
-                                            rotation="-90"
-                                            originX="32"
-                                            originY="32"
-                                        />
-                                    </Svg>
-                                    <Text style={styles.compositionRingText}>{muscleMass}%</Text>
-                                </View>
-                                <Text style={styles.compositionLabel}>Muscle</Text>
-                            </BlurView>
+                        <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.quickStatCard, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(30,30,40,0.8)' : 'rgba(255,255,255,0.8)' }]}>
+                            <Ionicons name="water-outline" size={28} color="#3B82F6" />
+                            <Text style={[styles.quickStatValue, { color: colors.text }]}>{totalWaterThisWeek.toFixed(1)}L</Text>
+                            <Text style={[styles.quickStatLabel, { color: colors.textSecondary }]}>Water Drunk</Text>
+                        </BlurView>
+                    </View>
+
+                    {/* Calories Chart */}
+                    <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.chartCard, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(30,30,40,0.8)' : 'rgba(255,255,255,0.8)' }]}>
+                        <View style={styles.chartHeader}>
+                            <Text style={[styles.chartTitle, { color: colors.text }]}>🍽️ Calories Eaten</Text>
+                            <Text style={[styles.chartSubtitle, { color: colors.textSecondary }]}>Daily intake trend</Text>
                         </View>
-                    </View>
+                        <LineChart data={weeklyCalories} color={colors.primary} maxValue={3000} />
+                        <Text style={[styles.chartAvg, { color: colors.textSecondary }]}>Avg: {Math.round(weeklyCalories.reduce((a, b) => a + b, 0) / 7)} kcal/day</Text>
+                    </BlurView>
 
-                    {/* Muscle Focus & Consistency Heatmap Row */}
-                    <View style={styles.metricsRow}>
-                        {/* Muscle Focus Radar */}
-                        <BlurView intensity={80} tint="light" style={styles.metricsCard}>
-                            <Text style={styles.metricsTitle}>Muscle Focus</Text>
-                            <View style={styles.radarContainer}>
-                                <View style={styles.radar}>
-                                    <View style={styles.radarInner1} />
-                                    <View style={styles.radarInner2} />
-                                    <Svg width="100%" height="100%" viewBox="0 0 100 100">
-                                        <Polygon
-                                            points="50,10 85,30 90,70 50,90 10,70 15,30"
-                                            fill="rgba(255, 107, 74, 0.2)"
-                                            stroke="#FF6B4A"
-                                            strokeWidth="1"
-                                        />
-                                        <SvgText x="50" y="5" fontSize="8" fill="#6B7280" textAnchor="middle">Chest</SvgText>
-                                        <SvgText x="95" y="50" fontSize="8" fill="#6B7280" textAnchor="start">Arms</SvgText>
-                                        <SvgText x="5" y="50" fontSize="8" fill="#6B7280" textAnchor="end">Legs</SvgText>
-                                    </Svg>
+                    {/* Workout Minutes Chart */}
+                    <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.chartCard, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(30,30,40,0.8)' : 'rgba(255,255,255,0.8)' }]}>
+                        <View style={styles.chartHeader}>
+                            <Text style={[styles.chartTitle, { color: colors.text }]}>💪 Workout Minutes</Text>
+                            <Text style={[styles.chartSubtitle, { color: colors.textSecondary }]}>Daily activity</Text>
+                        </View>
+                        <BarChart data={weeklyWorkouts} color="#10B981" maxValue={120} height={100} />
+                        <Text style={[styles.chartAvg, { color: colors.textSecondary }]}>Total: {weeklyWorkouts.reduce((a, b) => a + b, 0)} min this week</Text>
+                    </BlurView>
+
+                    {/* Water Intake Chart */}
+                    <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.chartCard, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(30,30,40,0.8)' : 'rgba(255,255,255,0.8)' }]}>
+                        <View style={styles.chartHeader}>
+                            <Text style={[styles.chartTitle, { color: colors.text }]}>💧 Water Intake</Text>
+                            <Text style={[styles.chartSubtitle, { color: colors.textSecondary }]}>Daily hydration</Text>
+                        </View>
+                        <BarChart data={weeklyWater} color="#3B82F6" maxValue={4} height={100} />
+                        <Text style={[styles.chartAvg, { color: colors.textSecondary }]}>Avg: {(weeklyWater.reduce((a, b) => a + b, 0) / 7).toFixed(1)} L/day</Text>
+                    </BlurView>
+
+                    {/* Top Exercises */}
+                    <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.exercisesCard, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(30,30,40,0.8)' : 'rgba(255,255,255,0.8)' }]}>
+                        <Text style={[styles.sectionTitle, { color: colors.text }]}>🏆 Top Exercises This Week</Text>
+                        {topExercises.length > 0 ? (
+                            topExercises.map((exercise, index) => (
+                                <View key={index} style={[styles.exerciseItem, { borderBottomColor: colors.border }]}>
+                                    <Text style={[styles.exerciseRank, { color: colors.primary }]}>{index + 1}</Text>
+                                    <Text style={[styles.exerciseName, { color: colors.text }]}>{exercise.name}</Text>
+                                    <Text style={[styles.exerciseSets, { color: colors.textSecondary }]}>{exercise.sets} sets</Text>
                                 </View>
-                            </View>
-                        </BlurView>
+                            ))
+                        ) : (
+                            <Text style={[styles.noDataText, { color: colors.textSecondary }]}>No workouts logged this week</Text>
+                        )}
+                    </BlurView>
 
-                        {/* Consistency Heatmap */}
-                        <BlurView intensity={80} tint="light" style={styles.metricsCard}>
-                            <Text style={styles.metricsTitle}>Consistency</Text>
-                            <View style={styles.heatmap}>
-                                {[...Array(20)].map((_, i) => (
-                                    <View
-                                        key={i}
-                                        style={[
-                                            styles.heatmapCell,
-                                            {
-                                                backgroundColor: `rgba(255, 107, 74, ${Math.random() * 0.7 + 0.3})`,
-                                            }
-                                        ]}
-                                    />
-                                ))}
+                    {/* Streaks & Achievements */}
+                    <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.streaksCard, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(30,30,40,0.8)' : 'rgba(255,255,255,0.8)' }]}>
+                        <Text style={[styles.sectionTitle, { color: colors.text }]}>🔥 Current Streaks</Text>
+
+                        <View style={[styles.streakItem, { borderBottomColor: colors.border }]}>
+                            <View style={[styles.streakIcon, { backgroundColor: colors.primary + '15' }]}>
+                                <Ionicons name="fitness" size={24} color={colors.primary} />
                             </View>
-                            <Text style={styles.consistencyText}>{consistencyScore}% Engagement</Text>
-                        </BlurView>
+                            <View style={styles.streakInfo}>
+                                <Text style={[styles.streakLabel, { color: colors.textSecondary }]}>Workout Streak</Text>
+                                <Text style={[styles.streakValue, { color: colors.text }]}>{workoutStreak} days</Text>
+                            </View>
+                        </View>
+
+                        <View style={[styles.streakItem, { borderBottomColor: colors.border }]}>
+                            <View style={[styles.streakIcon, { backgroundColor: '#3B82F615' }]}>
+                                <Ionicons name="water" size={24} color="#3B82F6" />
+                            </View>
+                            <View style={styles.streakInfo}>
+                                <Text style={[styles.streakLabel, { color: colors.textSecondary }]}>Water Goal Streak</Text>
+                                <Text style={[styles.streakValue, { color: colors.text }]}>{waterStreak} days</Text>
+                            </View>
+                        </View>
+
+                        <View style={[styles.streakItem, { borderBottomColor: colors.border }]}>
+                            <View style={[styles.streakIcon, { backgroundColor: '#10B98115' }]}>
+                                <Ionicons name="restaurant" size={24} color="#10B981" />
+                            </View>
+                            <View style={styles.streakInfo}>
+                                <Text style={[styles.streakLabel, { color: colors.textSecondary }]}>Calorie Goal Streak</Text>
+                                <Text style={[styles.streakValue, { color: colors.text }]}>{calorieStreak} days</Text>
+                            </View>
+                        </View>
+                    </BlurView>
+
+                    {/* Trend Badge */}
+                    <View style={styles.trendContainer}>
+                        <LinearGradient
+                            colors={[colors.primary + '15', colors.primary + '05']}
+                            style={[styles.trendBadgeLarge, { backgroundColor: 'transparent' }]}
+                        >
+                            <Ionicons
+                                name={trendPercentage >= 0 ? 'trending-up' : 'trending-down'}
+                                size={16}
+                                color={colors.primary}
+                            />
+                            <Text style={[styles.trendTextLarge, { color: colors.textSecondary }]}>
+                                {trendPercentage >= 0 ? '+' : ''}{trendPercentage}% vs last {selectedPeriod}
+                            </Text>
+                        </LinearGradient>
                     </View>
 
-                    {/* Bottom Padding */}
                     <View style={{ height: 100 }} />
                 </ScrollView>
             </SafeAreaView>
 
             {/* Bottom Navigation */}
-            <BlurView intensity={90} tint="light" style={styles.bottomNav}>
+            <BlurView intensity={90} tint={isDark ? "dark" : "light"} style={[styles.bottomNav, { borderTopColor: colors.border, backgroundColor: isDark ? 'rgba(30,30,40,0.95)' : 'rgba(255,255,255,0.95)' }]}>
                 <TouchableOpacity
                     style={styles.navItem}
-                    onPress={() => router.push('/(app)/home')}
+                    onPress={() => router.push('/(tabs)/home')}
                 >
-                    <Ionicons name="home-outline" size={24} color="#9CA3AF" />
-                    <Text style={styles.navText}>Home</Text>
+                    <Ionicons name="home-outline" size={24} color={colors.textSecondary} />
+                    <Text style={[styles.navText, { color: colors.textSecondary }]}>Home</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.navItem}>
-                    <Ionicons name="bar-chart" size={24} color="#FF6B4A" />
-                    <Text style={[styles.navText, { color: '#FF6B4A' }]}>Stats</Text>
+                    <Ionicons name="bar-chart" size={24} color={colors.primary} />
+                    <Text style={[styles.navText, { color: colors.primary }]}>Stats</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                     style={styles.navItem}
                     onPress={() => Alert.alert('Coming Soon', 'History page coming soon!')}
                 >
-                    <Ionicons name="time-outline" size={24} color="#9CA3AF" />
-                    <Text style={styles.navText}>History</Text>
+                    <Ionicons name="time-outline" size={24} color={colors.textSecondary} />
+                    <Text style={[styles.navText, { color: colors.textSecondary }]}>History</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                     style={styles.navItem}
-                    onPress={() => Alert.alert('Coming Soon', 'Profile page coming soon!')}
+                    onPress={() => router.push('/(auth)/profile-setup?mode=all')}
                 >
-                    <Ionicons name="person-outline" size={24} color="#9CA3AF" />
-                    <Text style={styles.navText}>Profile</Text>
+                    <Ionicons name="person-outline" size={24} color={colors.textSecondary} />
+                    <Text style={[styles.navText, { color: colors.textSecondary }]}>Profile</Text>
                 </TouchableOpacity>
             </BlurView>
         </View>
@@ -596,7 +615,6 @@ export default function StatsScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#F8F6F5',
     },
     centerContainer: {
         flex: 1,
@@ -629,30 +647,25 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     headerTitle: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: '#1F2937',
+        fontSize: 20,
+        fontWeight: '800',
     },
 
     // Period Selector
     periodSelector: {
         flexDirection: 'row',
-        backgroundColor: 'rgba(255, 107, 74, 0.05)',
         borderRadius: 12,
         padding: 4,
         marginBottom: 20,
         borderWidth: 1,
-        borderColor: 'rgba(255, 107, 74, 0.1)',
     },
     periodButton: {
         flex: 1,
-        paddingVertical: 8,
+        paddingVertical: 10,
         borderRadius: 8,
         alignItems: 'center',
     },
     periodButtonActive: {
-        backgroundColor: '#FFFFFF',
-        shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.05,
         shadowRadius: 4,
@@ -660,269 +673,229 @@ const styles = StyleSheet.create({
     },
     periodText: {
         fontSize: 14,
-        fontWeight: '500',
-        color: '#6B7280',
-    },
-    periodTextActive: {
-        color: '#FF6B4A',
         fontWeight: '600',
     },
 
-    // Summary Card
-    summaryCard: {
-        borderRadius: 16,
+    // Weight Card
+    weightCard: {
+        borderRadius: 24,
         padding: 20,
         marginBottom: 20,
+        borderWidth: 1,
         overflow: 'hidden',
-    },
-    summaryContent: {
         position: 'relative',
-        zIndex: 10,
     },
-    summaryTitle: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: '#FFFFFF',
-        opacity: 0.9,
+    weightCardGradient: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+    },
+    weightCardHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         marginBottom: 16,
     },
-    summaryGrid: {
+    weightCardTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+    },
+    weightCardSubtitle: {
+        fontSize: 12,
+        marginTop: 2,
+    },
+    weightRow: {
         flexDirection: 'row',
+        alignItems: 'baseline',
+        gap: 8,
+        marginBottom: 16,
+    },
+    currentWeight: {
+        fontSize: 32,
+        fontWeight: '800',
+    },
+    goalWeight: {
+        fontSize: 18,
+        fontWeight: '600',
+    },
+    progressBarContainer: {
+        height: 8,
+        borderRadius: 4,
+        overflow: 'hidden',
         marginBottom: 20,
     },
-    summaryItem: {
-        flex: 1,
+    progressBar: {
+        height: '100%',
+        borderRadius: 4,
     },
-    summaryItemBorder: {
-        borderLeftWidth: 1,
-        borderRightWidth: 1,
-        borderColor: 'rgba(255,255,255,0.2)',
-        paddingHorizontal: 16,
+    weightStats: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
     },
-    summaryLabel: {
+    weightStat: {
+        alignItems: 'center',
+    },
+    weightStatLabel: {
         fontSize: 11,
-        color: 'rgba(255,255,255,0.8)',
         fontWeight: '600',
         letterSpacing: 0.5,
         marginBottom: 4,
     },
-    summaryValue: {
+    weightStatValue: {
+        fontSize: 16,
+        fontWeight: '700',
+    },
+
+    // Quick Stats Grid
+    quickStatsGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 12,
+        marginBottom: 20,
+    },
+    quickStatCard: {
+        width: (width - 44) / 2,
+        padding: 16,
+        borderRadius: 20,
+        alignItems: 'center',
+        borderWidth: 1,
+    },
+    quickStatValue: {
         fontSize: 24,
         fontWeight: '800',
-        color: '#FFFFFF',
-        marginBottom: 2,
+        marginTop: 8,
     },
-    summaryUnit: {
-        fontSize: 10,
-        color: 'rgba(255,255,255,0.7)',
-        fontWeight: '600',
-        letterSpacing: 0.5,
-    },
-    summaryFooter: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingTop: 16,
-        borderTopWidth: 1,
-        borderTopColor: 'rgba(255,255,255,0.1)',
-    },
-    trendBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(255,255,255,0.2)',
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 20,
-        gap: 4,
-    },
-    trendText: {
-        fontSize: 11,
-        fontWeight: '600',
-        color: '#FFFFFF',
-    },
-    detailsButton: {
-        backgroundColor: '#FFFFFF',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 8,
-    },
-    detailsButtonText: {
+    quickStatLabel: {
         fontSize: 12,
-        fontWeight: '700',
-        color: '#FF6B4A',
-    },
-    summaryDecoration: {
-        position: 'absolute',
-        right: -40,
-        bottom: -40,
-        width: 160,
-        height: 160,
-        borderRadius: 80,
-        backgroundColor: 'rgba(255,255,255,0.1)',
+        fontWeight: '600',
+        marginTop: 4,
     },
 
     // Chart Card
     chartCard: {
-        borderRadius: 16,
+        borderRadius: 20,
         padding: 16,
-        marginBottom: 20,
+        marginBottom: 16,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.5)',
     },
     chartHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 16,
+        marginBottom: 8,
     },
     chartTitle: {
         fontSize: 16,
         fontWeight: '700',
-        color: '#1F2937',
     },
-    chartContainer: {
-        marginBottom: 12,
-    },
-    chartLabels: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginTop: 8,
-        paddingHorizontal: 10,
+    chartSubtitle: {
+        fontSize: 11,
+        marginTop: 2,
     },
     chartLabel: {
         fontSize: 10,
-        fontWeight: '600',
-        color: '#9CA3AF',
+        fontWeight: '500',
     },
-    chartLegend: {
-        flexDirection: 'row',
-        gap: 16,
-        marginTop: 8,
-    },
-    legendItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-    },
-    legendDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-    },
-    legendText: {
+    chartAvg: {
         fontSize: 12,
-        color: '#4B5563',
+        fontWeight: '600',
+        marginTop: 8,
+        textAlign: 'center',
+    },
+    barLabel: {
+        fontSize: 9,
+        fontWeight: '500',
+        marginTop: 4,
     },
 
-    // Body Composition
-    compositionSection: {
-        marginBottom: 20,
+    // Exercises Card
+    exercisesCard: {
+        borderRadius: 20,
+        padding: 16,
+        marginBottom: 16,
+        borderWidth: 1,
     },
     sectionTitle: {
         fontSize: 16,
         fontWeight: '700',
-        color: '#1F2937',
         marginBottom: 12,
-        paddingHorizontal: 4,
     },
-    compositionGrid: {
+    exerciseItem: {
         flexDirection: 'row',
-        gap: 12,
-    },
-    compositionCard: {
-        flex: 1,
-        padding: 16,
-        borderRadius: 16,
         alignItems: 'center',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.5)',
+        paddingVertical: 10,
+        borderBottomWidth: 1,
     },
-    compositionRing: {
-        position: 'relative',
-        width: 64,
-        height: 64,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 8,
-    },
-    compositionRingText: {
-        position: 'absolute',
-        fontSize: 12,
+    exerciseRank: {
+        width: 28,
+        fontSize: 14,
         fontWeight: '700',
-        color: '#1F2937',
     },
-    compositionLabel: {
-        fontSize: 12,
-        color: '#6B7280',
-        fontWeight: '500',
+    exerciseName: {
+        flex: 1,
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    exerciseSets: {
+        fontSize: 13,
+        fontWeight: '600',
     },
 
-    // Metrics Row
-    metricsRow: {
-        flexDirection: 'row',
-        gap: 12,
-        marginBottom: 20,
-    },
-    metricsCard: {
-        flex: 1,
+    // Streaks Card
+    streaksCard: {
+        borderRadius: 20,
         padding: 16,
-        borderRadius: 16,
+        marginBottom: 16,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.5)',
     },
-    metricsTitle: {
-        fontSize: 12,
-        fontWeight: '700',
-        color: '#6B7280',
-        letterSpacing: 0.5,
-        marginBottom: 12,
-    },
-    radarContainer: {
-        aspectRatio: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    radar: {
-        width: '100%',
-        height: '100%',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    radarInner1: {
-        position: 'absolute',
-        width: '80%',
-        height: '80%',
-        borderWidth: 1,
-        borderColor: '#E5E7EB',
-        transform: [{ rotate: '45deg' }],
-        borderRadius: 8,
-    },
-    radarInner2: {
-        position: 'absolute',
-        width: '60%',
-        height: '60%',
-        borderWidth: 1,
-        borderColor: '#E5E7EB',
-        transform: [{ rotate: '90deg' }],
-        borderRadius: 8,
-    },
-    heatmap: {
+    streakItem: {
         flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 4,
-        marginBottom: 8,
+        alignItems: 'center',
+        paddingVertical: 12,
+        borderBottomWidth: 1,
     },
-    heatmapCell: {
-        width: '16%',
-        aspectRatio: 1,
-        borderRadius: 4,
-        margin: '0.5%',
+    streakIcon: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
     },
-    consistencyText: {
-        fontSize: 11,
+    streakInfo: {
+        flex: 1,
+    },
+    streakLabel: {
+        fontSize: 12,
         fontWeight: '600',
-        color: '#4B5563',
-        marginTop: 8,
+        marginBottom: 2,
+    },
+    streakValue: {
+        fontSize: 18,
+        fontWeight: '800',
+    },
+
+    // Trend
+    trendContainer: {
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    trendBadgeLarge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 30,
+        gap: 6,
+    },
+    trendTextLarge: {
+        fontSize: 12,
+        fontWeight: '600',
+    },
+
+    noDataText: {
+        fontSize: 13,
+        textAlign: 'center',
+        paddingVertical: 20,
     },
 
     // Bottom Navigation
@@ -938,8 +911,6 @@ const styles = StyleSheet.create({
         paddingVertical: 12,
         paddingBottom: Platform.OS === 'ios' ? 34 : 12,
         borderTopWidth: 1,
-        borderTopColor: 'rgba(255,255,255,0.5)',
-        backgroundColor: 'rgba(255, 255, 255, 0.95)', // Add solid background
         zIndex: 1000,
         elevation: 10,
     },
@@ -950,6 +921,5 @@ const styles = StyleSheet.create({
     navText: {
         fontSize: 10,
         fontWeight: '600',
-        color: '#9CA3AF',
     },
 });

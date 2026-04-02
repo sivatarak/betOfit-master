@@ -21,7 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { FadeIn, FadeOut, Layout } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
-
+import { CustomLoader } from '../../components/CustomLoader';
 import { useTheme } from '../../context/themecontext';
 import { fetchExercisesByMuscle } from '../services/exerciseApi';
 
@@ -597,28 +597,39 @@ export default function ExerciseLibraryScreen() {
     </Animated.View>
   );
 
-  if (initialLoading) {
+  if (initialLoading || loading) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <SafeAreaView style={styles.safeArea}>
-          <View style={[styles.header, { backgroundColor: colors.card }]}>
-            <View style={styles.headerTop}>
-              <View style={styles.headerLeft}>
-                <LinearGradient
-                  colors={[colors.secondary, colors.primary]}
-                  style={styles.appIcon}
-                >
-                  <Ionicons name="barbell" size={24} color="#FFFFFF" />
-                </LinearGradient>
-                <Text style={[styles.appTitle, { color: colors.text }]}>Library</Text>
-              </View>
-            </View>
-          </View>
-          <SkeletonLoader />
-        </SafeAreaView>
-      </View>
+      <CustomLoader
+        fullScreen={true}
+        
+      />
     );
   }
+
+
+
+  // if (initialLoading) {
+  //   return (
+  //     <View style={[styles.container, { backgroundColor: colors.background }]}>
+  //       <SafeAreaView style={styles.safeArea}>
+  //         <View style={[styles.header, { backgroundColor: colors.card }]}>
+  //           <View style={styles.headerTop}>
+  //             <View style={styles.headerLeft}>
+  //               <LinearGradient
+  //                 colors={[colors.secondary, colors.primary]}
+  //                 style={styles.appIcon}
+  //               >
+  //                 <Ionicons name="barbell" size={24} color="#FFFFFF" />
+  //               </LinearGradient>
+  //               <Text style={[styles.appTitle, { color: colors.text }]}>Library</Text>
+  //             </View>
+  //           </View>
+  //         </View>
+  //         <SkeletonLoader />
+  //       </SafeAreaView>
+  //     </View>
+  //   );
+  // }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>

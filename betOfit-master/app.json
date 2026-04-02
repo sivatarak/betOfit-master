@@ -28,11 +28,12 @@
       [
         "@react-native-google-signin/google-signin",
         {
-          "iosUrlScheme": "com.googleusercontent.apps.dummy" 
+          "iosUrlScheme": "com.googleusercontent.apps.dummy"
         }
-      ]
-    ]
-    ,
+      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth"
+    ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true

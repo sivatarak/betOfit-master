@@ -37,22 +37,14 @@ export const colors = {
 
 type ThemeType = 'light' | 'dark';
 
-interface ThemeContextType {
-  theme: ThemeType;
-  colors: typeof colors.light;
-}
+const ThemeContext = createContext<{ theme: ThemeType; colors: any }>({
+  theme: 'light',
+  colors: colors.light,
+});
 
-const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
-
-export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const systemColorScheme = useColorScheme();
-  const [theme, setTheme] = useState<ThemeType>(systemColorScheme || 'light');
-
-  useEffect(() => {
-    // Update theme when system theme changes
-    setTheme(systemColorScheme || 'light');
-  }, [systemColorScheme]);
-
+export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
+  const systemTheme = useColorScheme();
+  const theme = systemTheme === 'dark' ? 'dark' : 'light';
   const themeColors = colors[theme];
 
   return (
