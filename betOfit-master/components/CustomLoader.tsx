@@ -1,115 +1,126 @@
 // components/CustomLoader.tsx
-import React from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Dimensions } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { 
-  useSharedValue, 
-  withRepeat, 
-  withSequence, 
+
+import React, { useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image
+} from 'react-native';
+import Animated, {
+  useSharedValue,
+  withRepeat,
+  withSequence,
   withTiming,
   useAnimatedStyle,
   Easing,
   FadeIn
 } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import { useTheme } from '../context/themecontext';
-
-const { width, height } = Dimensions.get('window');
 
 interface CustomLoaderProps {
   text?: string;
   fullScreen?: boolean;
   size?: 'small' | 'large';
+  showText?: boolean;
 }
 
-export const CustomLoader = ({ 
-  text = 'Loading...', 
+export const CustomLoader = ({
+  text = '',
   fullScreen = true,
-  size = 'large'
+  size = 'large',
+  showText = false
 }: CustomLoaderProps) => {
-  const { colors, theme } = useTheme();
-  
-  // Define icon size based on prop
-  const iconSize = size === 'large' ? 50 : 32;
-  const containerSize = size === 'large' ? 100 : 70;
-  const containerRadius = size === 'large' ? 50 : 35;
-  
-  // Animation values
+
+  const { colors } = useTheme();
+  const iconSize = size === 'large' ? 70 : 50;
+
+  // 🎯 Animations
+  const rotation = useSharedValue(0);
   const scale = useSharedValue(1);
-  const rotate = useSharedValue(0);
-  const opacity = useSharedValue(0.5);
-  
-  // Pulse animation
-  React.useEffect(() => {
-    scale.value = withRepeat(
+
+  useEffect(() => {
+    // 🪙 Coin flip
+    rotation.value = withRepeat(
       withSequence(
-        withTiming(1.2, { duration: 800, easing: Easing.ease }),
-        withTiming(1, { duration: 800, easing: Easing.ease })
+        withTiming(90, { duration: 250, easing: Easing.out(Easing.ease) }),
+        withTiming(180, { duration: 250 }),
+        withTiming(270, { duration: 250 }),
+        withTiming(360, { duration: 250, easing: Easing.in(Easing.ease) })
       ),
-      -1,
-      true
-    );
-    
-    rotate.value = withRepeat(
-      withTiming(360, { duration: 2000, easing: Easing.linear }),
       -1,
       false
     );
-    
-    opacity.value = withRepeat(
+
+    // 💥 Slight bounce
+    scale.value = withRepeat(
       withSequence(
-        withTiming(1, { duration: 800 }),
-        withTiming(0.5, { duration: 800 })
+        withTiming(1.15, { duration: 200 }),
+        withTiming(0.95, { duration: 150 }),
+        withTiming(1, { duration: 150 })
       ),
       -1,
       true
     );
   }, []);
-  
+
+  // 🎬 3D flip style
   const animatedIconStyle = useAnimatedStyle(() => ({
     transform: [
-      { scale: scale.value },
-      { rotate: `${rotate.value}deg` }
-    ],
-    opacity: opacity.value
+      { perspective: 1000 },
+      { rotateY: `${rotation.value}deg` },
+      { scale: scale.value }
+    ]
   }));
-  
+
   const content = (
-    <Animated.View 
-      entering={FadeIn.duration(400)}
-      style={[styles.content, { backgroundColor: colors.background }]}
-    >
-      <Animated.View style={[styles.iconContainer, animatedIconStyle, { 
-        width: containerSize, 
-        height: containerSize, 
-        borderRadius: containerRadius 
-      }]}>
-        <LinearGradient
-          colors={[colors.primary, colors.secondary]}
-          style={[styles.iconGradient, { borderRadius: containerRadius }]}
-        >
-          <Ionicons name="barbell" size={iconSize} color="#FFFFFF" />
-        </LinearGradient>
+    <Animated.View entering={FadeIn.duration(200)} style={styles.content}>
+      <Animated.View style={animatedIconStyle}>
+        <Image
+          source={require('../assets/images/icon.png')}
+          style={{ width: iconSize, height: iconSize }}
+          resizeMode="contain"
+        />
       </Animated.View>
-      
-      <Text style={[styles.text, { color: colors.text }]}>{text}</Text>
-      
-      <ActivityIndicator 
-        size={size === 'large' ? 'large' : 'small'} 
-        color={colors.primary}
-        style={styles.activityIndicator}
-      />
+
+      {showText && text ? (
+        <Text style={[styles.text, { color: colors.text }]}>
+          {text}
+        </Text>
+      ) : null}
     </Animated.View>
   );
-  
+
   if (fullScreen) {
     return (
-      <View style={[styles.fullScreen, { backgroundColor: colors.background }]}>
+      <Animated.View
+        entering={FadeIn.duration(200)}
+        style={[styles.fullScreen, { backgroundColor: 'transparent' }]}
+      >
+
+        {/* 🌫️ REAL BACKGROUND BLUR */}
+        <BlurView
+          intensity={80}
+          tint="light"
+          style={StyleSheet.absoluteFill}
+        />
+
+        {/* 🤍 GLASS WHITE OVERLAY (light, not blocking) */}
+        <View
+          style={[
+            StyleSheet.absoluteFillObject,
+            { backgroundColor: 'rgba(255,255,255,0.2)' }
+          ]}
+        />
+
+        {/* 🪙 LOADER */}
         {content}
-      </View>
+
+      </Animated.View>
     );
   }
-  
+
   return content;
 };
 
@@ -124,39 +135,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 9999,
   },
+
   content: {
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
-    borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 5,
-    minWidth: 200,
   },
-  iconContainer: {
-    overflow: 'hidden',
-    marginBottom: 20,
-    shadowColor: '#FF6B4A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  iconGradient: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+
   text: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     marginTop: 16,
-    marginBottom: 16,
-  },
-  activityIndicator: {
-    marginTop: 8,
   },
 });

@@ -25,6 +25,7 @@ import { searchFood as searchFoodApi } from "../services/exerciseApi";
 import { STORAGE_KEYS } from "../../constants/storageKeys";
 
 import { useTheme } from "../../context/themecontext";
+import { CustomLoader } from "@/components/CustomLoader";
 
 const { width } = Dimensions.get("window");
 const CIRCLE_SIZE = Math.min(width * 0.5, 200);
@@ -594,7 +595,7 @@ export default function CaloriesScreen() {
                   onSubmitEditing={searchFood}
                   returnKeyType="search"
                 />
-                {loading && <ActivityIndicator size="small" color={colors.primary} />}
+                 {loading && <CustomLoader fullScreen />}
                 {query.length > 0 && (
                   <TouchableOpacity onPress={() => {
                     setQuery("");

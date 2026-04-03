@@ -1,5 +1,5 @@
 // app/(tabs)/exercise-library.tsx
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -26,17 +26,29 @@ import { useTheme } from '../../context/themecontext';
 import { fetchExercisesByMuscle } from '../services/exerciseApi';
 
 const { width } = Dimensions.get('window');
+const CACHE_KEY = 'EXERCISE_CACHE_BY_MUSCLE';
 
+const getCache = async () => {
+  const cache = await AsyncStorage.getItem(CACHE_KEY);
+  return cache ? JSON.parse(cache) : {};
+};
+
+const saveToCache = async (muscle: string, data: any[]) => {
+  const cache = await getCache();
+  cache[muscle] = data;
+
+  await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+};
 // Muscle Groups with PNG images
 const MUSCLE_GROUPS = [
-  {
-    id: 'all',
-    label: 'All',
-    icon: 'grid',
-    image: null,
-    gradient: ['#f7e1a0', '#ff8e08'] as const,
-    count: 0,
-  },
+  // {
+  //   id: 'all',
+  //   label: 'All',
+  //   icon: 'grid',
+  //   image: null,
+  //   gradient: ['#f7e1a0', '#ff8e08'] as const,
+  //   count: 0,
+  // },
   {
     id: 'chest',
     label: 'Chest',
@@ -116,7 +128,7 @@ const getMuscleGradient = (muscle: string): readonly [string, string] => {
     return ['#667EEA', '#764BA2'] as const;
   if (muscleGroup.includes('ab') || muscleGroup.includes('core'))
     return ['#F093FB', '#F5576C'] as const;
-  return ['#FF6B4A', '#FF8F6B'] as const;
+  return ['#F093FB', '#F5576C'] as const;
 };
 
 
@@ -134,7 +146,7 @@ export default function ExerciseLibraryScreen() {
 
   const [selectedMuscle, setSelectedMuscle] = useState('all');
   const [exercises, setExercises] = useState<Exercise[]>([]);
-  const [filteredExercises, setFilteredExercises] = useState<Exercise[]>([]);
+  // const [filteredExercises, setFilteredExercises] = useState<Exercise[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -148,13 +160,16 @@ export default function ExerciseLibraryScreen() {
   // Refs for scrolling
   const muscleScrollRef = useRef<ScrollView>(null);
   const musclePositions = useRef<{ [key: string]: number }>({});
-
+  const loadingTimeoutRef = useRef<NodeJS.Timeout[]>([]);
+  const currentMuscleRef = useRef<string>('');
 
   // Load data on mount
   useEffect(() => {
-    loadCachedDataFirst();
+    handleMusclePress('chest'); // default
   }, []);
-
+  useEffect(() => {
+    console.log("🎯 RENDER DATA:", exercises.length);
+  }, [exercises]);
   // Refresh data when screen comes into focus
   useFocusEffect(
     useCallback(() => {
@@ -163,9 +178,7 @@ export default function ExerciseLibraryScreen() {
     }, [exercises])
   );
 
-  useEffect(() => {
-    filterExercises();
-  }, [selectedMuscle, searchQuery, exercises]);
+
 
   // Scroll to selected muscle when it changes
   useEffect(() => {
@@ -201,98 +214,98 @@ export default function ExerciseLibraryScreen() {
 
 
   // Load cached data immediately
-  const loadCachedDataFirst = async () => {
-    try {
-      const cached = await AsyncStorage.getItem('ALL_EXERCISES_CACHE');
-      if (cached) {
-        const data = JSON.parse(cached);
-        // Only use cache if it has exercises AND is not empty
-        if (data.exercises && data.exercises.length > 0) {
-          console.log('✅ Using cached data with', data.exercises.length, 'exercises');
-          setExercises(data.exercises);
-          setFilteredExercises(data.exercises);
-          updateMuscleCounts(data.exercises);
-          selectFeaturedExercise(data.exercises);
-          setInitialLoading(false);
-          setLoading(false);
+  // const loadCachedDataFirst = async () => {
+  //   try {
+  //     const cached = await AsyncStorage.getItem('ALL_EXERCISES_CACHE');
+  //     if (cached) {
+  //       const data = JSON.parse(cached);
+  //       // Only use cache if it has exercises AND is not empty
+  //       if (data.exercises && data.exercises.length > 0) {
+  //         console.log('✅ Using cached data with', data.exercises.length, 'exercises');
+  //         setExercises(data.exercises);
+  //         // setFilteredExercises(data.exercises);
+  //         updateMuscleCounts(data.exercises);
+  //         selectFeaturedExercise(data.exercises);
+  //         setInitialLoading(false);
+  //         setLoading(false);
 
-          // Check if cache is older than 7 days, refresh in background
-          const age = Date.now() - data.timestamp;
-          if (age > 7 * 24 * 60 * 60 * 1000) {
-            console.log('📱 Cache older than 7 days, refreshing in background');
-            loadAllExercisesInBackground(true);
-          }
-          return;
-        } else {
-          console.log('⚠️ Cache is empty, fetching fresh data');
-          await AsyncStorage.removeItem('ALL_EXERCISES_CACHE');
-        }
-      }
-      // No cache or empty cache, fetch fresh data
-      await loadAllExercisesInBackground();
-    } catch (error) {
-      console.error('Cache error:', error);
-      await loadAllExercisesInBackground();
-    } finally {
-      setInitialLoading(false);
-    }
-  };
+  //         // Check if cache is older than 7 days, refresh in background
+  //         const age = Date.now() - data.timestamp;
+  //         if (age > 7 * 24 * 60 * 60 * 1000) {
+  //           console.log('📱 Cache older than 7 days, refreshing in background');
+  //           loadAllExercisesInBackground(true);
+  //         }
+  //         return;
+  //       } else {
+  //         console.log('⚠️ Cache is empty, fetching fresh data');
+  //         await AsyncStorage.removeItem('ALL_EXERCISES_CACHE');
+  //       }
+  //     }
+  //     // No cache or empty cache, fetch fresh data
+  //     await loadAllExercisesInBackground();
+  //   } catch (error) {
+  //     console.error('Cache error:', error);
+  //     await loadAllExercisesInBackground();
+  //   } finally {
+  //     setInitialLoading(false);
+  //   }
+  // };
 
   // Load all exercises in background
-  const loadAllExercisesInBackground = async (silent: boolean = false) => {
-    if (!silent) {
-      setLoading(true);
-    }
+  // const loadAllExercisesInBackground = async (silent: boolean = false) => {
+  //   if (!silent) {
+  //     setLoading(true);
+  //   }
 
-    try {
-      const muscleStrings = ['chest', 'back', 'legs', 'shoulders', 'arms', 'abs'];
-      const allExercises: Exercise[] = [];
+  //   try {
+  //     const muscleStrings = ['chest', 'back', 'legs', 'shoulders', 'arms', 'abs'];
+  //     const allExercises: Exercise[] = [];
 
-      // Load each muscle group sequentially
-      for (const muscle of muscleStrings) {
-        try {
-          setLoadingMore(true);
-          const muscleExercises = await fetchExercisesByMuscle(muscle);
+  //     // Load each muscle group sequentially
+  //     for (const muscle of muscleStrings) {
+  //       try {
+  //         setLoadingMore(true);
+  //         const muscleExercises = await fetchExercisesByMuscle(muscle);
 
-          if (muscleExercises && muscleExercises.length > 0) {
-            allExercises.push(...muscleExercises);
+  //         if (muscleExercises && muscleExercises.length > 0) {
+  //           allExercises.push(...muscleExercises);
 
-            // Update UI incrementally for better UX
-            setExercises(prev => {
-              const combined = [...prev, ...muscleExercises];
-              const unique = Array.from(
-                new Map(combined.map(ex => [ex.name.toLowerCase(), ex])).values()
-              );
-              return unique;
-            });
-          }
-        } catch (error) {
-          console.error(`Failed to fetch ${muscle}:`, error);
-        } finally {
-          setLoadingMore(false);
-        }
-      }
+  //           // Update UI incrementally for better UX
+  //           setExercises(prev => {
+  //             const combined = [...prev, ...muscleExercises];
+  //             const unique = Array.from(
+  //               new Map(combined.map(ex => [ex.name.toLowerCase(), ex])).values()
+  //             );
+  //             return unique;
+  //           });
+  //         }
+  //       } catch (error) {
+  //         console.error(`Failed to fetch ${muscle}:`, error);
+  //       } finally {
+  //         setLoadingMore(false);
+  //       }
+  //     }
 
-      // Remove duplicates and save to cache
-      const uniqueExercises = Array.from(
-        new Map(allExercises.map(ex => [ex.name.toLowerCase(), ex])).values()
-      );
+  //     // Remove duplicates and save to cache
+  //     const uniqueExercises = Array.from(
+  //       new Map(allExercises.map(ex => [ex.name.toLowerCase(), ex])).values()
+  //     );
 
-      if (uniqueExercises.length > 0) {
-        await AsyncStorage.setItem('ALL_EXERCISES_CACHE', JSON.stringify({
-          exercises: uniqueExercises,
-          timestamp: Date.now(),
-        }));
-        console.log('✅ Cached', uniqueExercises.length, 'exercises');
-      }
-    } catch (error) {
-      console.error('Background fetch error:', error);
-    } finally {
-      setLoading(false);
-      setIsRefreshing(false);
-      setLoadingMore(false);
-    }
-  };
+  //     if (uniqueExercises.length > 0) {
+  //       await AsyncStorage.setItem('ALL_EXERCISES_CACHE', JSON.stringify({
+  //         exercises: uniqueExercises,
+  //         timestamp: Date.now(),
+  //       }));
+  //       console.log('✅ Cached', uniqueExercises.length, 'exercises');
+  //     }
+  //   } catch (error) {
+  //     console.error('Background fetch error:', error);
+  //   } finally {
+  //     setLoading(false);
+  //     setIsRefreshing(false);
+  //     setLoadingMore(false);
+  //   }
+  // };
 
   const updateMuscleCounts = (allExercises: Exercise[]) => {
     const updated = muscleGroups.map(group => {
@@ -308,34 +321,42 @@ export default function ExerciseLibraryScreen() {
     });
     setMuscleGroups(updated);
   };
+  const exerciseMap = useMemo(() => {
+    const map: any = {};
 
-  const filterExercises = () => {
-    let filtered = exercises;
+    exercises.forEach(ex => {
+      const key = ex.muscle?.toLowerCase();
 
-    if (selectedMuscle !== 'all') {
-      const muscleGroup = muscleGroups.find(m => m.id === selectedMuscle);
-      if (muscleGroup?.filterMuscles) {
-        filtered = filtered.filter(ex =>
-          ex && ex.muscle && muscleGroup.filterMuscles!.some(muscle =>
-            (ex.muscle || '').toLowerCase().includes(muscle.toLowerCase())
-          )
-        );
-      }
-    }
+      if (!map[key]) map[key] = [];
+      map[key].push(ex);
+    });
 
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(ex =>
-        ex && (
-          (ex.name && ex.name.toLowerCase().includes(query)) ||
-          (ex.muscle && (ex.muscle || '').toLowerCase().includes(query)) ||
-          (ex.equipment && ex.equipment.toLowerCase().includes(query))
-        )
-      );
-    }
+    return map;
+  }, [exercises]);
 
-    setFilteredExercises(filtered);
-  };
+  // const filteredExercises = useMemo(() => {
+  //   if (selectedMuscle === 'all') return exercises;
+
+  //   const muscleGroup = muscleGroups.find(m => m.id === selectedMuscle);
+
+  //   if (!muscleGroup?.filterMuscles) return exercises;
+
+  //   let result: Exercise[] = [];
+
+  //   muscleGroup.filterMuscles.forEach(muscle => {
+  //     const data = exerciseMap[muscle];
+  //     if (data) result.push(...data);
+  //   });
+
+  //   if (searchQuery.trim()) {
+  //     const query = searchQuery.toLowerCase();
+  //     result = result.filter(ex =>
+  //       ex.name.toLowerCase().includes(query)
+  //     );
+  //   }
+
+  //   return result;
+  // }, [selectedMuscle, searchQuery, exerciseMap]);
 
   const loadRecentWorkouts = async () => {
     try {
@@ -427,9 +448,50 @@ export default function ExerciseLibraryScreen() {
     });
   };
 
-  const handleMusclePress = (muscleId: string) => {
+  const handleMusclePress = useCallback(async (muscleId: string) => {
+    // Update current muscle ref
+    currentMuscleRef.current = muscleId;
     setSelectedMuscle(muscleId);
-  };
+
+    // Clear all pending timeouts from previous muscle
+    loadingTimeoutRef.current.forEach(timeout => clearTimeout(timeout));
+    loadingTimeoutRef.current = [];
+
+    // Clear exercises immediately for smooth transition
+    setExercises([]);
+
+    try {
+      const cache = await getCache();
+      const cachedData = cache[muscleId];
+      const dataToLoad = cachedData || await fetchExercisesByMuscle(muscleId);
+
+      if (!cachedData) {
+        await saveToCache(muscleId, dataToLoad);
+      }
+
+      // Check if this is still the current muscle (user didn't switch)
+      if (currentMuscleRef.current !== muscleId) {
+        return; // Cancel loading if user switched to another muscle
+      }
+
+      // Load exercises one by one
+      for (let i = 0; i < dataToLoad.length; i++) {
+        const timeout = setTimeout(() => {
+          // Double-check before adding each exercise
+          if (currentMuscleRef.current === muscleId) {
+            setExercises(prev => [...prev, dataToLoad[i]]);
+          }
+        }, i * 30);
+
+        loadingTimeoutRef.current.push(timeout);
+      }
+
+      setLoading(false);
+    } catch (error) {
+      console.error('Error:', error);
+      setLoading(false);
+    }
+  }, []);
 
   const renderMuscleCard = (muscle: typeof MUSCLE_GROUPS[0], index: number) => (
     <TouchableOpacity
@@ -469,94 +531,130 @@ export default function ExerciseLibraryScreen() {
     </TouchableOpacity>
   );
 
-  const renderFeaturedCard = () => {
-    if (!featuredExercise) return null;
+  // const renderFeaturedCard = () => {
+  //   if (!featuredExercise) return null;
+  //   return (
+  //     <TouchableOpacity
+  //       style={styles.featuredCard}
+  //       onPress={() => navigateToDetail(featuredExercise)}
+  //       activeOpacity={0.9}
+  //     >
+  //       <LinearGradient
+  //         colors={getMuscleGradient(featuredExercise.muscle)}
+  //         start={{ x: 0, y: 0 }}
+  //         end={{ x: 1, y: 1 }}
+  //         style={styles.featuredGradient}
+  //       >
+  //         <View style={styles.featuredOverlay} />
+  //         <View style={styles.featuredContent}>
+  //           <View style={styles.featuredBadge}>
+  //             <Text style={styles.featuredBadgeText}>YOUR TOP EXERCISE</Text>
+  //           </View>
+  //           <Text style={styles.featuredTitle}>{featuredExercise.name}</Text>
+  //           <View style={styles.featuredMeta}>
+  //             <View style={styles.featuredTag}>
+  //               <Text style={styles.featuredTagText}>{featuredExercise.muscle}</Text>
+  //             </View>
+  //             <View style={styles.featuredTag}>
+  //               <Text style={styles.featuredTagText}>{featuredExercise.difficulty}</Text>
+  //             </View>
+  //           </View>
+  //         </View>
+  //         <TouchableOpacity style={styles.featuredPlayButton}>
+  //           <Ionicons name="play" size={24} color="#FF6B4A" />
+  //         </TouchableOpacity>
+  //       </LinearGradient>
+  //     </TouchableOpacity>
+  //   );
+  // };
+
+  const renderGridItem = ({ item }: { item: Exercise }) => {
     return (
       <TouchableOpacity
-        style={styles.featuredCard}
-        onPress={() => navigateToDetail(featuredExercise)}
-        activeOpacity={0.9}
+        activeOpacity={1}
+        onPress={() => navigateToDetail(item)}
+        style={{
+          width: (width - 60) / 2,
+          marginBottom: 18,
+        }}
       >
-        <LinearGradient
-          colors={getMuscleGradient(featuredExercise.muscle)}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.featuredGradient}
+        <Animated.View
+          style={{
+            borderRadius: 20,
+            backgroundColor: colors.card,
+            overflow: 'hidden',
+
+            // 🔥 soft shadow (premium)
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 8 },
+            shadowOpacity: 0.06,
+            shadowRadius: 16,
+            elevation: 3,
+          }}
         >
-          <View style={styles.featuredOverlay} />
-          <View style={styles.featuredContent}>
-            <View style={styles.featuredBadge}>
-              <Text style={styles.featuredBadgeText}>YOUR TOP EXERCISE</Text>
-            </View>
-            <Text style={styles.featuredTitle}>{featuredExercise.name}</Text>
-            <View style={styles.featuredMeta}>
-              <View style={styles.featuredTag}>
-                <Text style={styles.featuredTagText}>{featuredExercise.muscle}</Text>
-              </View>
-              <View style={styles.featuredTag}>
-                <Text style={styles.featuredTagText}>{featuredExercise.difficulty}</Text>
-              </View>
-            </View>
+
+          {/* 🎯 TOP VISUAL */}
+          <LinearGradient
+            colors={getMuscleGradient(item.muscle)}
+            style={{
+              height: 110,
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
+          >
+            <Ionicons name="fitness" size={34} color="#fff" />
+          </LinearGradient>
+
+          {/* 🧠 CONTENT */}
+          <View style={{ padding: 14 }}>
+            <Text
+              numberOfLines={2}
+              style={{
+                fontSize: 14,
+                fontWeight: '600',
+                color: colors.text,
+                lineHeight: 18,
+              }}
+            >
+              {item.name}
+            </Text>
+
+            <Text
+              style={{
+                marginTop: 6,
+                fontSize: 11,
+                color: colors.textSecondary,
+                textTransform: 'capitalize',
+              }}
+            >
+              {item.muscle}
+            </Text>
           </View>
-          <TouchableOpacity style={styles.featuredPlayButton}>
-            <Ionicons name="play" size={24} color="#FF6B4A" />
-          </TouchableOpacity>
-        </LinearGradient>
+
+          {/* ⚡ MINIMAL DIFFICULTY DOT */}
+          <View
+            style={{
+              position: 'absolute',
+              bottom: 10,
+              right: 10,
+              width: 10,
+              height: 10,
+              borderRadius: 5,
+              backgroundColor:
+                DIFFICULTY_COLORS[
+                item.difficulty as keyof typeof DIFFICULTY_COLORS
+                ] || colors.textMuted,
+            }}
+          />
+
+        </Animated.View>
       </TouchableOpacity>
     );
   };
 
-  const renderGridItem = ({ item, index }: { item: Exercise; index: number }) => (
-    <Animated.View
-      entering={FadeIn.delay(index * 50)}
-      style={{
-        width: (width - 40 - 16) / 2,
-        marginBottom: 16,
-        marginRight: index % 2 === 0 ? 8 : 0,
-        marginLeft: index % 2 === 1 ? 8 : 0,
-      }}
-    >
-      <TouchableOpacity
-        style={[styles.gridCard, { backgroundColor: colors.card }]}
-        onPress={() => navigateToDetail(item)}
-        activeOpacity={0.8}
-      >
-        <LinearGradient
-          colors={getMuscleGradient(item.muscle)}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.gridImageContainer}
-        >
-          <Ionicons name="fitness" size={40} color="#FFFFFF" />
-        </LinearGradient>
-
-        <View style={styles.gridContent}>
-          <Text style={[styles.gridTitle, { color: colors.text }]} numberOfLines={2}>
-            {item.name}
-          </Text>
-          <View style={styles.gridMeta}>
-            <Text style={[styles.gridMetaText, { color: colors.textSecondary }]}>
-              {item.muscle}
-            </Text>
-            <View style={[styles.gridDot, { backgroundColor: colors.border }]} />
-            <Text style={[
-              styles.gridMetaText,
-              { color: DIFFICULTY_COLORS[item.difficulty as keyof typeof DIFFICULTY_COLORS] || colors.textMuted }
-            ]}>
-              {item.difficulty}
-            </Text>
-          </View>
-        </View>
-        <TouchableOpacity style={[styles.gridAddButton, { backgroundColor: colors.card }]}>
-          <Ionicons name="add" size={20} color={colors.primary} />
-        </TouchableOpacity>
-      </TouchableOpacity>
-    </Animated.View>
-  );
-
   const renderListItem = ({ item, index }: { item: Exercise; index: number }) => (
     <Animated.View
-      entering={FadeIn.delay(index * 50)}
+      entering={FadeIn.duration(200)}
       style={[styles.listCard, { backgroundColor: colors.card }]}
     >
       <TouchableOpacity
@@ -597,14 +695,14 @@ export default function ExerciseLibraryScreen() {
     </Animated.View>
   );
 
-  if (initialLoading || loading) {
-    return (
-      <CustomLoader
-        fullScreen={true}
-        
-      />
-    );
-  }
+  // if (initialLoading || loading) {
+  //   return (
+  //     <CustomLoader
+  //       fullScreen={true}
+
+  //     />
+  //   );
+  // }
 
 
 
@@ -672,75 +770,119 @@ export default function ExerciseLibraryScreen() {
 
         {/* MAIN CONTENT */}
         <FlatList
-          data={[]}
+          data={exercises}
+          renderItem={viewMode === 'grid' ? renderGridItem : renderListItem}
+          keyExtractor={(item, index) => item.name + index}
+          numColumns={viewMode === 'grid' ? 2 : 1}
+          key={viewMode}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            paddingBottom: 40,
+          }}
+          columnWrapperStyle={viewMode === 'grid' ? {
+            justifyContent: 'space-between',
+            paddingHorizontal: 20,
+          } : undefined}
+
           ListHeaderComponent={
             <>
               {/* MUSCLE CAROUSEL */}
               <View style={styles.muscleSection}>
                 <View style={styles.sectionHeader}>
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>Muscle Groups</Text>
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                    Muscle Groups
+                  </Text>
                   <TouchableOpacity>
-                    <Text style={[styles.sectionLink, { color: colors.primary }]}>View Atlas</Text>
+                    <Text style={[styles.sectionLink, { color: colors.primary }]}>
+                      View Atlas
+                    </Text>
                   </TouchableOpacity>
                 </View>
+
                 <ScrollView
                   ref={muscleScrollRef}
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.muscleCarousel}
                 >
-                  {muscleGroups.map((muscle, index) => renderMuscleCard(muscle, index))}
+                  {muscleGroups.map((muscle, index) =>
+                    renderMuscleCard(muscle, index)
+                  )}
                 </ScrollView>
               </View>
 
               {/* VIEW TOGGLE */}
               <View style={styles.viewToggleSection}>
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                  {selectedMuscle === 'all' ? 'Featured Exercises' : `${muscleGroups.find(m => m.id === selectedMuscle)?.label} Exercises`}
+                  {`${muscleGroups.find(m => m.id === selectedMuscle)?.label} Exercises`}
                 </Text>
+
                 <View style={[styles.viewToggle, { backgroundColor: colors.border }]}>
                   <TouchableOpacity
-                    style={[styles.toggleButton, viewMode === 'grid' && styles.toggleButtonActive]}
+                    style={[
+                      styles.toggleButton,
+                      viewMode === 'grid' && styles.toggleButtonActive
+                    ]}
                     onPress={() => setViewMode('grid')}
                   >
-                    <Ionicons name="grid" size={16} color={viewMode === 'grid' ? colors.text : colors.textMuted} />
-                    <Text style={[
-                      styles.toggleText,
-                      { color: viewMode === 'grid' ? colors.text : colors.textMuted }
-                    ]}>
+                    <Ionicons
+                      name="grid"
+                      size={16}
+                      color={viewMode === 'grid' ? colors.text : colors.textMuted}
+                    />
+                    <Text
+                      style={{
+                        color: viewMode === 'grid' ? colors.text : colors.textMuted
+                      }}
+                    >
                       GRID
                     </Text>
                   </TouchableOpacity>
+
                   <TouchableOpacity
-                    style={[styles.toggleButton, viewMode === 'list' && styles.toggleButtonActive]}
+                    style={[
+                      styles.toggleButton,
+                      viewMode === 'list' && styles.toggleButtonActive
+                    ]}
                     onPress={() => setViewMode('list')}
                   >
-                    <Ionicons name="list" size={16} color={viewMode === 'list' ? colors.text : colors.textMuted} />
-                    <Text style={[
-                      styles.toggleText,
-                      { color: viewMode === 'list' ? colors.text : colors.textMuted }
-                    ]}>
+                    <Ionicons
+                      name="list"
+                      size={16}
+                      color={viewMode === 'list' ? colors.text : colors.textMuted}
+                    />
+                    <Text
+                      style={{
+                        color: viewMode === 'list' ? colors.text : colors.textMuted
+                      }}
+                    >
                       LIST
                     </Text>
                   </TouchableOpacity>
                 </View>
               </View>
 
-              {/* FEATURED CARD */}
-              {selectedMuscle === 'all' && renderFeaturedCard()}
+              {/* FEATURED */}
+              {/* {renderFeaturedCard()} */}
             </>
           }
+
           ListFooterComponent={
             <>
-              {/* RECOMMENDED SECTION */}
-              {recentExercises.length > 0 && selectedMuscle === 'all' && (
+              {/* RECENT */}
+              {recentExercises.length > 0 && (
                 <View style={styles.recommendedSection}>
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>Recently Used</Text>
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                    Recently Used
+                  </Text>
+
                   {recentExercises.map((exercise, index) => (
-                    <Animated.View
+                    <View
                       key={index}
-                      entering={FadeIn.delay(index * 100)}
-                      style={[styles.recommendedCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                      style={[
+                        styles.recommendedCard,
+                        { backgroundColor: colors.card, borderColor: colors.border }
+                      ]}
                     >
                       <TouchableOpacity
                         style={{ flexDirection: 'row', flex: 1 }}
@@ -748,78 +890,61 @@ export default function ExerciseLibraryScreen() {
                       >
                         <LinearGradient
                           colors={getMuscleGradient(exercise.muscle)}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
                           style={styles.recommendedImage}
                         >
                           <Ionicons name="fitness" size={24} color="#FFFFFF" />
                         </LinearGradient>
+
                         <View style={styles.recommendedContent}>
-                          <Text style={[styles.recommendedTitle, { color: colors.text }]} numberOfLines={1}>
+                          <Text
+                            style={[styles.recommendedTitle, { color: colors.text }]}
+                            numberOfLines={1}
+                          >
                             {exercise.name}
                           </Text>
-                          <Text style={[styles.recommendedSubtitle, { color: colors.textSecondary }]}>
+                          <Text
+                            style={[
+                              styles.recommendedSubtitle,
+                              { color: colors.textSecondary }
+                            ]}
+                          >
                             {exercise.muscle} • Recently used
                           </Text>
                         </View>
                       </TouchableOpacity>
+
                       <TouchableOpacity style={styles.recommendedAddButton}>
                         <Ionicons name="add" size={20} color={colors.primary} />
                       </TouchableOpacity>
-                    </Animated.View>
+                    </View>
                   ))}
                 </View>
               )}
+
               <View style={{ height: 40 }} />
             </>
           }
-          renderItem={null}
-          keyExtractor={() => 'header'}
+
           ListEmptyComponent={
-            viewMode === 'grid' ? (
-              <FlatList
-                data={filteredExercises}
-                renderItem={renderGridItem}
-                keyExtractor={(item, index) => item.name + index}
-                numColumns={2}
-                columnWrapperStyle={{ justifyContent: 'space-between', paddingHorizontal: 20 }}
-                contentContainerStyle={styles.exercisesContainer}
-                showsVerticalScrollIndicator={false}
-                key="grid"
-                ListEmptyComponent={
-                  !loading && filteredExercises.length === 0 ? (
-                    <View style={styles.emptyContainer}>
-                      <Ionicons name="barbell" size={64} color={colors.textMuted} />
-                      <Text style={[styles.emptyTitle, { color: colors.text }]}>No exercises found</Text>
-                      <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-                        Try adjusting your search
-                      </Text>
-                    </View>
-                  ) : null
-                }
-              />
-            ) : (
-              <FlatList
-                data={filteredExercises}
-                renderItem={renderListItem}
-                keyExtractor={(item, index) => item.name + index}
-                contentContainerStyle={[styles.exercisesContainer, { paddingHorizontal: 20 }]}
-                showsVerticalScrollIndicator={false}
-                key="list"
-                ListEmptyComponent={
-                  !loading && filteredExercises.length === 0 ? (
-                    <View style={styles.emptyContainer}>
-                      <Ionicons name="barbell" size={64} color={colors.textMuted} />
-                      <Text style={[styles.emptyTitle, { color: colors.text }]}>No exercises found</Text>
-                      <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-                        Try adjusting your search
-                      </Text>
-                    </View>
-                  ) : null
-                }
-              />
-            )
+            !loading ? (
+              <View style={styles.emptyContainer}>
+                <Ionicons name="barbell" size={64} color={colors.textMuted} />
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                  No exercises found
+                </Text>
+                <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+                  Try adjusting your search
+                </Text>
+              </View>
+            ) : null
           }
+
+          // 🚀 PERFORMANCE BOOST (VERY IMPORTANT)
+          removeClippedSubviews
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          updateCellsBatchingPeriod={50}
         />
       </SafeAreaView>
     </View>

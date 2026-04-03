@@ -348,13 +348,13 @@ export default function StatsScreen() {
         );
     };
 
-    if (loading) {
-        return (
-            <CustomLoader
-                fullScreen={true}
-            />
-        );
-    }
+    // if (loading) {
+    //     return (
+    //         <CustomLoader
+    //             fullScreen={true}
+    //         />
+    //     );
+    // }
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -608,6 +608,7 @@ export default function StatsScreen() {
                     <Text style={[styles.navText, { color: colors.textSecondary }]}>Profile</Text>
                 </TouchableOpacity>
             </BlurView>
+             {loading && <CustomLoader fullScreen />}
         </View>
     );
 }

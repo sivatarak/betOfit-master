@@ -22,7 +22,7 @@ import { BlurView } from "expo-blur";
 import auth from '@react-native-firebase/auth';
 import { useTheme } from "../../context/themecontext";
 import { CustomLoader } from '../../components/CustomLoader';
-
+import AsyncStorage from '@react-native-async-storage/async-storage';
 const { width } = Dimensions.get("window");
 
 // Widget Card Component
@@ -228,18 +228,18 @@ export default function Home() {
 
   const widgetData = useMemo(() => {
     const widgets = [];
-    
+
     // Add workout widget
     widgets.push({ type: 'workout', data: dashboard });
-    
+
     // Add suggestion widget if exists
     if (smartSuggestion) {
       widgets.push({ type: 'suggestion', data: smartSuggestion });
     }
-    
+
     // Add tip widget
     widgets.push({ type: 'tip', data: null });
-    
+
     return widgets;
   }, [dashboard, smartSuggestion]);
 
@@ -386,41 +386,46 @@ export default function Home() {
       const userId = currentUser?.uid;
 
       if (!userId) {
-        console.log('❌ No user logged in');
         setLoading(false);
         return;
       }
 
-      console.log('🔄 Refreshing dashboard data...');
+      // ✅ Load cached data FIRST
+      const cacheKey = `DASHBOARD_CACHE_${userId}`;
+      const cachedData = await AsyncStorage.getItem(cacheKey);
 
+      if (cachedData) {
+        const parsed = JSON.parse(cachedData);
+        setDashboard(parsed);
+        setSmartSuggestion(generateSmartSuggestion(parsed));
+        setLoading(false); // UI shows immediately!
+      }
+
+      // Get user info
       let photoURL = currentUser?.photoURL;
       if (photoURL) {
-        const cleanUrl = photoURL.split('=')[0];
-        setUserPhoto(cleanUrl);
-      } else {
-        setUserPhoto(null);
+        setUserPhoto(photoURL.split('=')[0]);
       }
-      
       setUserName(currentUser?.displayName || "User");
+      setGreeting(getGreeting());
 
+      // ✅ Fetch fresh data in background
       const data = await getDashboard(userId);
 
       if (data) {
         setDashboard(data);
-        const suggestion = generateSmartSuggestion(data);
-        setSmartSuggestion(suggestion);
+        setSmartSuggestion(generateSmartSuggestion(data));
 
-        console.log('✅ Dashboard loaded');
+        // ✅ Update cache
+        await AsyncStorage.setItem(cacheKey, JSON.stringify(data));
       }
 
-      setGreeting(getGreeting());
     } catch (error) {
-      console.log("Error refreshing data:", error);
+      console.log("Error:", error);
     } finally {
       setLoading(false);
     }
   }, [generateSmartSuggestion]);
-
   useEffect(() => {
     refreshData();
   }, [refreshData]);
@@ -431,9 +436,9 @@ export default function Home() {
     }, [refreshData])
   );
 
-   if (loading) {
-    return <CustomLoader  fullScreen={true} />;
-  }
+  // if (loading) {
+  //   return <CustomLoader fullScreen={true} />;
+  // }
 
   const calories = dashboard?.today?.food.calories || 0;
   const caloriesGoal = dashboard?.user?.daily_calorie_goal || 2000;
@@ -505,7 +510,7 @@ export default function Home() {
               )}
               keyExtractor={(item, index) => `widget-${index}`}
             />
-            
+
             {/* Dot Indicators */}
             <View style={styles.dotContainer}>
               {widgetData.map((_, index) => (
@@ -657,6 +662,7 @@ export default function Home() {
           <Text style={[styles.navText, { color: colors.textSecondary }]}>Profile</Text>
         </TouchableOpacity>
       </BlurView>
+       {loading && <CustomLoader fullScreen />}
     </View>
   );
 }
@@ -929,7 +935,7 @@ const makeStyles = (colors: any) =>
     },
     // Bottom Navigation
     bottomNav: {
-      position: 'absolute',
+      position: 'relative',
       bottom: 0,
       left: 0,
       right: 0,
@@ -941,7 +947,7 @@ const makeStyles = (colors: any) =>
       paddingBottom: Platform.OS === 'ios' ? 34 : 12,
       borderTopWidth: 1,
       zIndex: 1000,
-      elevation: 10,
+      elevation: 0
     },
     navItem: {
       alignItems: 'center',

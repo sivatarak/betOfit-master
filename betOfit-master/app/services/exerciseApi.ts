@@ -97,11 +97,11 @@ export const fetchExercisesByMuscle = async (muscle: string): Promise<Exercise[]
   try {
 
     const res = await fetch(`${BACKEND_BASE_URL}/api/exercises?bodyPart=${encodeURIComponent(bodyPart)}`);
-
+    console.log(`API CALL: /api/exercises?bodyPart=${encodeURIComponent(bodyPart)} - Status: ${res.status}`);
     if (!res.ok) throw new Error();
 
     const raw = await res.json();
-
+    console.log("Raw exercise data:", raw);
     return raw.map((ex: any) => ({
       id: ex.id,
       name: ex.name,

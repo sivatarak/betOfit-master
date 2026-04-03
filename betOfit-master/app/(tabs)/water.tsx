@@ -212,9 +212,9 @@ export default function WaterScreen() {
     );
   };
 
-  if (loading) {
-    return <CustomLoader fullScreen={true} />;
-  }
+  // if (loading) {
+  //   return <CustomLoader fullScreen={true} />;
+  // }
 
   const statusMessage =
     percentage < 30
@@ -541,6 +541,7 @@ export default function WaterScreen() {
           <Text style={[styles.navText, { color: colors.textSecondary }]}>Profile</Text>
         </TouchableOpacity>
       </BlurView>
+       {loading && <CustomLoader fullScreen />}
     </View>
   );
 }
