@@ -25,11 +25,17 @@ import Animated, {
   useSharedValue,
 } from 'react-native-reanimated';
 import { router, useFocusEffect } from 'expo-router';
+// KEEP this
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import { STORAGE_KEYS } from "../../constants/storageKeys";
 import { useTheme } from '../../context/themecontext';
 import { CustomLoader } from '../../components/CustomLoader';
+import auth from '@react-native-firebase/auth';
+// import { getProfile } from '../services/profileApi';
+import { useProfile } from '../../context/profileContext';
+import { useToday } from '../../context/todayContext';
+
 const { width } = Dimensions.get('window');
 
 interface TodayStats {
@@ -76,29 +82,40 @@ const formatNumber = (n: number): string => {
 export default function WorkoutDashboard() {
   const { colors, theme } = useTheme();
   const styles = makeStyles(colors);
+  const { workoutDays, tdee } = useProfile();
+  const {
+    todayBurned,
+    activeMinutes,
+    workoutCount,
+    refreshToday,
+    updateAfterWorkout,
+  } = useToday();
 
-  const [userName, setUserName] = useState('Alex Rivers');
-  const [userAvatar, setUserAvatar] = useState<string | null>(null);
-  const [todayStats, setTodayStats] = useState<TodayStats>({
-    caloriesBurned: 0,
-    activeMinutes: 0,
-    exercisesCompleted: 0,
-    totalVolume: 0,
-    streak: 0,
-  });
-  const [todayGoalPercentage, setTodayGoalPercentage] = useState(0);
-  const [recentWorkouts, setRecentWorkouts] = useState<WorkoutLog[]>([]);
+  // const [todayStats, setTodayStats] = useState<TodayStats>({
+  //   caloriesBurned: 0,
+  //   activeMinutes: 0,
+  //   exercisesCompleted: 0,
+  //   totalVolume: 0,
+  //   streak: 0,
+  // });
+  // const [todayGoalPercentage, setTodayGoalPercentage] = useState(0);
+  // const [recentWorkouts, setRecentWorkouts] = useState<WorkoutLog[]>([]);
   const [weeklyProgress, setWeeklyProgress] = useState<WeeklyProgress>({
-    move: { current: 0, goal: 1000, unit: 'kcal' },
-    exercise: { current: 0, goal: 150, unit: 'min' },
-    volume: { current: 0, goal: 5000, unit: 'kg' },
+    move: { current: 0, goal: 500, unit: 'kcal' },  // Default, will update from profile
+    exercise: { current: 0, goal: 150, unit: 'min' }, // Default, will update from profile
+    volume: { current: 0, goal: 5000, unit: 'kg' },   // Default, will update from profile
   });
   const [badges, setBadges] = useState<Badge[]>([]);
   const [loading, setLoading] = useState(true);
   const [motivationQuote, setMotivationQuote] = useState('');
+  // const [dailyCalorieGoal, setDailyCalorieGoal] = useState(500); // Default calorie goal
+  const [streak, setStreak] = useState(0);
+  const [totalVolume, setTotalVolume] = useState(0);
+  const [recentWorkouts, setRecentWorkouts] = useState<WorkoutLog[]>([]);
 
   const pulseAnim = useSharedValue(1);
-
+  const workoutBurnGoal = Math.round(tdee * 0.15); // 443 kcal for you
+  console.log("the tdee should be:", tdee);
   const quotes = [
     "The only bad workout is the one that didn't happen.",
     "Your body can stand almost anything. It's your mind you have to convince.",
@@ -107,13 +124,28 @@ export default function WorkoutDashboard() {
     "Push yourself because no one else is going to do it for you.",
     "Strive for progress, not perfection.",
   ];
+  const todayGoalPercentage = Math.min(
+    Math.round((todayBurned / workoutBurnGoal) * 100),
+    100
+  );
+  // useEffect(() => {
+  //   // Use dailyCalorieGoal from context instead of hardcoded 500
+  //   const goalPct = Math.min(Math.round((todayBurned / workoutBurnGoal) * 100), 100);
+  //   setTodayGoalPercentage(goalPct);
+  // }, [todayBurned, workoutBurnGoal]);
 
+  const todayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+  const isWorkoutDay = workoutDays.includes(todayName);
+
+  console.log('Workout days:', workoutDays);
+  console.log('Is today workout day?', isWorkoutDay);
   useEffect(() => {
-    loadUserData();
-    loadDashboardData();
-    loadBadges();
-    setMotivationQuote(quotes[Math.floor(Math.random() * quotes.length)]);
-
+    const init = async () => {
+      await loadDashboardData();
+      await loadBadges();
+      setMotivationQuote(quotes[Math.floor(Math.random() * quotes.length)]);
+    };
+    init();
     pulseAnim.value = withRepeat(
       withSequence(withTiming(1.08, { duration: 1200 }), withTiming(1, { duration: 1200 })),
       -1,
@@ -122,13 +154,14 @@ export default function WorkoutDashboard() {
   }, []);
 
 
-  
   useFocusEffect(
     useCallback(() => {
       loadDashboardData();
       loadBadges();
-    }, [])
+      refreshToday();
+    }, [refreshToday])
   );
+
   const Section = ({
     title,
     right,
@@ -190,16 +223,9 @@ export default function WorkoutDashboard() {
       </Text>
     </View>
   );
-  const loadUserData = async () => {
-    try {
-      const name = await AsyncStorage.getItem('USER_NAME');
-      if (name) setUserName(name);
-      const avatar = await AsyncStorage.getItem('USER_AVATAR');
-      if (avatar) setUserAvatar(avatar);
-    } catch (e) {
-      console.log('User data load error:', e);
-    }
-  };
+
+
+
 
   const StatCard = ({ icon, label, value, colors, theme }: { icon: string; label: string; value: string; colors: any; theme: string }) => (
     <BlurView intensity={80} tint={theme === "dark" ? "dark" : "light"} style={[styles.statCard, { borderColor: colors.border }]}>
@@ -209,54 +235,60 @@ export default function WorkoutDashboard() {
     </BlurView>
   );
 
+
   const loadDashboardData = async () => {
     setLoading(true);
     try {
       const historyStr = await AsyncStorage.getItem('WORKOUT_HISTORY');
-      if (!historyStr) return;
+      if (!historyStr) {
+        setLoading(false);
+        return;
+      }
 
       const history: WorkoutLog[] = JSON.parse(historyStr);
       const today = new Date().toISOString().split('T')[0];
-
       const todays = history.filter(w => w.date === today);
 
-      const totalCal = todays.reduce((sum, w) => sum + (w.caloriesBurned || 0), 0);
-      const totalMin = todays.reduce((sum, w) => sum + (w.duration || 0), 0);
+      // only calculate what TodayContext doesn't provide
       const totalVol = todays.reduce((sum, w) => sum + (w.totalVolume || 0), 0);
+      setTotalVolume(totalVol);
+      setStreak(calculateStreak(history));
 
-      const streak = calculateStreak(history);
-
-      const goalPct = Math.min(Math.round((totalCal / 500) * 100), 100);
-
-      setTodayStats({
-        caloriesBurned: totalCal,
-        activeMinutes: totalMin,
-        exercisesCompleted: todays.length,
-        totalVolume: totalVol,
-        streak,
-      });
-
-      setTodayGoalPercentage(goalPct);
-
-      const sorted = [...history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      const sorted = [...history].sort((a, b) =>
+        new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
       setRecentWorkouts(sorted.slice(0, 5));
 
+      // weekly progress
       const weekStart = new Date();
       weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
-
       const weekly = history.filter(w => new Date(w.date) >= weekStart);
 
       setWeeklyProgress({
-        move: { current: weekly.reduce((s, w) => s + (w.caloriesBurned || 0), 0), goal: 1000, unit: 'kcal' },
-        exercise: { current: weekly.reduce((s, w) => s + (w.duration || 0), 0), goal: 150, unit: 'min' },
-        volume: { current: weekly.reduce((s, w) => s + (w.totalVolume || 0), 0), goal: 5000, unit: 'kg' },
+        move: {
+          current: weekly.reduce((s, w) => s + (w.caloriesBurned || 0), 0),
+          goal: workoutBurnGoal,
+          unit: 'kcal'
+        },
+        exercise: {
+          current: weekly.reduce((s, w) => s + (w.duration || 0), 0),
+          goal: 150,
+          unit: 'min'
+        },
+        volume: {
+          current: weekly.reduce((s, w) => s + (w.totalVolume || 0), 0),
+          goal: 5000,
+          unit: 'kg'
+        },
       });
+
     } catch (e) {
       console.log('Dashboard load error:', e);
     } finally {
       setLoading(false);
     }
   };
+
 
   const loadBadges = async () => {
     try {
@@ -312,11 +344,11 @@ export default function WorkoutDashboard() {
     transform: [{ scale: pulseAnim.value }],
   }));
 
- 
-   if (loading) {
-     return <CustomLoader fullScreen={true} />;
-   }
- 
+
+  if (loading) {
+    return <CustomLoader fullScreen={true} />;
+  }
+
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -328,16 +360,22 @@ export default function WorkoutDashboard() {
           end={{ x: 1, y: 1 }}
           style={styles.hero}
         >
-          {/* Daily Goal Card */}
+
+          {/* Daily Goal Card - Update the text */}
           <BlurView intensity={30} tint={theme === "dark" ? "dark" : "light"} style={styles.goalCard}>
             <View style={styles.goalRow}>
               <View style={styles.goalLeft}>
                 <Text style={[styles.goalTitle, { color: colors.text }]}>Today's Goal</Text>
                 <Text style={[styles.goalSubtitle, { color: colors.textSecondary }]}>
-                  {todayStats.caloriesBurned} / 500 kcal
+                  {todayBurned} / {workoutBurnGoal} kcal
                 </Text>
                 <View style={styles.progressBar}>
-                  <View style={[styles.progressFill, { backgroundColor: colors.accent }]} />
+                  <View
+                    style={[
+                      styles.progressFill,
+                      { backgroundColor: colors.accent, width: `${todayGoalPercentage}%` }
+                    ]}
+                  />
                 </View>
               </View>
 
@@ -379,21 +417,21 @@ export default function WorkoutDashboard() {
             <StatCard
               icon="flame"
               label="Burned"
-              value={`${todayStats.caloriesBurned} kcal`}
+              value={`${todayBurned} kcal`}
               colors={colors}
               theme={theme}
             />
             <StatCard
               icon="timer-outline"
               label="Active"
-              value={`${todayStats.activeMinutes} min`}
+              value={`${activeMinutes} min`}
               colors={colors}
               theme={theme}
             />
             <StatCard
               icon="flame"
               label="Streak"
-              value={`${todayStats.streak} ${todayStats.streak === 1 ? 'day' : 'days'}`}
+              value={`${streak} ${streak === 1 ? 'day' : 'days'}`}
               colors={colors}
               theme={theme}
             />

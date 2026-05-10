@@ -7,13 +7,11 @@ import SplashScreen from "./(auth)/splash";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getProfile } from './services/profileApi';
 import { appEvents, PROFILE_UPDATED } from './utils/eventEmitter';
-
-// Add this constant to your eventEmitter file alongside PROFILE_UPDATED:
-// export const PENDING_NAVIGATION = 'PENDING_NAVIGATION';
-// Then in profile-setup, BEFORE calling router.replace(), emit:
-//   appEvents.emit(PENDING_NAVIGATION, '/(tabs)/workout');
-//   router.replace('/(tabs)/workout');
-const PENDING_NAVIGATION = 'PENDING_NAVIGATION';
+import { ProfileProvider, useProfile } from '../context/profileContext';
+import { TodayProvider } from "@/context/todayContext";
+import { CustomLoader } from "../components/CustomLoader";
+// Event for pending navigation to prevent bounce-back
+export const PENDING_NAVIGATION = 'PENDING_NAVIGATION';
 
 function RootLayoutNav() {
   const { user, loading } = useAuth();
@@ -29,12 +27,6 @@ function RootLayoutNav() {
   });
 
   const redirectedToHomeRef = useRef(false);
-
-  // KEY FIX: When profile-setup saves and navigates to a tab (e.g. /workout),
-  // the navigation effect fires immediately with STALE profileStatus (workout: false)
-  // and bounces back to profile-setup before AsyncStorage updates.
-  // profile-setup emits PENDING_NAVIGATION before router.replace() —
-  // we store the destination here and skip the stale-state bounce check for it.
   const pendingNavigationRef = useRef<string | null>(null);
 
   const getModeFromPathname = (path: string): string | undefined => {
@@ -47,6 +39,7 @@ function RootLayoutNav() {
     console.log('🔄 Loading profile status...');
     try {
       const storedProfile = await AsyncStorage.getItem(`USER_PROFILE_${user.uid}`);
+      console.log("storedProfile", storedProfile);
       if (storedProfile) {
         const profile = JSON.parse(storedProfile);
         console.log('✅ Profile status from AsyncStorage:', {
@@ -54,16 +47,17 @@ function RootLayoutNav() {
           goals: profile.goals_completed,
           workout: profile.workout_completed
         });
+
         setProfileStatus({
           basic_completed: profile.basic_completed || false,
           goals_completed: profile.goals_completed || false,
           workout_completed: profile.workout_completed || false,
           checking: false
         });
-        return;
+
       }
       const profileFromDB = await getProfile(user.uid);
-      if (profileFromDB) {
+      if (profileFromDB && profileFromDB.user_id) {
         console.log('✅ Profile status from database:', {
           basic: profileFromDB.basic_completed,
           goals: profileFromDB.goals_completed,
@@ -75,7 +69,15 @@ function RootLayoutNav() {
           workout_completed: profileFromDB.workout_completed || false,
           checking: false
         });
-        await AsyncStorage.setItem(`USER_PROFILE_${user.uid}`, JSON.stringify(profileFromDB));
+        console.log("user id for caching", user.uid, profileFromDB);
+        await AsyncStorage.setItem(
+          `USER_PROFILE_STATUS_${user.uid}`,
+          JSON.stringify({
+            basic_completed: profileFromDB.basic_completed,
+            goals_completed: profileFromDB.goals_completed,
+            workout_completed: profileFromDB.workout_completed
+          })
+        );
       } else {
         console.log('📝 No profile found');
         setProfileStatus({
@@ -103,7 +105,6 @@ function RootLayoutNav() {
   useEffect(() => {
     const handleProfileUpdate = (updatedStatus?: { basic_completed: boolean, goals_completed: boolean, workout_completed: boolean }) => {
       if (updatedStatus) {
-        // Use the fresh data directly — no AsyncStorage read needed
         console.log('📢 Profile update received with fresh data, skipping reload');
         setProfileStatus({ ...updatedStatus, checking: false });
       } else {
@@ -116,7 +117,7 @@ function RootLayoutNav() {
     };
   }, [user]);
 
-  // Listen for pending navigation events emitted by profile-setup before router.replace()
+  // Listen for pending navigation events
   useEffect(() => {
     const handlePendingNavigation = (route: string) => {
       console.log('📌 Pending navigation set:', route);
@@ -128,19 +129,23 @@ function RootLayoutNav() {
     };
   }, []);
 
+
+
   useEffect(() => {
     if (loading || profileStatus.checking) {
-      console.log('⏳ Waiting for loading/checking...');
       return;
     }
-
     if (!segments[0]) return;
 
     const isOnSplash = segments[1] === 'splash';
     const inTabsGroup = segments[0] === '(tabs)';
     const inAuthGroup = segments[0] === '(auth)';
-    const isOnProfileSetup = segments[1] === 'profile-setup';
-    const currentTab = segments[1];
+
+    // ✅ FIXED: Check for profile-setup in tabs (where it belongs)
+    const isOnProfileSetup = inTabsGroup && segments[1] === 'profile-setup';
+
+    // ✅ FIXED: Get current tab correctly
+    const currentTab = inTabsGroup ? segments[1] : null;
     const mode = getModeFromPathname(pathname);
 
     console.log('🚦 Navigation Check:', {
@@ -148,13 +153,15 @@ function RootLayoutNav() {
       goals: profileStatus.goals_completed,
       workout: profileStatus.workout_completed,
       inTabs: inTabsGroup,
+      inAuth: inAuthGroup,
       currentTab,
       onProfileSetup: isOnProfileSetup,
       isOnSplash,
       mode,
       pathname,
       pending: pendingNavigationRef.current,
-      user: user?.uid
+      user: user?.uid,
+      segments: segments.join('/')
     });
 
     // NOT LOGGED IN
@@ -170,53 +177,56 @@ function RootLayoutNav() {
     if (!profileStatus.basic_completed) {
       if (!isOnProfileSetup) {
         console.log('➡️ Basic not completed, redirecting to profile setup');
-        router.replace('/(auth)/profile-setup');
+        router.replace('/(tabs)/profile-setup?mode=basic');
       } else {
         console.log('✅ Already on profile setup for basic info');
       }
       return;
     }
 
-    // CASE 2: Guard incomplete section tabs.
-    // If there's a pending navigation to THIS tab, the user just saved from
-    // profile-setup and the profile event reload hasn't completed yet.
-    // Skip bouncing — the next render (with fresh status) will clear it.
+    // CASE 2: Guard incomplete section tabs
     if (profileStatus.basic_completed) {
+      // Check if trying to access calories without goals completed
       if (currentTab === 'calories' && !profileStatus.goals_completed) {
         if (pendingNavigationRef.current === '/(tabs)/calories') {
           console.log('⏳ Pending nav to calories, waiting for fresh profile status...');
           return;
         }
         console.log('➡️ Goals not completed, redirecting to goals setup');
-        router.replace('/(auth)/profile-setup?mode=goals');
+        router.replace('/(tabs)/profile-setup?mode=goals');
         return;
       }
 
+      // Check if trying to access workout without workout completed
       if (currentTab === 'workout' && !profileStatus.workout_completed) {
         if (pendingNavigationRef.current === '/(tabs)/workout') {
           console.log('⏳ Pending nav to workout, waiting for fresh profile status...');
           return;
         }
         console.log('➡️ Workout not completed, redirecting to workout setup');
-        router.replace('/(auth)/profile-setup?mode=workout');
+        router.replace('/(tabs)/profile-setup?mode=workout');
         return;
       }
     }
 
-    // CASE 3: On profile-setup screen
+    // CASE 3: On profile-setup screen (in tabs)
     if (isOnProfileSetup) {
+      // If we're in 'all' mode (manual edit), stay
       if (mode === 'all') {
         console.log('✅ Manual edit mode (all), staying');
         return;
       }
+      // If in goals mode and goals not completed, stay
       if (mode === 'goals' && !profileStatus.goals_completed) {
         console.log('✅ Goals section (not completed), staying');
         return;
       }
+      // If in workout mode and workout not completed, stay
       if (mode === 'workout' && !profileStatus.workout_completed) {
         console.log('✅ Workout section (not completed), staying');
         return;
       }
+      // Profile setup completed, go to home
       if (!redirectedToHomeRef.current) {
         redirectedToHomeRef.current = true;
         console.log('➡️ Profile setup done, redirecting to home');
@@ -242,14 +252,22 @@ function RootLayoutNav() {
     }
 
   }, [user, loading, profileStatus.basic_completed, profileStatus.goals_completed, profileStatus.workout_completed, profileStatus.checking, segments.join('/'), pathname]);
-
-
+  if (loading || profileStatus.checking) {
+    return <CustomLoader fullScreen={true} />;
+  }
   return <Slot />;
 }
-
+ function TodayWrapper({ children }: { children: React.ReactNode }) {
+    const { dailyCalorieGoal, loading } = useProfile();
+    return (
+      <TodayProvider baseCalorieGoal={dailyCalorieGoal} profileLoading={loading}>
+        {children}
+      </TodayProvider>
+    );
+  }
 export default function RootLayout() {
   const [showSplash, setShowSplash] = useState(true);
-
+ 
   useEffect(() => {
     console.log('⏱️ Splash timer started');
     const timer = setTimeout(() => {
@@ -272,7 +290,11 @@ export default function RootLayout() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <RootLayoutNav />
+        <ProfileProvider>
+          <TodayWrapper>
+            <RootLayoutNav />
+          </TodayWrapper>
+        </ProfileProvider>
       </AuthProvider>
     </ThemeProvider>
   );

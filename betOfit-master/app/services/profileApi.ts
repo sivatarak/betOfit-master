@@ -7,13 +7,16 @@ const API_BASE = 'https://fitness-backend-iota.vercel.app/'; // UPDATE THIS!
 // PROFILE APIs
 // ================================
 
+// services/profileApi.ts
+
 export async function saveProfile(profileData: any) {
   try {
-    console.log("Saving profile data:", profileData);
-    
+    console.log("🔵 1. saveProfile called with data:", JSON.stringify(profileData, null, 2));
+
     const payload = {
       userId: profileData.userId,
       name: profileData.name,
+      email: profileData.email,
       age: profileData.age,
       weight: profileData.weight,
       height: profileData.height,
@@ -22,14 +25,21 @@ export async function saveProfile(profileData: any) {
       timeline: profileData.timeline || null,
       activityLevel: profileData.activityLevel || 1.55,
       workoutDays: profileData.workoutDays || [],
+      workoutDaysPerWeek: profileData.workoutDaysPerWeek || 0,
       dailyCalorieGoal: profileData.dailyCalorieGoal || null,
-      // Section completion flags
+      waterGoal: profileData.waterGoal || null,
+      bmr: profileData.bmr || null,
+      tdee: profileData.tdee || null,
+      weeklyWeightLoss: profileData.weeklyWeightLoss || null,
+      dailyDeficit: profileData.dailyDeficit || null,
+      restDays: profileData.restDays || null,
       basic_completed: profileData.basic_completed || false,
       goals_completed: profileData.goals_completed || false,
       workout_completed: profileData.workout_completed || false,
     };
 
-    console.log("Sending payload:", payload);
+    console.log("🔵 2. Sending payload to backend:", JSON.stringify(payload, null, 2));
+    console.log("🔵 3. API URL:", `${API_BASE}/api/profile`);
 
     const response = await fetch(`${API_BASE}/api/profile`, {
       method: "POST",
@@ -38,17 +48,23 @@ export async function saveProfile(profileData: any) {
       },
       body: JSON.stringify(payload),
     });
-    
+
+    console.log("🔵 4. Response status:", response.status);
+    console.log("🔵 5. Response ok:", response.ok);
+
     if (!response.ok) {
       const text = await response.text();
-      console.log("Backend error:", text);
+      console.log("🔴 6. Backend error response:", text);
       throw new Error("Failed to save profile");
     }
 
-    return await response.json();
+    const responseData = await response.json();
+    console.log("🟢 7. Backend success response:", JSON.stringify(responseData, null, 2));
+    
+    return responseData;
 
   } catch (error) {
-    console.error("Save profile error:", error);
+    console.error("🔴 8. Save profile error:", error);
     throw error;
   }
 }
@@ -72,6 +88,36 @@ export async function getProfile(userId: string) {
     console.error('Get profile error:', error);
     // Return null instead of throwing
     return null;
+  }
+}
+
+// Add this to app/services/profileApi.ts
+
+export async function getStats(userId: string, period: 'week' | 'month' | 'year' = 'week') {
+  try {
+    console.log(`📊 Fetching stats for ${userId}, period: ${period}`);
+
+    const response = await fetch(
+      `${API_BASE}/api/stats/${userId}?period=${period}`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to fetch stats');
+    }
+
+    const data = await response.json();
+    console.log('✅ Stats fetched successfully');
+    return data;
+  } catch (error) {
+    console.error('❌ Get stats error:', error);
+    throw error;
   }
 }
 // ================================

@@ -23,6 +23,8 @@ import auth from '@react-native-firebase/auth';
 import { useTheme } from "../../context/themecontext";
 import { CustomLoader } from '../../components/CustomLoader';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useProfile } from '../../context/profileContext';
+import { useToday } from '../../context/todayContext';
 const { width } = Dimensions.get("window");
 
 // Widget Card Component
@@ -214,10 +216,13 @@ const WidgetCard = ({ type, data, colors }: any) => {
 export default function Home() {
   const { colors, theme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { name, workoutDays } = useProfile();
+  console.log('Welcome:', name);
 
   const [userName, setUserName] = useState("");
   const [greeting, setGreeting] = useState("Good morning");
-  const [dashboard, setDashboard] = useState<any>(null);
+  const [lastWeekWorkout, setLastWeekWorkout] = useState<any>(null);
+  const [isNewUser, setIsNewUser] = useState(false);
   const [loading, setLoading] = useState(true);
   const [userPhoto, setUserPhoto] = useState<string | null>(null);
   const [smartSuggestion, setSmartSuggestion] = useState<any>(null);
@@ -225,24 +230,44 @@ export default function Home() {
   const [currentWidgetIndex, setCurrentWidgetIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
   const autoRotateTimer = useRef<any>(null);
+  const {
+    todayEaten,
+    todayBurned,
+    adjustedGoal,
+    netCalories,
+    progressPercent,
+    refreshToday,
+  } = useToday();
+  // FIND and REPLACE entire widgetData useMemo
 
   const widgetData = useMemo(() => {
     const widgets = [];
 
-    // Add workout widget
-    widgets.push({ type: 'workout', data: dashboard });
+    const todayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+    const isWorkoutDay = workoutDays.includes(todayName);
 
-    // Add suggestion widget if exists
+    const workoutWidgetData = {
+      today: {
+        is_workout_day: isWorkoutDay,
+        day_name: todayName,
+        workout: { completed: todayBurned > 0 },
+      },
+      user: {
+        is_new_user: isNewUser,
+      },
+      last_week_same_day: lastWeekWorkout,
+    };
+
+    widgets.push({ type: 'workout', data: workoutWidgetData });
+
     if (smartSuggestion) {
       widgets.push({ type: 'suggestion', data: smartSuggestion });
     }
 
-    // Add tip widget
     widgets.push({ type: 'tip', data: null });
 
     return widgets;
-  }, [dashboard, smartSuggestion]);
-
+  }, [lastWeekWorkout, isNewUser, todayBurned, smartSuggestion, workoutDays]);
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return "Good morning";
@@ -250,18 +275,57 @@ export default function Home() {
     return "Good evening";
   };
 
-  // Smart suggestion logic
-  const generateSmartSuggestion = useCallback((data: any) => {
-    if (!data || !data.today || !data.user) return null;
+  const loadWorkoutWidget = useCallback(async () => {
+    try {
+      const historyStr = await AsyncStorage.getItem('WORKOUT_HISTORY');
 
-    const { today, user } = data;
-    const caloriesEaten = today.food.calories || 0;
-    const calorieGoal = user.daily_calorie_goal || 2000;
-    const caloriesDiff = caloriesEaten - calorieGoal;
-    const workedOut = today.workout.completed;
-    const isWorkoutDay = today.is_workout_day;
+      // Check if new user
+      if (!historyStr || JSON.parse(historyStr).length === 0) {
+        setIsNewUser(true);
+        return;
+      }
 
-    // WORKOUT DAY LOGIC
+      const history = JSON.parse(historyStr);
+      setIsNewUser(false);
+
+      // Get same day last week
+      const lastWeek = new Date();
+      lastWeek.setDate(lastWeek.getDate() - 7);
+      const lastWeekDate = lastWeek.toISOString().split('T')[0];
+
+      const lastWeekWorkouts = history.filter(
+        (w: any) => w.date === lastWeekDate
+      );
+
+      if (lastWeekWorkouts.length === 0) {
+        setLastWeekWorkout(null);
+        return;
+      }
+
+      setLastWeekWorkout({
+        exercises: lastWeekWorkouts.map((w: any) => ({
+          name: w.exerciseName
+        })),
+        total_duration: lastWeekWorkouts.reduce(
+          (s: number, w: any) => s + (w.duration || 0), 0
+        ),
+        total_calories_burned: lastWeekWorkouts.reduce(
+          (s: number, w: any) => s + (w.caloriesBurned || 0), 0
+        ),
+      });
+
+    } catch (e) {
+      console.log('Workout widget error:', e);
+    }
+  }, []);
+
+
+  const generateSmartSuggestion = useCallback(() => {
+    const todayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+    const isWorkoutDay = workoutDays.includes(todayName);
+    const caloriesDiff = todayEaten - adjustedGoal;
+    const workedOut = todayBurned > 0;
+
     if (isWorkoutDay) {
       if (caloriesDiff > 300 && !workedOut) {
         return {
@@ -274,7 +338,6 @@ export default function Home() {
           color: "#F97316"
         };
       }
-
       if (workedOut && caloriesDiff < -300) {
         return {
           icon: "💪",
@@ -286,7 +349,6 @@ export default function Home() {
           color: "#3B82F6"
         };
       }
-
       if (workedOut && Math.abs(caloriesDiff) < 200) {
         return {
           icon: "✅",
@@ -298,12 +360,11 @@ export default function Home() {
           color: "#10B981"
         };
       }
-
       if (!workedOut && Math.abs(caloriesDiff) < 300) {
         return {
           icon: "💪",
           title: "Time for Workout!",
-          message: `Today is ${today.day_name} - a workout day!`,
+          message: `Today is ${todayName} - a workout day!`,
           suggestion: "Let's crush this workout!",
           action: "Start Workout",
           actionRoute: "/(tabs)/workout",
@@ -312,7 +373,6 @@ export default function Home() {
       }
     }
 
-    // REST DAY LOGIC
     if (!isWorkoutDay) {
       if (caloriesDiff > 300) {
         return {
@@ -325,7 +385,6 @@ export default function Home() {
           color: "#EF4444"
         };
       }
-
       return {
         icon: "😌",
         title: "Perfect Rest Day!",
@@ -338,7 +397,13 @@ export default function Home() {
     }
 
     return null;
-  }, []);
+  }, [todayEaten, adjustedGoal, todayBurned, workoutDays]);
+
+  // ADD this useEffect after generateSmartSuggestion function
+  useEffect(() => {
+    const suggestion = generateSmartSuggestion();
+    setSmartSuggestion(suggestion);
+  }, [generateSmartSuggestion]);
 
   // Auto-rotate widgets
   useEffect(() => {
@@ -384,48 +449,25 @@ export default function Home() {
     try {
       const currentUser = auth().currentUser;
       const userId = currentUser?.uid;
-
       if (!userId) {
         setLoading(false);
         return;
       }
 
-      // ✅ Load cached data FIRST
-      const cacheKey = `DASHBOARD_CACHE_${userId}`;
-      const cachedData = await AsyncStorage.getItem(cacheKey);
-
-      if (cachedData) {
-        const parsed = JSON.parse(cachedData);
-        setDashboard(parsed);
-        setSmartSuggestion(generateSmartSuggestion(parsed));
-        setLoading(false); // UI shows immediately!
-      }
-
-      // Get user info
-      let photoURL = currentUser?.photoURL;
-      if (photoURL) {
-        setUserPhoto(photoURL.split('=')[0]);
-      }
-      setUserName(currentUser?.displayName || "User");
+      const photoURL = currentUser?.photoURL;
+      if (photoURL) setUserPhoto(photoURL.split('=')[0]);
+      setUserName(currentUser?.displayName || name || 'User');
       setGreeting(getGreeting());
 
-      // ✅ Fetch fresh data in background
-      const data = await getDashboard(userId);
-
-      if (data) {
-        setDashboard(data);
-        setSmartSuggestion(generateSmartSuggestion(data));
-
-        // ✅ Update cache
-        await AsyncStorage.setItem(cacheKey, JSON.stringify(data));
-      }
+      await loadWorkoutWidget();
 
     } catch (error) {
-      console.log("Error:", error);
+      console.log('Error:', error);
     } finally {
       setLoading(false);
     }
-  }, [generateSmartSuggestion]);
+  }, [loadWorkoutWidget, name]);
+
   useEffect(() => {
     refreshData();
   }, [refreshData]);
@@ -433,18 +475,15 @@ export default function Home() {
   useFocusEffect(
     useCallback(() => {
       refreshData();
-    }, [refreshData])
+      refreshToday();
+    }, [refreshData, refreshToday])
   );
 
   // if (loading) {
   //   return <CustomLoader fullScreen={true} />;
   // }
 
-  const calories = dashboard?.today?.food.calories || 0;
-  const caloriesGoal = dashboard?.user?.daily_calorie_goal || 2000;
-  const caloriesBurned = dashboard?.today?.workout.calories_burned || 0;
-  const netCalories = calories - caloriesBurned;
-  const dailyProgress = Math.min((netCalories / caloriesGoal) * 100, 100);
+  const dailyProgress = progressPercent;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -540,22 +579,22 @@ export default function Home() {
             <View style={styles.balanceRow}>
               <View style={styles.balanceItem}>
                 <Text style={[styles.balanceLabel, { color: colors.textSecondary }]}>Eaten</Text>
-                <Text style={[styles.balanceValue, { color: colors.text }]}>{calories} kcal</Text>
+                <Text style={[styles.balanceValue, { color: colors.text }]}>{todayEaten} kcal</Text>
               </View>
               <View style={styles.balanceItem}>
                 <Text style={[styles.balanceLabel, { color: colors.textSecondary }]}>Goal</Text>
-                <Text style={[styles.balanceValue, { color: colors.text }]}>{caloriesGoal} kcal</Text>
+                <Text style={[styles.balanceValue, { color: colors.text }]}>{adjustedGoal} kcal</Text>
               </View>
               <View style={styles.balanceItem}>
                 <Text style={[styles.balanceLabel, { color: colors.textSecondary }]}>Burned</Text>
-                <Text style={[styles.balanceValue, { color: colors.text }]}>{caloriesBurned} kcal</Text>
+                <Text style={[styles.balanceValue, { color: colors.text }]}>{todayBurned} kcal</Text>
               </View>
             </View>
 
             <View style={styles.netCaloriesContainer}>
               <Text style={[styles.netCaloriesLabel, { color: colors.textSecondary }]}>Net</Text>
               <Text style={[styles.netCaloriesValue, { color: colors.primary }]}>
-                {netCalories} / {caloriesGoal} kcal
+                {netCalories} / {adjustedGoal} kcal
               </Text>
             </View>
 
@@ -612,15 +651,7 @@ export default function Home() {
               <Text style={[styles.quickActionLabel, { color: colors.text }]}>Workout</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.quickAction, { backgroundColor: '#8B5CF615' }]}
-              onPress={() => router.push('/(tabs)/stats')}
-            >
-              <View style={[styles.quickActionIcon, { backgroundColor: colors.card }]}>
-                <Ionicons name="stats-chart-outline" size={24} color="#8B5CF6" />
-              </View>
-              <Text style={[styles.quickActionLabel, { color: colors.text }]}>Stats</Text>
-            </TouchableOpacity>
+
           </View>
 
           <View style={{ height: 100 }} />
@@ -628,7 +659,7 @@ export default function Home() {
       </SafeAreaView>
 
       {/* BOTTOM NAVIGATION */}
-      <BlurView
+      {/* <BlurView
         intensity={90}
         tint={theme === "dark" ? "dark" : "light"}
         style={[styles.bottomNav, { borderTopColor: colors.border }]}
@@ -661,8 +692,8 @@ export default function Home() {
           <Ionicons name="person-outline" size={28} color={colors.textSecondary} />
           <Text style={[styles.navText, { color: colors.textSecondary }]}>Profile</Text>
         </TouchableOpacity>
-      </BlurView>
-       {loading && <CustomLoader fullScreen />}
+      </BlurView> */}
+      {loading && <CustomLoader fullScreen />}
     </View>
   );
 }
@@ -837,7 +868,6 @@ const makeStyles = (colors: any) =>
     dot: {
       height: 8,
       borderRadius: 4,
-      transition: 'width 0.3s',
     },
     // Balance Card
     balanceCard: {
@@ -934,21 +964,7 @@ const makeStyles = (colors: any) =>
       fontWeight: '600',
     },
     // Bottom Navigation
-    bottomNav: {
-      position: 'relative',
-      bottom: 0,
-      left: 0,
-      right: 0,
-      flexDirection: 'row',
-      justifyContent: 'space-around',
-      alignItems: 'center',
-      paddingHorizontal: 20,
-      paddingVertical: 12,
-      paddingBottom: Platform.OS === 'ios' ? 34 : 12,
-      borderTopWidth: 1,
-      zIndex: 1000,
-      elevation: 0
-    },
+
     navItem: {
       alignItems: 'center',
       gap: 4,

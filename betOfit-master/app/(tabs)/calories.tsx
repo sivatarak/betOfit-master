@@ -1,5 +1,6 @@
 // app/(tabs)/calories.tsx
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import auth from '@react-native-firebase/auth';
 import {
   View,
   Text,
@@ -13,17 +14,18 @@ import {
   Alert,
   FlatList,
   Platform,
+  Keyboard,
+  RefreshControl,
   KeyboardAvoidingView,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from "react-native-svg";
 import { BlurView } from "expo-blur";
-import { searchFood as searchFoodApi } from "../services/exerciseApi";
-import { STORAGE_KEYS } from "../../constants/storageKeys";
-
+import { searchFood as searchFoodApi, deleteFoodLog, logFoodToBackend, getTodayFoodLogs } from "../services/exerciseApi";
+import { useToday } from '../../context/todayContext';
 import { useTheme } from "../../context/themecontext";
 import { CustomLoader } from "@/components/CustomLoader";
 
@@ -88,9 +90,7 @@ interface WeeklyChartProps {
 export default function CaloriesScreen() {
   const { colors, theme } = useTheme();
   const styles = makeStyles(colors);
-
-  const [goal, setGoal] = useState(2000);
-  const [current, setCurrent] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FoodItem[]>([]);
   const [selectedFood, setSelectedFood] = useState<any>(null);
@@ -100,70 +100,44 @@ export default function CaloriesScreen() {
   const [quantity, setQuantity] = useState("100");
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [waterIntake, setWaterIntake] = useState(1.5);
-  const [waterGoal] = useState(3.0);
   const [selectedMealType, setSelectedMealType] = useState<"breakfast" | "lunch" | "dinner" | "snack">("breakfast");
   const searchInputRef = React.useRef<TextInput>(null);
-  const remaining = Math.max(goal - current, 0);
-
-
-
-  function WeeklyChart({ data, labels, goal, colors }: WeeklyChartProps) {
-    const maxValue = Math.max(...data, goal);
-
-    return (
-      <View style={[styles.chartCard, { backgroundColor: colors.card }]}>
-        <View style={styles.chartHeader}>
-          <View>
-            <Text style={[styles.chartTitle, { color: colors.text }]}>Weekly Progress</Text>
-            <Text style={[styles.chartSubtitle, { color: colors.textMuted }]}>Calorie Intake</Text>
-          </View>
-          <View style={[styles.chartBadge, { backgroundColor: `${colors.success}15` }]}>
-            <Text style={[styles.chartBadgeText, { color: colors.success }]}>On Track</Text>
-          </View>
-        </View>
-
-        <View style={styles.chartBars}>
-          {data.map((value, index) => {
-            const height = (value / maxValue) * 100;
-            const isToday = index === new Date().getDay() - 1;
-
-            return (
-              <View key={index} style={styles.chartBarContainer}>
-                <View style={styles.chartBarWrapper}>
-                  <View
-                    style={[
-                      styles.chartBar,
-                      { height: `${height || 5}%`, backgroundColor: colors.border },
-                      isToday && { backgroundColor: colors.primary }
-                    ]}
-                  />
-                </View>
-                <Text style={[styles.chartBarLabel, { color: colors.textMuted }, isToday && { color: colors.primary }]}>
-                  {labels[index]}
-                </Text>
-              </View>
-            );
-          })}
-        </View>
-      </View>
-    );
-  }
-
+  // const { dailyCalorieGoal, waterGoal, bmr, tdee, weight, height, age, gender } = useProfile();
+  const {
+    todayEaten,
+    remainingCalories,
+    totalProtein,
+    totalCarbs,
+    totalFat,
+    adjustedGoal,      // ← this already = dailyCalorieGoal + burned
+    progressPercent,
+    updateAfterFoodLog,
+    refreshToday,
+  } = useToday();
 
   useEffect(() => {
+    // Make sure query is a string before checking length
+    const searchTerm = (query || '').toString();
 
-    if (query.length < 2) {
+    if (searchTerm.length < 2) {
       setResults([]);
+      setLoading(false);
       return;
     }
 
     const delay = setTimeout(() => {
-      searchFood(query);
+      searchFood();
     }, 400);
 
     return () => clearTimeout(delay);
-
   }, [query]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshToday();
+    }, [refreshToday])
+  );
+
   function CircularProgress({ remaining, goal, eaten, size = CIRCLE_SIZE, colors }: CircularProgressProps) {
     const percentage = (eaten / goal) * 100;
     const strokeWidth = 12;
@@ -208,9 +182,6 @@ export default function CaloriesScreen() {
       </View>
     );
   }
-  /* ---------------------------------------------------------
-     MACRO CARD COMPONENT - Updated to match workout.tsx stat cards
-  --------------------------------------------------------- */
   /* ---------------------------------------------------------
      MACRO CARD COMPONENT - With specific icons
   --------------------------------------------------------- */
@@ -307,61 +278,57 @@ export default function CaloriesScreen() {
     loadSaved();
   }, []);
 
-  useEffect(() => {
-    if (profile) {
-      const bmr = 10 * profile.weight + 6.25 * profile.height - 5 * profile.age;
-      const tdee = Math.round(bmr * (profile.gender === 'male' ? 1.2 : 1.1));
-      setGoal(tdee);
-    }
-  }, [profile]);
+
 
   const loadSaved = async () => {
     try {
-      const saved = await AsyncStorage.getItem("CALORIES_DATA_V2");
-      if (saved) {
-        const data = JSON.parse(saved);
+      const currentUser = auth().currentUser;
+      const userId = currentUser?.uid;
+
+      // Load from AsyncStorage
+      const localSaved = await AsyncStorage.getItem("CALORIES_DATA_V2");
+      if (localSaved) {
+        const data = JSON.parse(localSaved);
         const today = new Date().toISOString().split("T")[0];
         const todayEntries = data.history?.filter((e: FoodEntry) => e.date === today) || [];
         const todayCalories = todayEntries.reduce((sum: number, e: FoodEntry) => sum + e.calories, 0);
 
-        setCurrent(todayCalories);
-        setHistory(data.history || []);
-        setGoal(data.goal || 2000);
-        setProfile(data.profile || null);
-        setWaterIntake(data.waterIntake || 1.5);
+        setHistory(todayEntries);
+
+
+        if (data.profile) {
+          setProfile(data.profile);
+        }
       }
+
+      // Sync with backend...
     } catch (error) {
       console.error("Error loading saved data:", error);
     }
   };
 
-  const saveData = async () => {
-    try {
-      await AsyncStorage.setItem(
-        "CALORIES_DATA_V2",
-        JSON.stringify({
-          current,
-          goal,
-          history,
-          profile,
-          waterIntake,
-        })
-      );
-    } catch (error) {
-      console.error("Error saving data:", error);
-    }
-  };
 
-  useEffect(() => {
-    saveData();
-  }, [current, history, waterIntake]);
 
   const searchFood = async (q?: string) => {
+    // Ensure we have a string value
+    let searchQuery = '';
 
-    const searchQuery = q ?? query;
+    if (q && typeof q === 'string') {
+      searchQuery = q;
+    } else if (query && typeof query === 'string') {
+      searchQuery = query;
+    } else {
+      searchQuery = '';
+    }
 
-    if (!searchQuery.trim()) return;
+    searchQuery = searchQuery.trim();
 
+    if (!searchQuery || searchQuery.length < 2) {
+      setResults([]);
+      setLoading(false);
+      return;
+    }
+    Keyboard.dismiss();
     setLoading(true);
 
     try {
@@ -369,18 +336,10 @@ export default function CaloriesScreen() {
       setResults(Array.isArray(foods) ? foods : []);
     } catch (error) {
       console.error("Search error:", error);
+      setResults([]);
     } finally {
       setLoading(false);
     }
-  };
-  const handleAddPress = (mealType) => {
-    setSelectedMealType(mealType);
-    setQuery("");
-    setResults([]);
-
-    setTimeout(() => {
-      searchInputRef.current?.focus();
-    }, 100);
   };
 
   const handleFoodSelect = (food: FoodItem) => {
@@ -399,7 +358,7 @@ export default function CaloriesScreen() {
     setShowQuantityModal(true);
   };
 
-  const addFoodWithQuantity = () => {
+  const addFoodWithQuantity = async () => {
     if (!selectedFood) return;
 
     const serving = selectedFood.servings?.serving;
@@ -427,8 +386,50 @@ export default function CaloriesScreen() {
       mealType: selectedMealType,
     };
 
-    setHistory([newEntry, ...history]);
-    setCurrent(current + calories);
+    // ✅ STEP 1: Update UI immediately (optimistic update)
+    const updatedHistory = [newEntry, ...history];
+    setHistory(updatedHistory);
+    updateAfterFoodLog(calories, protein, carbs, fat); // ← replaces setCurrent
+    // ✅ STEP 2: Save to AsyncStorage (fast, for next load)
+    await AsyncStorage.setItem("CALORIES_DATA_V2", JSON.stringify({
+      history: updatedHistory,
+    }));
+
+    // ✅ STEP 3: Save to backend (async, don't wait for UI)
+    const currentUser = auth().currentUser;
+    const userId = currentUser?.uid;
+
+    if (userId) {
+      logFoodToBackend({
+        userId,
+        foodName: selectedFood.food_name,
+        calories,
+        protein,
+        carbs,
+        fat,
+        mealType: selectedMealType,
+        quantity: grams
+      }).then(savedLog => {
+        if (savedLog && savedLog.id) {
+          // Update the entry with real database ID
+          const updatedHistoryWithDbId = updatedHistory.map(entry =>
+            entry.id === newEntry.id ? { ...entry, id: savedLog.id } : entry
+          );
+          setHistory(updatedHistoryWithDbId);
+
+          // Update AsyncStorage with real ID
+          // ✅ only history, no removed variables
+          AsyncStorage.setItem("CALORIES_DATA_V2", JSON.stringify({
+            history: updatedHistoryWithDbId,
+          }));
+        }
+      }).catch(error => {
+        console.error("Backend save failed:", error);
+        // Don't revert UI, just log error
+      });
+    }
+
+    // Close modal and clear
     setShowQuantityModal(false);
     setSelectedFood(null);
     setQuantity("100");
@@ -436,16 +437,19 @@ export default function CaloriesScreen() {
     setQuery("");
   };
 
-  const removeFoodEntry = (id: string) => {
-    const entry = history.find((h) => h.id === id);
-    if (!entry) return;
 
-    const updatedHistory = history.filter((h) => h.id !== id);
-    const updatedCurrent = Math.max(0, current - entry.calories);
 
-    setHistory(updatedHistory);
-    setCurrent(updatedCurrent);
-  };
+
+
+  // // Add pull-to-refresh support
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refreshFromBackend();
+    setRefreshing(false);
+  }, []);
+
+
+
 
   const today = new Date().toISOString().split("T")[0];
   const todayEntries = history.filter(h => h.date === today);
@@ -470,12 +474,65 @@ export default function CaloriesScreen() {
   const dinnerCarbs = dinnerItems.reduce((sum, e) => sum + e.carbs, 0);
   const dinnerFat = dinnerItems.reduce((sum, e) => sum + e.fat, 0);
 
-  const totalProtein = todayEntries.reduce((sum, e) => sum + e.protein, 0);
-  const totalCarbs = todayEntries.reduce((sum, e) => sum + e.carbs, 0);
-  const totalFat = todayEntries.reduce((sum, e) => sum + e.fat, 0);
+  const removeFoodEntry = async (id: string) => {
+    const entry = history.find((h) => h.id === id);
+    if (!entry) return;
 
-  const weeklyData = [2100, 1950, 1800, current, 0, 0, 0];
-  const weeklyLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const updatedHistory = history.filter((h) => h.id !== id);
+
+    setHistory(updatedHistory);
+    updateAfterFoodLog(-entry.calories, -entry.protein, -entry.carbs, -entry.fat);
+
+    await AsyncStorage.setItem("CALORIES_DATA_V2", JSON.stringify({
+      history: updatedHistory,
+    }));
+
+    const currentUser = auth().currentUser;
+    const userId = currentUser?.uid;
+    if (userId && id.length > 10) {
+      deleteFoodLog(id);
+    }
+  };
+
+  const refreshFromBackend = async () => {
+    const currentUser = auth().currentUser;
+    const userId = currentUser?.uid;
+
+    if (!userId) return;
+
+    try {
+      const backendData = await getTodayFoodLogs(userId);
+
+      if (backendData && backendData.logs && backendData.logs.length > 0) {
+        const formattedLogs: FoodEntry[] = backendData.logs.map((log: any) => ({
+          id: log.id,
+          name: log.food_name,
+          calories: log.calories,
+          protein: log.protein,
+          carbs: log.carbs,
+          fat: log.fat,
+          quantity: log.quantity,
+          unit: "g",
+          date: new Date(log.logged_at).toISOString().split("T")[0],
+          time: new Date(log.logged_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          mealType: log.meal_type,
+        }));
+
+        setHistory(formattedLogs);
+
+        // ✅ let TodayContext handle the numbers
+        await refreshToday();
+
+        await AsyncStorage.setItem("CALORIES_DATA_V2", JSON.stringify({
+          history: formattedLogs,
+        }));
+      }
+    } catch (error) {
+      console.error("Refresh error:", error);
+    }
+  };
+  // const weeklyData = [2100, 1950, 1800, current, 0, 0, 0];
+  // const weeklyLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
   const renderSearchResult = ({ item }: { item: FoodItem }) => {
     return (
@@ -499,6 +556,7 @@ export default function CaloriesScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+
       <SafeAreaView style={styles.safeArea}>
         {/* HEADER */}
         <BlurView intensity={90} tint={theme === "dark" ? "dark" : "light"} style={[styles.header, { borderBottomColor: `${colors.primary}10` }]}>
@@ -518,6 +576,14 @@ export default function CaloriesScreen() {
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scrollContent}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={[colors.primary]}
+                tintColor={colors.primary}
+              />
+            }
           >
             {/* MAIN GOAL CARD */}
             <BlurView intensity={80} tint={theme === "dark" ? "dark" : "light"} style={[styles.goalCard, { borderColor: 'rgba(255,255,255,0.3)' }]}>
@@ -530,18 +596,18 @@ export default function CaloriesScreen() {
               />
               <View style={[styles.goalCardBackground, { backgroundColor: `${colors.accent}10` }]} />
               <View style={styles.goalCardContent}>
-                <CircularProgress remaining={remaining} goal={goal} eaten={current} colors={colors} />
+                <CircularProgress remaining={remainingCalories} goal={adjustedGoal} eaten={todayEaten} colors={colors} />
 
                 <View style={styles.goalStats}>
                   <View style={styles.goalStat}>
                     <Text style={[styles.goalStatLabel, { color: colors.textSecondary }]}>Goal</Text>
-                    <Text style={[styles.goalStatValue, { color: colors.text }]}>{goal.toLocaleString()}</Text>
+                    <Text style={[styles.goalStatValue, { color: colors.text }]}>{adjustedGoal.toLocaleString()}</Text>
                   </View>
                   <View style={[styles.goalStatDivider, { backgroundColor: colors.border }]} />
                   <View style={styles.goalStat}>
                     <Text style={[styles.goalStatLabel, { color: colors.textSecondary }]}>Eaten</Text>
                     <Text style={[styles.goalStatValue, styles.goalStatValueEaten, { color: colors.text }]}>
-                      {current.toLocaleString()}
+                      {todayEaten.toLocaleString()}
                     </Text>
                   </View>
                 </View>
@@ -595,7 +661,6 @@ export default function CaloriesScreen() {
                   onSubmitEditing={searchFood}
                   returnKeyType="search"
                 />
-                 {loading && <CustomLoader fullScreen />}
                 {query.length > 0 && (
                   <TouchableOpacity onPress={() => {
                     setQuery("");
@@ -642,6 +707,7 @@ export default function CaloriesScreen() {
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
+                {loading && <CustomLoader fullScreen />}
               </View>
             )}
 
@@ -690,12 +756,12 @@ export default function CaloriesScreen() {
             </View>
 
             {/* WEEKLY CHART */}
-            <WeeklyChart
+            {/* <WeeklyChart
               data={weeklyData}
               labels={weeklyLabels}
               goal={goal}
               colors={colors}
-            />
+            /> */}
 
             <View style={{ height: 20 }} />
           </ScrollView>
@@ -795,6 +861,7 @@ export default function CaloriesScreen() {
           </View>
         </View>
       )}
+
     </View>
   );
 }

@@ -11,6 +11,7 @@ import {
     SafeAreaView,
     Platform,
     Alert,
+    Modal,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router, useFocusEffect } from "expo-router";
@@ -18,6 +19,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { CustomLoader } from "@/components/CustomLoader";
+import { useTheme } from "../../context/themecontext";
+import { getWorkoutHistory, getFoodHistory, getWaterHistory } from '../services/profileApi';
+import auth from '@react-native-firebase/auth';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 const { width } = Dimensions.get("window");
 
@@ -69,12 +74,15 @@ interface DailyDate {
 }
 
 export default function HistoryScreen() {
+    const { colors, theme } = useTheme();
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
     const [dates, setDates] = useState<DailyDate[]>([]);
     const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
     const [loading, setLoading] = useState(true);
+    const [showDatePicker, setShowDatePicker] = useState(false);
+    const [tempDate, setTempDate] = useState(new Date());
 
-    // Generate dates for the date picker
+    // Generate dates for the date picker (last 5 days)
     const generateDates = useCallback(() => {
         const today = new Date();
         const datesArray: DailyDate[] = [];
@@ -95,85 +103,93 @@ export default function HistoryScreen() {
         setDates(datesArray);
     }, []);
 
-    // Load history data for selected date
+    // Load history data from BACKEND for selected date
     const loadHistoryData = useCallback(async () => {
         try {
             setLoading(true);
+            const currentUser = auth().currentUser;
+            const userId = currentUser?.uid;
+            
+            if (!userId) {
+                setLoading(false);
+                return;
+            }
+            
             const selectedDateStr = selectedDate.toISOString().split('T')[0];
             const items: HistoryItem[] = [];
 
-            // Load workouts
-            const workoutStr = await AsyncStorage.getItem('WORKOUT_HISTORY');
-            if (workoutStr) {
-                const workouts: WorkoutLog[] = JSON.parse(workoutStr);
-                const todaysWorkouts = workouts.filter(w => w.date === selectedDateStr);
+            // ✅ Load workouts from BACKEND
+            const workouts = await getWorkoutHistory(userId, 30);
+            const todaysWorkouts = workouts.filter((w: any) => 
+                new Date(w.completed_at).toISOString().split('T')[0] === selectedDateStr
+            );
 
-                todaysWorkouts.forEach((workout, index) => {
-                    items.push({
-                        id: `workout-${workout.id || index}`,
-                        type: 'workout',
-                        title: 'Workout Completed',
-                        description: `${workout.exerciseName} • ${workout.duration} min`,
-                        time: workout.time || '08:30 AM',
-                        icon: 'fitness',
-                        iconBg: '#FF6B4A',
-                        iconColor: '#FFFFFF',
-                        stats: [{
-                            value: `${workout.caloriesBurned} kcal`,
-                            color: '#FF6B4A',
-                        }],
-                    });
+            todaysWorkouts.forEach((workout: any, index: number) => {
+                items.push({
+                    id: `workout-${workout.id || index}`,
+                    type: 'workout',
+                    title: 'Workout Completed',
+                    description: `${workout.exercise_name} • ${workout.duration_minutes || 0} min`,
+                    time: new Date(workout.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    icon: 'fitness',
+                    iconBg: colors.primary + '20',
+                    iconColor: colors.primary,
+                    stats: [{
+                        value: `${workout.calories_burned || 0} kcal`,
+                        color: colors.primary,
+                    }],
                 });
-            }
+            });
 
-            // Load water entries
-            const waterStr = await AsyncStorage.getItem('WATER_DATA');
-            if (waterStr) {
-                const waterData: WaterData = JSON.parse(waterStr);
-                if (waterData.date === selectedDateStr && waterData.current > 0) {
-                    const progress = (waterData.current / waterData.goal) * 100;
-                    items.push({
-                        id: `water-${selectedDateStr}`,
-                        type: 'water',
-                        title: 'Water Goal',
-                        description: progress >= 100 ? 'Daily goal achieved!' : `${Math.round(waterData.current / 10) / 100}L consumed`,
-                        time: 'Throughout day',
-                        icon: 'water',
-                        iconBg: '#DBEAFE',
-                        iconColor: '#3B82F6',
-                        progress,
-                        stats: [{
-                            value: `${Math.round(waterData.current / 10) / 100}L / ${waterData.goal / 1000}L`,
-                            color: '#3B82F6',
-                        }],
-                    });
-                }
-            }
+            // ✅ Load food from BACKEND
+            const foodLogs = await getFoodHistory(userId, 30);
+            const todaysFood = foodLogs.filter((food: any) => 
+                new Date(food.logged_at).toISOString().split('T')[0] === selectedDateStr
+            );
 
-            // Load meals
-            const caloriesStr = await AsyncStorage.getItem('CALORIES_DATA_V2');
-            if (caloriesStr) {
-                const caloriesData = JSON.parse(caloriesStr);
-                if (caloriesData.history) {
-                    const todaysMeals = caloriesData.history.filter((m: any) => m.date === selectedDateStr);
+            todaysFood.forEach((food: any, index: number) => {
+                items.push({
+                    id: `meal-${food.id || index}`,
+                    type: 'meal',
+                    title: 'Meal Logged',
+                    description: food.food_name,
+                    time: new Date(food.logged_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    icon: 'restaurant',
+                    iconBg: colors.warning + '20',
+                    iconColor: colors.warning,
+                    stats: [{
+                        value: `${food.calories} kcal`,
+                        color: colors.warning,
+                    }],
+                });
+            });
 
-                    todaysMeals.forEach((meal: any, index: number) => {
-                        items.push({
-                            id: `meal-${meal.id || index}`,
-                            type: 'meal',
-                            title: 'Meal Logged',
-                            description: meal.name,
-                            time: meal.time || '12:45 PM',
-                            icon: 'restaurant',
-                            iconBg: '#FEF3C7',
-                            iconColor: '#F59E0B',
-                            stats: [{
-                                value: `${meal.calories} kcal`,
-                                color: '#F59E0B',
-                            }],
-                        });
-                    });
-                }
+            // ✅ Load water from BACKEND
+            const waterLogs = await getWaterHistory(userId, 30);
+            const todaysWater = waterLogs.filter((water: any) => 
+                new Date(water.logged_at).toISOString().split('T')[0] === selectedDateStr
+            );
+
+            if (todaysWater.length > 0) {
+                const totalWater = todaysWater.reduce((sum: number, w: any) => sum + w.amount_ml, 0);
+                const waterGoal = 2500; // Get from profile
+                const progress = (totalWater / waterGoal) * 100;
+                
+                items.push({
+                    id: `water-${selectedDateStr}`,
+                    type: 'water',
+                    title: 'Water Goal',
+                    description: progress >= 100 ? 'Daily goal achieved!' : `${(totalWater / 1000).toFixed(1)}L consumed`,
+                    time: 'Throughout day',
+                    icon: 'water',
+                    iconBg: colors.info + '20',
+                    iconColor: colors.info,
+                    progress,
+                    stats: [{
+                        value: `${(totalWater / 1000).toFixed(1)}L / ${(waterGoal / 1000).toFixed(1)}L`,
+                        color: colors.info,
+                    }],
+                });
             }
 
             // Sort by time (most recent first)
@@ -189,7 +205,7 @@ export default function HistoryScreen() {
         } finally {
             setLoading(false);
         }
-    }, [selectedDate]);
+    }, [selectedDate, colors]);
 
     useEffect(() => {
         generateDates();
@@ -205,14 +221,6 @@ export default function HistoryScreen() {
         }, [loadHistoryData])
     );
 
-
-      if (loading) {
-        return (
-            <CustomLoader 
-                fullScreen={true} 
-            />
-        );
-    }
     const handleDateSelect = (date: DailyDate) => {
         setDates(prev =>
             prev.map(d => ({
@@ -223,13 +231,84 @@ export default function HistoryScreen() {
         setSelectedDate(date.date);
     };
 
+    // ✅ Date Picker Functions
+    const openDatePicker = () => {
+        setTempDate(selectedDate);
+        setShowDatePicker(true);
+    };
+
+    const onDateChange = (event: any, selected?: Date) => {
+        if (Platform.OS === 'android') {
+            setShowDatePicker(false);
+        }
+        
+        if (selected && event.type !== 'dismissed') {
+            setSelectedDate(selected);
+            updateDatesList(selected);
+        }
+        
+        if (Platform.OS === 'ios') {
+            setTempDate(selected || tempDate);
+        }
+    };
+
+    const onDateConfirm = () => {
+        setSelectedDate(tempDate);
+        updateDatesList(tempDate);
+        setShowDatePicker(false);
+    };
+
+    const updateDatesList = (date: Date) => {
+        // Generate new dates list based on selected date
+        const datesArray: DailyDate[] = [];
+        const startDate = new Date(date);
+        
+        for (let i = 0; i < 5; i++) {
+            const currentDate = new Date(startDate);
+            currentDate.setDate(startDate.getDate() - i);
+            
+            datesArray.push({
+                date: currentDate,
+                day: currentDate.getDate(),
+                month: currentDate.toLocaleString('default', { month: 'short' }),
+                isSelected: i === 0,
+                formatted: currentDate.toISOString().split('T')[0],
+            });
+        }
+        
+        setDates(datesArray);
+    };
+
+    const goToPreviousDay = () => {
+        const newDate = new Date(selectedDate);
+        newDate.setDate(selectedDate.getDate() - 1);
+        setSelectedDate(newDate);
+        updateDatesList(newDate);
+    };
+
+    const goToNextDay = () => {
+        const newDate = new Date(selectedDate);
+        newDate.setDate(selectedDate.getDate() + 1);
+        
+        // Don't allow future dates
+        if (newDate > new Date()) {
+            Alert.alert('Info', 'Cannot view future dates');
+            return;
+        }
+        
+        setSelectedDate(newDate);
+        updateDatesList(newDate);
+    };
+
     const formatMonth = (month: string) => {
         return month.charAt(0).toUpperCase() + month.slice(1);
     };
 
+    const styles = getStyles(colors, theme);
+
     return (
         <View style={styles.container}>
-            <StatusBar barStyle="dark-content" />
+            <StatusBar barStyle={theme === "dark" ? "light-content" : "dark-content"} />
             
             <SafeAreaView style={styles.safeArea}>
                 {/* Fixed Header */}
@@ -237,13 +316,35 @@ export default function HistoryScreen() {
                     <Text style={styles.headerTitle}>My History</Text>
                     <TouchableOpacity
                         style={styles.calendarButton}
-                        onPress={() => Alert.alert('Calendar', 'Date picker coming soon!')}
+                        onPress={openDatePicker}
                     >
-                        <Ionicons name="calendar-outline" size={22} color="#FF6B4A" />
+                        <Ionicons name="calendar-outline" size={22} color={colors.primary} />
                     </TouchableOpacity>
                 </View>
 
-                {/* Fixed Date Selector */}
+                {/* Date Navigation Row */}
+                <View style={styles.dateNavigationRow}>
+                    <TouchableOpacity onPress={goToPreviousDay} style={styles.navArrow}>
+                        <Ionicons name="chevron-back" size={24} color={colors.primary} />
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity onPress={openDatePicker} style={styles.dateDisplay}>
+                        <Text style={[styles.dateDisplayText, { color: colors.text }]}>
+                            {selectedDate.toLocaleDateString('default', { 
+                                weekday: 'long', 
+                                month: 'long', 
+                                day: 'numeric' 
+                            })}
+                        </Text>
+                        <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity onPress={goToNextDay} style={styles.navArrow}>
+                        <Ionicons name="chevron-forward" size={24} color={colors.primary} />
+                    </TouchableOpacity>
+                </View>
+
+                {/* Fixed Date Selector (Quick Select) */}
                 <View style={styles.dateSelectorWrapper}>
                     <ScrollView
                         horizontal
@@ -292,7 +393,7 @@ export default function HistoryScreen() {
                             </View>
                         ) : historyItems.length === 0 ? (
                             <View style={styles.emptyContainer}>
-                                <Ionicons name="time-outline" size={64} color="#D1D5DB" />
+                                <Ionicons name="time-outline" size={64} color={colors.textMuted} />
                                 <Text style={styles.emptyTitle}>No activities</Text>
                                 <Text style={styles.emptySubtitle}>
                                     No workouts, meals, or water logged for this day
@@ -313,7 +414,11 @@ export default function HistoryScreen() {
                                     </View>
 
                                     {/* Content Card */}
-                                    <BlurView intensity={80} tint="light" style={styles.historyCard}>
+                                    <BlurView 
+                                        intensity={theme === "dark" ? 30 : 80} 
+                                        tint={theme === "dark" ? "dark" : "light"} 
+                                        style={styles.historyCard}
+                                    >
                                         <View style={styles.cardHeader}>
                                             <View>
                                                 <Text style={styles.cardTitle}>{item.title}</Text>
@@ -351,7 +456,7 @@ export default function HistoryScreen() {
                                                             styles.progressFill,
                                                             {
                                                                 width: `${Math.min(item.progress, 100)}%`,
-                                                                backgroundColor: '#3B82F6',
+                                                                backgroundColor: colors.info,
                                                             },
                                                         ]}
                                                     />
@@ -359,9 +464,11 @@ export default function HistoryScreen() {
                                             </View>
                                         )}
                                     </BlurView>
+                                    
                                 </Animated.View>
                             ))
                         )}
+                        {loading && <CustomLoader fullScreen />}
                     </View>
                     
                     {/* Bottom Padding */}
@@ -369,48 +476,55 @@ export default function HistoryScreen() {
                 </ScrollView>
             </SafeAreaView>
 
-            {/* Bottom Navigation */}
-            <BlurView intensity={90} tint="light" style={styles.bottomNav}>
-                <TouchableOpacity
-                    style={styles.navItem}
-                    onPress={() => router.push('/(tabs)/home')}
+            {/* ✅ Date Picker Modal */}
+            {Platform.OS === 'ios' && (
+                <Modal
+                    transparent={true}
+                    visible={showDatePicker}
+                    animationType="slide"
+                    onRequestClose={() => setShowDatePicker(false)}
                 >
-                    <Ionicons name="home-outline" size={24} color="#9CA3AF" />
-                    <Text style={styles.navText}>Home</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={styles.navItem}
-                    onPress={() => router.push('/(tabs)/stats')}
-                >
-                    <Ionicons name="stats-chart-outline" size={24} color="#9CA3AF" />
-                    <Text style={styles.navText}>Stats</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.navItem}>
-                    <View style={styles.activeNavIcon}>
-                        <Ionicons name="time" size={24} color="#FF6B4A" />
-                        <View style={styles.activeDot} />
+                    <View style={styles.modalOverlay}>
+                        <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+                            <View style={styles.modalHeader}>
+                                <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                                    <Text style={[styles.modalCancelText, { color: colors.primary }]}>Cancel</Text>
+                                </TouchableOpacity>
+                                <Text style={[styles.modalTitle, { color: colors.text }]}>Select Date</Text>
+                                <TouchableOpacity onPress={onDateConfirm}>
+                                    <Text style={[styles.modalDoneText, { color: colors.primary }]}>Done</Text>
+                                </TouchableOpacity>
+                            </View>
+                            <DateTimePicker
+                                value={tempDate}
+                                mode="date"
+                                display="spinner"
+                                onChange={onDateChange}
+                                maximumDate={new Date()}
+                                themeVariant={theme === "dark" ? "dark" : "light"}
+                            />
+                        </View>
                     </View>
-                    <Text style={[styles.navText, styles.navTextActive]}>History</Text>
-                </TouchableOpacity>
+                </Modal>
+            )}
 
-                <TouchableOpacity
-                    style={styles.navItem}
-                    onPress={() => Alert.alert('Coming Soon', 'Profile page coming soon!')}
-                >
-                    <Ionicons name="person-outline" size={24} color="#9CA3AF" />
-                    <Text style={styles.navText}>Profile</Text>
-                </TouchableOpacity>
-            </BlurView>
+            {Platform.OS === 'android' && showDatePicker && (
+                <DateTimePicker
+                    value={selectedDate}
+                    mode="date"
+                    display="default"
+                    onChange={onDateChange}
+                    maximumDate={new Date()}
+                />
+            )}
         </View>
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any, theme: string) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#F8F6F5',
+        backgroundColor: colors.background,
     },
     safeArea: {
         flex: 1,
@@ -423,36 +537,62 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: 20,
         paddingVertical: 12,
-        backgroundColor: '#F8F6F5',
+        backgroundColor: colors.background,
         borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255, 107, 74, 0.1)',
+        borderBottomColor: colors.border,
     },
     headerTitle: {
         fontSize: 24,
         fontWeight: '700',
-        color: '#1F2937',
+        color: colors.text,
         letterSpacing: -0.5,
     },
     calendarButton: {
         width: 40,
         height: 40,
         borderRadius: 12,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: colors.card,
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: '#000',
+        shadowColor: colors.text,
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
+        shadowOpacity: theme === "dark" ? 0.2 : 0.05,
         shadowRadius: 4,
         elevation: 2,
     },
 
+    // Date Navigation Row
+    dateNavigationRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 20,
+        paddingVertical: 12,
+        backgroundColor: colors.background,
+    },
+    navArrow: {
+        padding: 8,
+    },
+    dateDisplay: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+        backgroundColor: colors.card,
+        borderRadius: 20,
+    },
+    dateDisplayText: {
+        fontSize: 14,
+        fontWeight: '600',
+    },
+
     // Date Selector Wrapper
     dateSelectorWrapper: {
-        backgroundColor: '#F8F6F5',
+        backgroundColor: colors.background,
         paddingBottom: 8,
         borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255, 107, 74, 0.1)',
+        borderBottomColor: colors.border,
     },
 
     // Date Selector
@@ -465,29 +605,29 @@ const styles = StyleSheet.create({
         width: 56,
         height: 56,
         borderRadius: 16,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: colors.card,
         alignItems: 'center',
         justifyContent: 'center',
         marginRight: 8,
-        shadowColor: '#000',
+        shadowColor: colors.text,
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
+        shadowOpacity: theme === "dark" ? 0.2 : 0.05,
         shadowRadius: 4,
         elevation: 2,
     },
     dateCardSelected: {
-        backgroundColor: '#FF6B4A',
+        backgroundColor: colors.primary,
     },
     dateMonth: {
         fontSize: 10,
         fontWeight: '600',
-        color: '#6B7280',
+        color: colors.textMuted,
         marginBottom: 2,
     },
     dateDay: {
         fontSize: 16,
         fontWeight: '700',
-        color: '#1F2937',
+        color: colors.text,
     },
     dateTextSelected: {
         color: '#FFFFFF',
@@ -499,7 +639,7 @@ const styles = StyleSheet.create({
     },
     timelineContent: {
         paddingHorizontal: 20,
-        paddingTop: 60, // Space between date selector and timeline
+        paddingTop: 20,
         paddingBottom: 100,
     },
 
@@ -514,7 +654,7 @@ const styles = StyleSheet.create({
         top: 0,
         bottom: 0,
         width: 2,
-        backgroundColor: '#E5E7EB',
+        backgroundColor: colors.border,
     },
     timelineItem: {
         flexDirection: 'row',
@@ -535,7 +675,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 3,
-        borderColor: '#F8F6F5',
+        borderColor: colors.background,
     },
 
     // History Card
@@ -545,7 +685,8 @@ const styles = StyleSheet.create({
         padding: 16,
         marginLeft: 28,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.5)',
+        borderColor: colors.border,
+        backgroundColor: theme === "dark" ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)',
     },
     cardHeader: {
         flexDirection: 'row',
@@ -556,17 +697,17 @@ const styles = StyleSheet.create({
     cardTitle: {
         fontSize: 16,
         fontWeight: '700',
-        color: '#1F2937',
+        color: colors.text,
         marginBottom: 2,
     },
     cardTime: {
         fontSize: 11,
         fontWeight: '600',
-        color: '#9CA3AF',
+        color: colors.textMuted,
     },
     cardDescription: {
         fontSize: 14,
-        color: '#6B7280',
+        color: colors.textSecondary,
         marginBottom: 12,
     },
     cardStats: {
@@ -590,7 +731,7 @@ const styles = StyleSheet.create({
     },
     progressBar: {
         height: 4,
-        backgroundColor: '#F3F4F6',
+        backgroundColor: colors.border,
         borderRadius: 2,
         overflow: 'hidden',
     },
@@ -606,7 +747,7 @@ const styles = StyleSheet.create({
     },
     loadingText: {
         fontSize: 14,
-        color: '#6B7280',
+        color: colors.textMuted,
     },
     emptyContainer: {
         paddingVertical: 60,
@@ -615,12 +756,12 @@ const styles = StyleSheet.create({
     emptyTitle: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#1F2937',
+        color: colors.text,
         marginTop: 16,
     },
     emptySubtitle: {
         fontSize: 14,
-        color: '#9CA3AF',
+        color: colors.textMuted,
         marginTop: 8,
         textAlign: 'center',
         paddingHorizontal: 32,
@@ -629,44 +770,33 @@ const styles = StyleSheet.create({
         height: 40,
     },
 
-    // Bottom Navigation
-    bottomNav: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
+    // Modal Styles
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end',
+    },
+    modalContent: {
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        padding: 20,
+    },
+    modalHeader: {
         flexDirection: 'row',
-        justifyContent: 'space-around',
+        justifyContent: 'space-between',
         alignItems: 'center',
-        paddingHorizontal: 20,
-        paddingVertical: 8,
-        paddingBottom: Platform.OS === 'ios' ? 28 : 8,
-        borderTopWidth: 1,
-        borderTopColor: 'rgba(255,255,255,0.5)',
-        backgroundColor: 'rgba(255,255,255,0.95)',
+        marginBottom: 20,
     },
-    navItem: {
-        alignItems: 'center',
-        gap: 2,
-    },
-    navText: {
-        fontSize: 10,
+    modalTitle: {
+        fontSize: 16,
         fontWeight: '600',
-        color: '#9CA3AF',
     },
-    navTextActive: {
-        color: '#FF6B4A',
+    modalCancelText: {
+        fontSize: 16,
+        fontWeight: '500',
     },
-    activeNavIcon: {
-        position: 'relative',
-    },
-    activeDot: {
-        position: 'absolute',
-        top: -2,
-        right: -2,
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: '#FF6B4A',
+    modalDoneText: {
+        fontSize: 16,
+        fontWeight: '600',
     },
 });

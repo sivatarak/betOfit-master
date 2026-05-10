@@ -1,5 +1,5 @@
 // app/(tabs)/water.tsx
-import React, { useEffect, useState, useMemo, useRef } from "react";
+import React, { useEffect, useCallback, useState, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -12,20 +12,27 @@ import {
   Platform,
   Alert,
   Animated as RNAnimated,
+  Modal,
+  TextInput,
 } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  withSpring,
   withTiming,
   interpolate,
-  runOnJS,
 } from "react-native-reanimated";
+import {
+  schedulePostDrinkReminder,
+  scheduleMorningReminders,
+  scheduleDailyWaterReminders,
+  checkLateAndNoDrink,
+  cancelAllWaterNotifications,
+} from '../utils/waterNotification';
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { BlurView } from "expo-blur";
 import { CustomLoader } from '../../components/CustomLoader';
 import { useTheme } from "../../context/themecontext";
@@ -35,103 +42,63 @@ import {
   WEIGHT_KEY,
   WATER_KEY,
   WaterData,
+  syncWaterWithBackend,
 } from "../utils/waterUtils";
+import { useProfile } from '../../context/profileContext';
+import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from "react-native-svg";
 
 const { width } = Dimensions.get("window");
-const CIRCLE_SIZE = Math.min(width * 0.65, 280);
-
-// Custom amount modal (will be implemented)
-const CustomAmountModal = ({ visible, onClose, onAdd }: any) => {
-  const [amount, setAmount] = useState("250");
-  if (!visible) return null;
-
-  return (
-    <View style={styles.modalOverlay}>
-      <BlurView intensity={80} tint="dark" style={styles.modalContainer}>
-        <Text style={styles.modalTitle}>Custom Amount</Text>
-        <View style={styles.modalInputContainer}>
-          <TextInput
-            style={styles.modalInput}
-            value={amount}
-            onChangeText={setAmount}
-            keyboardType="numeric"
-            placeholder="Enter ml"
-          />
-          <Text style={styles.modalUnit}>ml</Text>
-        </View>
-        <View style={styles.modalButtons}>
-          <TouchableOpacity style={styles.modalCancel} onPress={onClose}>
-            <Text style={styles.modalCancelText}>Cancel</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.modalAdd, { backgroundColor: colors.primary }]}
-            onPress={() => {
-              const val = parseInt(amount);
-              if (val > 0) onAdd(val);
-              onClose();
-            }}
-          >
-            <Text style={styles.modalAddText}>Add</Text>
-          </TouchableOpacity>
-        </View>
-      </BlurView>
-    </View>
-  );
-};
+const CIRCLE_SIZE = Math.min(width * 0.65, 200);
 
 export default function WaterScreen() {
   const { colors, theme } = useTheme();
   const isDark = theme === "dark";
-
+  const { waterGoal, weight } = useProfile();
+  const [showCustomModal, setShowCustomModal] = useState(false);
+  const [customAmount, setCustomAmount] = useState("250");
   const [loading, setLoading] = useState(true);
-  const [weightKg, setWeightKg] = useState<number | null>(null);
   const [waterData, setWaterData] = useState<WaterData>({
     date: "",
     current: 0,
-    goal: 2500,
+    goal: waterGoal || 2500,
     history: [],
     streak: 0,
   });
-  const [showCustomModal, setShowCustomModal] = useState(false);
 
   // Animated liquid fill value
   const liquidFill = useSharedValue(0);
-  // For bubble animation
   const bubbleAnim = useRef(new RNAnimated.Value(0)).current;
 
   const percentage = useMemo(() => {
-    if (waterData.goal === 0) return 0;
-    return Math.min((waterData.current / waterData.goal) * 100, 100);
-  }, [waterData.current, waterData.goal]);
+    const goal = waterGoal || waterData.goal || 2500;
+    if (goal === 0) return 0;
+    return Math.min((waterData.current / goal) * 100, 100);
+  }, [waterData.current, waterGoal, waterData.goal]);
 
-  const remaining = Math.max(waterData.goal - waterData.current, 0);
-
+  const remaining = Math.max((waterGoal || waterData.goal || 2500) - waterData.current, 0);
+  console.log("💧 WaterScreen render: current =", waterData.current, "goal =", waterGoal || waterData.goal, "percentage =", percentage.toFixed(2) + "%");
+  console.log("💧 WaterScreen render: weight =", weight, "waterGoal =", waterGoal);
   // Animate liquid fill when percentage changes
   useEffect(() => {
-    liquidFill.value = withTiming(percentage / 100, {
-      duration: 800,
-    });
+    liquidFill.value = withTiming(percentage / 100, { duration: 800 });
   }, [percentage]);
 
-  // Bubble animation loop
+  // Bubble animation
   useEffect(() => {
-    const animateBubbles = () => {
-      RNAnimated.loop(
-        RNAnimated.sequence([
-          RNAnimated.timing(bubbleAnim, {
-            toValue: 1,
-            duration: 2000,
-            useNativeDriver: true,
-          }),
-          RNAnimated.timing(bubbleAnim, {
-            toValue: 0,
-            duration: 2000,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    };
-    animateBubbles();
+    RNAnimated.loop(
+      RNAnimated.sequence([
+        RNAnimated.timing(bubbleAnim, {
+          toValue: 1,
+          duration: 2000,
+          useNativeDriver: true,
+        }),
+        RNAnimated.timing(bubbleAnim, {
+          toValue: 0,
+          duration: 2000,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
   }, []);
 
   const liquidStyle = useAnimatedStyle(() => {
@@ -141,20 +108,19 @@ export default function WaterScreen() {
     };
   });
 
+  // Load initial data - ONCE
   useEffect(() => {
     const load = async () => {
       try {
-        const wStr = await AsyncStorage.getItem(WEIGHT_KEY);
-        let w = 70;
-        if (wStr) {
-          const parsed = parseFloat(wStr);
-          if (parsed > 0) {
-            w = parsed;
-            setWeightKg(w);
-          }
-        }
-        const data = await loadWaterData(w);
-        setWaterData(data);
+        const goalValue = waterGoal > 0 ? waterGoal : 2500;
+        const data = await loadWaterData(weight || 70);
+        setWaterData({
+          ...data,
+          goal: goalValue,
+        });
+        await scheduleMorningReminders();
+        await scheduleDailyWaterReminders();
+        await checkLateAndNoDrink(data.current);
       } catch (e) {
         console.log("Error loading hydration:", e);
       } finally {
@@ -162,12 +128,52 @@ export default function WaterScreen() {
       }
     };
     load();
-  }, []);
+  }, []); // Empty dependency - run once on mount
+
+  // Update goal when profile context updates
+  useEffect(() => {
+    if (waterGoal > 0 && !loading) {
+      setWaterData(prev => ({
+        ...prev,
+        goal: waterGoal
+      }));
+    }
+  }, [waterGoal, loading]);
+
+  // Refresh on focus
+  useFocusEffect(
+    useCallback(() => {
+      const refresh = async () => {
+        if (!loading) {
+          await syncWaterWithBackend();
+          const wStr = await AsyncStorage.getItem(WEIGHT_KEY);
+          let w = weight || 70;
+          if (wStr) {
+            const parsed = parseFloat(wStr);
+            if (parsed > 0) w = parsed;
+          }
+          const data = await loadWaterData(w);
+          setWaterData(prev => ({
+            ...data,
+            goal: waterGoal > 0 ? waterGoal : prev.goal,
+          }));
+        }
+      };
+      refresh();
+    }, [loading, weight, waterGoal])
+  );
 
   const add = async (amount: number) => {
+    console.log('💧 Adding water:', amount);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const updated = await addWaterIntake(amount);
+    console.log('💧 Updated water data:', updated);
     setWaterData(updated);
+    await schedulePostDrinkReminder();
+    // Force a re-render by setting state again
+    setTimeout(() => {
+      setWaterData(prev => ({ ...prev }));
+    }, 100);
   };
 
   const removeLast = async () => {
@@ -200,21 +206,35 @@ export default function WaterScreen() {
             const resetData: WaterData = {
               date: today,
               current: 0,
-              goal: waterData.goal,
+              goal: waterGoal || waterData.goal || 2500,
               history: [],
               streak: waterData.streak,
             };
             await AsyncStorage.setItem(WATER_KEY, JSON.stringify(resetData));
             setWaterData(resetData);
+            // ← ADD THIS — cancel the 1-hour post-drink reminder on reset
+            await cancelAllWaterNotifications();
+            await scheduleMorningReminders(); //
           },
         },
       ]
     );
   };
+  const showCustomAmountPrompt = () => {
+    setCustomAmount("250");
+    setShowCustomModal(true);
+  };
 
-  // if (loading) {
-  //   return <CustomLoader fullScreen={true} />;
-  // }
+  const handleCustomAdd = () => {
+    const val = parseInt(customAmount || "0");
+    if (val > 0) {
+      add(val);
+      setShowCustomModal(false);
+      setCustomAmount("250");
+    } else {
+      Alert.alert("Invalid Amount", "Please enter a valid amount greater than 0");
+    }
+  };
 
   const statusMessage =
     percentage < 30
@@ -227,12 +247,68 @@ export default function WaterScreen() {
             ? "Goal achieved! 🎉"
             : "Keep it up!";
 
+  if (loading) {
+    return <CustomLoader fullScreen={true} />;
+  }
+
+  function WaterCircularProgress({ current, goal, remaining, colors }: {
+    current: number;
+    goal: number;
+    remaining: number;
+    colors: any;
+  }) {
+    const size = CIRCLE_SIZE;
+    const strokeWidth = 12;
+    const radius = (size - strokeWidth) / 2;
+    const circumference = 2 * Math.PI * radius;
+    const percentage = Math.min((current / goal) * 100, 100);
+    const strokeDashoffset = circumference * (1 - percentage / 100);
+
+    return (
+      <View style={{ width: size, height: size, justifyContent: "center", alignItems: "center" }}>
+        <Svg width={size} height={size}>
+          <Defs>
+            <SvgLinearGradient id="waterGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <Stop offset="0%" stopColor={colors.secondary} />
+              <Stop offset="100%" stopColor={colors.primary} />
+            </SvgLinearGradient>
+          </Defs>
+          {/* Track ring */}
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={colors.accent + "40"}
+            strokeWidth={strokeWidth}
+            fill="none"
+          />
+          {/* Progress ring */}
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke="url(#waterGrad)"
+            strokeWidth={strokeWidth}
+            fill="none"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          />
+        </Svg>
+        {/* Center text */}
+        <View style={{ position: "absolute", alignItems: "center" }}>
+          <Ionicons name="water" size={22} color={colors.primary} style={{ marginBottom: 2 }} />
+          <Text style={{ fontSize: 30, fontWeight: "800", color: colors.text }}>{remaining}</Text>
+          <Text style={{ fontSize: 13, fontWeight: "600", color: colors.textSecondary, marginTop: 2 }}>ml left</Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <LinearGradient
-        colors={isDark ? ['#1a1a2e', '#16213e'] : [colors.background, colors.card]}
-        style={StyleSheet.absoluteFill}
-      />
+
 
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
 
@@ -253,103 +329,76 @@ export default function WaterScreen() {
           </View>
 
           {/* Interactive Liquid Ring Section */}
-          <View style={styles.liquidRingSection}>
-            <View style={[styles.liquidRing, { borderColor: colors.surfaceContainerLow }]}>
-              {/* Background Pulse */}
-              <LinearGradient
-                colors={[colors.primary, colors.primary + 'cc']}
-                style={[styles.liquidRingPulse, { opacity: 0.1 }]}
+          {/* Circular Progress Section */}
+          <BlurView intensity={80} tint={theme === "dark" ? "dark" : "light"} style={[styles.goalCard, { borderColor: 'rgba(255,255,255,0.3)' }]}>
+            <LinearGradient
+              colors={[colors.secondary, colors.primary]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <View style={[styles.goalCardBackground, { backgroundColor: `${colors.accent}10` }]} />
+            <View style={styles.goalCardContent}>
+              <WaterCircularProgress
+                current={waterData.current}
+                goal={waterGoal || waterData.goal || 2500}
+                remaining={remaining}
+                colors={colors}
               />
-
-              {/* Liquid Fill */}
-              <Animated.View style={[styles.liquidFill, liquidStyle]}>
-                <LinearGradient
-                  colors={[colors.primary + '40', colors.primary + '20']}
-                  style={StyleSheet.absoluteFill}
-                />
-              </Animated.View>
-
-              {/* Center Content */}
-              <View style={styles.liquidRingCenter}>
-                <Ionicons name="water-drop-outline" size={40} color={colors.primary} />
-                <View style={styles.amountRow}>
-                  <Text style={[styles.currentAmount, { color: colors.text }]}>
-                    {waterData.current}
-                  </Text>
-                  <Text style={[styles.amountUnit, { color: colors.textSecondary }]}>ml</Text>
+              <View style={styles.goalStats}>
+                <View style={styles.goalStat}>
+                  <Text style={[styles.goalStatLabel, { color: "rgba(255,255,255,0.7)" }]}>Goal</Text>
+                  <Text style={[styles.goalStatValue, { color: colors.text }]}>{(waterGoal || waterData.goal || 2500).toLocaleString()}</Text>
+                  <Text style={[styles.goalStatUnit, { color: "rgba(255,255,255,0.6)" }]}>ml</Text>
                 </View>
-                <Text style={[styles.goalText, { color: colors.textSecondary }]}>
-                  Goal: {waterData.goal}ml
-                </Text>
+                <View style={[styles.goalStatDivider, { backgroundColor: "rgba(255,255,255,0.2)" }]} />
+                <View style={styles.goalStat}>
+                  <Text style={[styles.goalStatLabel, { color: "rgba(255,255,255,0.7)" }]}>Drunk</Text>
+                  <Text style={[styles.goalStatValue, { color: colors.text }]}>{waterData.current.toLocaleString()}</Text>
+                  <Text style={[styles.goalStatUnit, { color: "rgba(255,255,255,0.6)" }]}>ml</Text>
+                </View>
               </View>
-
-              {/* Floating Bubbles */}
-              <RNAnimated.View
-                style={[
-                  styles.bubble,
-                  styles.bubble1,
-                  {
-                    opacity: bubbleAnim.interpolate({
-                      inputRange: [0, 0.5, 1],
-                      outputRange: [0.3, 0.8, 0.3],
-                    }),
-                  }
-                ]}
-              />
-              <RNAnimated.View
-                style={[
-                  styles.bubble,
-                  styles.bubble2,
-                  {
-                    opacity: bubbleAnim.interpolate({
-                      inputRange: [0, 0.5, 1],
-                      outputRange: [0.2, 0.6, 0.2],
-                    }),
-                  }
-                ]}
-              />
-              <RNAnimated.View
-                style={[
-                  styles.bubble,
-                  styles.bubble3,
-                  {
-                    opacity: bubbleAnim.interpolate({
-                      inputRange: [0, 0.4, 0.8],
-                      outputRange: [0.4, 0.9, 0.4],
-                    }),
-                  }
-                ]}
-              />
             </View>
+          </BlurView>
+          <Modal
+            visible={showCustomModal}
+            transparent={true}
+            animationType="slide"
+            onRequestClose={() => setShowCustomModal(false)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={[styles.modalContainer, { backgroundColor: colors.surface }]}>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>Add Water</Text>
+                <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>Enter amount in ml</Text>
 
-            {/* Contextual Stats Card */}
-            <BlurView
-              intensity={80}
-              tint={isDark ? "dark" : "light"}
-              style={[styles.statsCard, { borderColor: colors.border }]}
-            >
-              <View style={styles.statsCardHeader}>
-                <View>
-                  <Text style={[styles.statsCardTitle, { color: colors.text }]}>Hydration Goal</Text>
-                  <Text style={[styles.statsCardSubtitle, { color: colors.textSecondary }]}>
-                    {statusMessage}
-                  </Text>
-                </View>
-                <Text style={[styles.statsCardPercent, { color: colors.primary }]}>
-                  {Math.round(percentage)}%
-                </Text>
-              </View>
-              <View style={[styles.progressBarBg, { backgroundColor: colors.surfaceContainerHigh }]}>
-                <LinearGradient
-                  colors={[colors.primary, colors.primary + 'cc']}
-                  style={[styles.progressBarFill, { width: `${percentage}%` }]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
+                <TextInput
+                  style={[styles.modalInput, { backgroundColor: colors.surfaceContainerLow, color: colors.text, borderColor: colors.border }]}
+                  value={customAmount}
+                  onChangeText={setCustomAmount}
+                  keyboardType="numeric"
+                  placeholder="Enter amount"
+                  placeholderTextColor={colors.textMuted}
+                  autoFocus={true}
                 />
-              </View>
-            </BlurView>
-          </View>
 
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.modalCancelButton, { borderColor: colors.border }]}
+                    onPress={() => setShowCustomModal(false)}
+                  >
+                    <Text style={[styles.modalButtonText, { color: colors.textSecondary }]}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.modalAddButton, { backgroundColor: colors.primary }]}
+                    onPress={handleCustomAdd}
+                  >
+                    <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Add</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
           {/* Quick Add Grid */}
           <View style={styles.quickAddSection}>
             <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Quick Add</Text>
@@ -383,24 +432,7 @@ export default function WaterScreen() {
 
               <TouchableOpacity
                 style={[styles.quickAddButton, styles.customButton, { backgroundColor: colors.primary }]}
-                onPress={() => {
-                  Alert.prompt(
-                    "Custom Amount",
-                    "Enter amount in ml",
-                    [
-                      { text: "Cancel", style: "cancel" },
-                      {
-                        text: "Add",
-                        onPress: (amount) => {
-                          const val = parseInt(amount || "0");
-                          if (val > 0) add(val);
-                        },
-                      },
-                    ],
-                    "plain-text",
-                    "250"
-                  );
-                }}
+                onPress={showCustomAmountPrompt}
                 activeOpacity={0.9}
               >
                 <Ionicons name="add-circle" size={24} color="#FFFFFF" />
@@ -485,108 +517,50 @@ export default function WaterScreen() {
           )}
 
           {/* Reset Button */}
+
           <TouchableOpacity
-            style={[styles.resetButton, { backgroundColor: colors.error + '10', borderColor: colors.error }]}
             onPress={reset}
+            activeOpacity={0.7}
+            style={{
+              alignSelf: 'center',
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingVertical: 10,
+              paddingHorizontal: 20,
+              borderRadius: 20,
+              borderWidth: 1,
+              borderColor: colors.error,
+              backgroundColor: `${colors.error}18`,
+            }}
           >
-            <Ionicons name="refresh-outline" size={20} color={colors.error} />
-            <Text style={[styles.resetButtonText, { color: colors.error }]}>Reset Today's Water</Text>
+            <Ionicons name="refresh-outline" size={26} color={colors.error} />
+            <Text style={{ fontSize: 13, fontWeight: '600', color: colors.error }}>Reset</Text>
           </TouchableOpacity>
+
+          {/* Custom Amount Modal */}
 
           <View style={{ height: 40 }} />
         </ScrollView>
       </SafeAreaView>
-
-      {/* Bottom Navigation */}
-      <BlurView intensity={90} tint={isDark ? "dark" : "light"} style={[styles.bottomNav, { borderTopColor: colors.border }]}>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => router.push('/(tabs)/home')}
-        >
-          <Ionicons name="home-outline" size={24} color={colors.textSecondary} />
-          <Text style={[styles.navText, { color: colors.textSecondary }]}>Home</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => router.push('/(tabs)/stats')}
-        >
-          <Ionicons name="bar-chart-outline" size={24} color={colors.textSecondary} />
-          <Text style={[styles.navText, { color: colors.textSecondary }]}>Stats</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={[styles.navItem, styles.navItemActive]}>
-          <LinearGradient
-            colors={[colors.primary, colors.primary + 'cc']}
-            style={styles.activeNavIcon}
-          >
-            <Ionicons name="water" size={24} color="#FFFFFF" />
-          </LinearGradient>
-          <Text style={[styles.navText, { color: colors.primary }]}>Hydrate</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => router.push('/(tabs)/workout')}
-        >
-          <Ionicons name="fitness-outline" size={24} color={colors.textSecondary} />
-          <Text style={[styles.navText, { color: colors.textSecondary }]}>Activity</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => router.push('/(auth)/profile-setup?mode=all')}
-        >
-          <Ionicons name="person-outline" size={24} color={colors.textSecondary} />
-          <Text style={[styles.navText, { color: colors.textSecondary }]}>Profile</Text>
-        </TouchableOpacity>
-      </BlurView>
-       {loading && <CustomLoader fullScreen />}
     </View>
   );
 }
 
+// Styles remain the same as yours, just remove the bottomNav styles if not used
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  safeArea: {
-    flex: 1,
-    paddingTop: Platform.OS === "android" ? 24 : 0,
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 100,
-  },
-
-  // Header
+  container: { flex: 1 },
+  safeArea: { flex: 1, paddingTop: Platform.OS === "android" ? 24 : 0 },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 100 },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 20,
   },
-  headerIcon: {
-    width: 40,
-    height: 40,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "800",
-  },
-
-  // Liquid Ring Section
-  liquidRingSection: {
-    alignItems: "center",
-    marginBottom: 24,
-  },
+  headerIcon: { width: 40, height: 40, justifyContent: "center", alignItems: "center" },
+  headerTitle: { fontSize: 20, fontWeight: "800" },
+  liquidRingSection: { alignItems: "center", marginBottom: 24 },
   liquidRing: {
     width: CIRCLE_SIZE,
     height: CIRCLE_SIZE,
@@ -596,289 +570,154 @@ const styles = StyleSheet.create({
     alignItems: "center",
     overflow: "hidden",
     position: "relative",
+    marginBottom: 0,
+  },
+  liquidFill: { position: "absolute", bottom: 0, left: 0, right: 0 },
+  liquidRingCenter: { alignItems: "center", zIndex: 10 },
+  amountRow: { flexDirection: "row", alignItems: "baseline", gap: 4 },
+  currentAmount: { fontSize: 48, fontWeight: "800" },
+  amountUnit: { fontSize: 16, fontWeight: "600" },
+  goalText: { fontSize: 12, marginTop: 4 },
+  bubble: { position: "absolute", borderRadius: 999, backgroundColor: "rgba(255, 255, 255, 0.4)" },
+  bubble1: { width: 12, height: 12, bottom: 30, left: 30 },
+  bubble2: { width: 20, height: 20, top: 40, right: 25 },
+  bubble3: { width: 8, height: 8, bottom: 60, right: 40 },
+  statsCard: { width: "100%", borderRadius: 20, padding: 20, overflow: "hidden", borderWidth: 1 },
+  statsCardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  statsCardTitle: { fontSize: 18, fontWeight: "700" },
+  statsCardSubtitle: { fontSize: 12, marginTop: 2 },
+  statsCardPercent: { fontSize: 28, fontWeight: "800" },
+  progressBarBg: { height: 8, borderRadius: 4, overflow: "hidden" },
+  progressBarFill: { height: "100%", borderRadius: 4 },
+  quickAddSection: { marginBottom: 24 },
+  sectionLabel: { fontSize: 12, fontWeight: "700", letterSpacing: 0.5, marginBottom: 12 },
+  quickAddGrid: { flexDirection: "row", gap: 12 },
+  quickAddButton: {
+    flex: 1, aspectRatio: 1, borderRadius: 999, alignItems: "center", justifyContent: "center",
+    gap: 6, borderWidth: 1, shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05, shadowRadius: 4, elevation: 2
+  },
+  quickAddText: { fontSize: 12, fontWeight: "700" },
+  customButton: { shadowColor: "#aa2e13" },
+  customButtonText: { fontSize: 12, fontWeight: "700", color: "#FFFFFF" },
+  statsGrid: { flexDirection: "row", gap: 12, marginBottom: 24 },
+  statCard: { flex: 1, borderRadius: 20, padding: 16, overflow: "hidden", borderWidth: 1 },
+  statIconContainer: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
+  statIconBg: { width: 32, height: 32, borderRadius: 16, justifyContent: "center", alignItems: "center" },
+  statLabel: { fontSize: 12, fontWeight: "600" },
+  statValueRow: { flexDirection: "row", alignItems: "baseline", gap: 4 },
+  statValue: { fontSize: 24, fontWeight: "800" },
+  statUnit: { fontSize: 12, fontWeight: "600" },
+  historySection: { marginBottom: 24 },
+  historyHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  historyTitle: { fontSize: 16, fontWeight: "700" },
+  historyItem: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 14, borderRadius: 16, marginBottom: 10, overflow: "hidden", borderWidth: 1 },
+  historyIcon: { flexDirection: "row", alignItems: "center", gap: 12 },
+  historyIconBg: { width: 44, height: 44, borderRadius: 22, justifyContent: "center", alignItems: "center" },
+  historyTitleText: { fontSize: 14, fontWeight: "600" },
+  historyTime: { fontSize: 11, marginTop: 2 },
+  historyAmount: { fontSize: 16, fontWeight: "700" },
+  resetButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 2, borderRadius: 16, padding: 5, borderWidth: 1 },
+  resetButtonText: { fontSize: 14, fontWeight: "600" },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    width: '80%',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontSize: 14,
     marginBottom: 20,
   },
-  liquidRingPulse: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+  modalInput: {
+    width: '100%',
+    padding: 16,
+    borderRadius: 16,
+    fontSize: 18,
+    fontWeight: '600',
+    textAlign: 'center',
+    borderWidth: 1,
+    marginBottom: 24,
   },
-  liquidFill: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "rgba(170, 46, 19, 0.2)",
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
   },
-  liquidRingCenter: {
-    alignItems: "center",
-    zIndex: 10,
+  modalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
   },
-  amountRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 4,
+  modalCancelButton: {
+    borderWidth: 1,
   },
-  currentAmount: {
-    fontSize: 48,
-    fontWeight: "800",
+  modalAddButton: {
+    borderWidth: 0,
   },
-  amountUnit: {
+  modalButtonText: {
     fontSize: 16,
-    fontWeight: "600",
-  },
-  goalText: {
-    fontSize: 12,
-    marginTop: 4,
-  },
-  bubble: {
-    position: "absolute",
-    borderRadius: 999,
-    backgroundColor: "rgba(255, 255, 255, 0.4)",
-  },
-  bubble1: {
-    width: 12,
-    height: 12,
-    bottom: 30,
-    left: 30,
-  },
-  bubble2: {
-    width: 20,
-    height: 20,
-    top: 40,
-    right: 25,
-  },
-  bubble3: {
-    width: 8,
-    height: 8,
-    bottom: 60,
-    right: 40,
+    fontWeight: '600',
   },
 
-  // Stats Card
-  statsCard: {
-    width: "100%",
-    borderRadius: 20,
-    padding: 20,
+  goalCard: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    marginBottom: 24,
+    borderRadius: 24,
+    padding: 45,
     overflow: "hidden",
     borderWidth: 1,
   },
-  statsCardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+  goalCardBackground: {
+    position: "absolute",
+    top: -96,
+    right: -96,
+    width: 192,
+    height: 192,
+    borderRadius: 96,
+  },
+  goalCardContent: {
     alignItems: "center",
-    marginBottom: 12,
+    gap: 24,
   },
-  statsCardTitle: {
-    fontSize: 18,
-    fontWeight: "700",
+  goalStats: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 24,
   },
-  statsCardSubtitle: {
-    fontSize: 12,
-    marginTop: 2,
+  goalStat: {
+    alignItems: "center",
   },
-  statsCardPercent: {
-    fontSize: 28,
-    fontWeight: "800",
-  },
-  progressBarBg: {
-    height: 8,
-    borderRadius: 4,
-    overflow: "hidden",
-  },
-  progressBarFill: {
-    height: "100%",
-    borderRadius: 4,
-  },
-
-  // Quick Add Section
-  quickAddSection: {
-    marginBottom: 24,
-  },
-  sectionLabel: {
+  goalStatLabel: {
     fontSize: 12,
     fontWeight: "700",
     letterSpacing: 0.5,
-    marginBottom: 12,
+    marginBottom: 4,
   },
-  quickAddGrid: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  quickAddButton: {
-    flex: 1,
-    aspectRatio: 1,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    borderWidth: 1,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  quickAddText: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  customButton: {
-    shadowColor: "#aa2e13",
-  },
-  customButtonText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
-
-  // Stats Grid
-  statsGrid: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 24,
-  },
-  statCard: {
-    flex: 1,
-    borderRadius: 20,
-    padding: 16,
-    overflow: "hidden",
-    borderWidth: 1,
-  },
-  statIconContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 12,
-  },
-  statIconBg: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  statLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  statValueRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 4,
-  },
-  statValue: {
-    fontSize: 24,
+  goalStatValue: {
+    fontSize: 18,
     fontWeight: "800",
   },
-  statUnit: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-
-  // History Section
-  historySection: {
-    marginBottom: 24,
-  },
-  historyHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  historyTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  historyItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 14,
-    borderRadius: 16,
-    marginBottom: 10,
-    overflow: "hidden",
-    borderWidth: 1,
-  },
-  historyIcon: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  historyIconBg: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  historyTitleText: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  historyTime: {
+  goalStatUnit: {
     fontSize: 11,
+    fontWeight: "600",
     marginTop: 2,
   },
-  historyAmount: {
-    fontSize: 16,
-    fontWeight: "700",
-  },
-
-  // Reset Button
-  resetButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-  },
-  resetButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-
-  // Bottom Navigation
-  bottomNav: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: "row",
-    justifyContent: "space-around",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    paddingBottom: Platform.OS === "ios" ? 34 : 12,
-    borderTopWidth: 1,
-    zIndex: 1000,
-    elevation: 10,
-  },
-  navItem: {
-    alignItems: "center",
-    gap: 4,
-  },
-  navItemActive: {
-    marginTop: -8,
-  },
-  activeNavIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#aa2e13",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  navText: {
-    fontSize: 10,
-    fontWeight: "600",
+  goalStatDivider: {
+    width: 1,
+    height: 32,
   },
 });

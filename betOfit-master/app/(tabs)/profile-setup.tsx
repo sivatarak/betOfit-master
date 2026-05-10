@@ -18,9 +18,11 @@ import { CustomLoader } from '../../components/CustomLoader';
 import auth from '@react-native-firebase/auth';
 import storage from '@react-native-firebase/storage';
 import { appEvents, PROFILE_UPDATED } from '../utils/eventEmitter';
+import { useProfile } from '../../context/profileContext';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
 
 interface UserProfile {
   name: string;
@@ -69,24 +71,89 @@ export default function ProfileScreen() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [showBottomSheet, setShowBottomSheet] = useState(false);
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
-
+  const { refreshProfile } = useProfile();
   const [expandedSections, setExpandedSections] = useState({
     basic: mode === "basic" || mode === "all",
     goals: mode === "goals" || mode === "all",
     workout: mode === "workout" || mode === "all",
   });
+  const [inactivityTimer, setInactivityTimer] = useState<NodeJS.Timeout | null>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
 
+  const resetInactivityTimer = () => {
+    if (inactivityTimer) clearTimeout(inactivityTimer);
+
+    const timer = setTimeout(() => {
+      // Scroll to Update Profile button after 2 seconds of no typing
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 2000);
+
+    setInactivityTimer(timer);
+  };
   const [editMode, setEditMode] = useState({
-    basic: false,
-    goals: false,
-    workout: false,
+    basic: mode === "basic" || (mode === "all" && !profile.name), // Show edit if no data exists
+    goals: mode === "goals" || (mode === "all" && !profile.targetWeight),
+    workout: mode === "workout" || (mode === "all" && !profile.workoutDaysPerWeek),
   });
+  useEffect(() => {
+    loadCompleteProfile();
+  }, []);
 
+  const loadCompleteProfile = async () => {
+    try {
+      const currentUser = auth().currentUser;
+      const userId = currentUser?.uid;
+
+      if (!userId) return;
+
+      // Try to load from AsyncStorage first
+      const cachedProfile = await AsyncStorage.getItem(`USER_PROFILE_${userId}`);
+      let profileData = cachedProfile ? JSON.parse(cachedProfile) : null;
+
+      // If not in cache or incomplete, fetch from database
+      if (!profileData || !profileData.age || !profileData.height) {
+        const dbProfile = await getProfile(userId);
+        if (dbProfile) {
+          profileData = dbProfile;
+          // Update cache
+          await AsyncStorage.setItem(`USER_PROFILE_${userId}`, JSON.stringify(dbProfile));
+        }
+      }
+
+      if (profileData) {
+        setProfile({
+          name: profileData.name || "",
+          age: profileData.age || 0,
+          height: profileData.height || 0,
+          weight: profileData.weight || 0,
+          gender: profileData.gender || "male",
+          activityLevel: profileData.activityLevel || 1.55,
+          targetWeight: profileData.targetWeight || 0,
+          timeline: profileData.timeline || 0,
+          workoutDaysPerWeek: profileData.workoutDaysPerWeek || 0,
+          workoutDays: profileData.workoutDays || [],
+        });
+      }
+    } catch (error) {
+      console.error("Error loading profile:", error);
+    }
+  };
   useEffect(() => {
     loadProfile();
     loadUserPhoto();
   }, []);
+  // Add this effect to listen for profile updates
+  useEffect(() => {
+    const handleProfileUpdate = () => {
+      loadCompleteProfile();
+    };
 
+    appEvents.on(PROFILE_UPDATED, handleProfileUpdate);
+
+    return () => {
+      appEvents.off(PROFILE_UPDATED, handleProfileUpdate);
+    };
+  }, []);
   const showBottomSheetModal = () => {
     slideAnim.setValue(SCREEN_HEIGHT); // MUST RESET FIRST
 
@@ -255,10 +322,20 @@ export default function ProfileScreen() {
   };
 
   const toggleEditMode = (section: 'basic' | 'goals' | 'workout') => {
-    setEditMode(prev => ({
-      ...prev,
-      [section]: !prev[section]
-    }));
+    if (mode === "all") {
+      // Close all other sections, open only the clicked one
+      setEditMode({
+        basic: section === 'basic',
+        goals: section === 'goals',
+        workout: section === 'workout',
+      });
+    } else {
+      // Original behavior for onboarding
+      setEditMode(prev => ({
+        ...prev,
+        [section]: !prev[section]
+      }));
+    }
   };
 
   const toggleWorkoutDay = (day: string) => {
@@ -279,105 +356,156 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleTextChange = (field: string, value: any) => {
+    setProfile(prev => ({ ...prev, [field]: value }));
+    if (mode === "all") {
+      resetInactivityTimer();
+    }
+  };
+
   const handleSave = async () => {
+    console.log("🟡 [handleSave] Started");
     try {
       const currentUser = auth().currentUser;
       const userId = currentUser?.uid;
+      const email = currentUser?.email;
 
       if (!userId) {
         throw new Error('User not authenticated');
       }
 
+      // ✅ Load existing profile COMPLETELY from cache
+      const existingData = await AsyncStorage.getItem(`USER_PROFILE_${userId}`);
+      const existingProfile = existingData ? JSON.parse(existingData) : {};
+
+      // ✅ Also fetch from database to ensure we have latest data
+      let dbProfile = null;
+      try {
+        dbProfile = await getProfile(userId);
+      } catch (e) {
+        console.log("Could not fetch from DB");
+      }
+
+      // ✅ MERGE all sources - prioritize current profile, then existing, then DB
+      const mergedProfile = {
+        name: profile.name || existingProfile.name || dbProfile?.name || "",
+        age: profile.age || existingProfile.age || dbProfile?.age || 0,
+        height: profile.height || existingProfile.height || dbProfile?.height || 0,
+        weight: profile.weight || existingProfile.weight || dbProfile?.weight || 0,
+        gender: profile.gender || existingProfile.gender || dbProfile?.gender || "male",
+        activityLevel: profile.activityLevel || existingProfile.activityLevel || dbProfile?.activity_level || 1.55,
+        targetWeight: profile.targetWeight || existingProfile.targetWeight || dbProfile?.target_weight || 0,
+        timeline: profile.timeline || existingProfile.timeline || dbProfile?.timeline || 0,
+        workoutDaysPerWeek: profile.workoutDaysPerWeek || existingProfile.workoutDaysPerWeek || dbProfile?.workout_days_per_week || 0,
+        workoutDays: profile.workoutDays.length ? profile.workoutDays : existingProfile.workoutDays || dbProfile?.workout_days || [],
+      };
+
+      console.log("🟡 Merged profile:", mergedProfile);
+
+      // ✅ Validation using merged values
       if (mode === "basic") {
-        if (!profile.name?.trim()) {
+        if (!mergedProfile.name?.trim()) {
           Alert.alert('Missing Info', 'Please enter your name');
           return;
         }
-        if (!profile.age || profile.age <= 0) {
+        if (!mergedProfile.age || mergedProfile.age <= 0) {
           Alert.alert('Missing Info', 'Please enter your age');
           return;
         }
-        if (!profile.height || profile.height <= 0) {
+        if (!mergedProfile.height || mergedProfile.height <= 0) {
           Alert.alert('Missing Info', 'Please enter your height');
           return;
         }
-        if (!profile.weight || profile.weight <= 0) {
+        if (!mergedProfile.weight || mergedProfile.weight <= 0) {
           Alert.alert('Missing Info', 'Please enter your weight');
           return;
         }
       }
 
       if (mode === "goals") {
-        if (!profile.targetWeight || profile.targetWeight <= 0) {
+        if (!mergedProfile.targetWeight || mergedProfile.targetWeight <= 0) {
           Alert.alert('Missing Info', 'Please enter your target weight');
           return;
         }
-        if (!profile.timeline || profile.timeline <= 0) {
+        if (!mergedProfile.timeline || mergedProfile.timeline <= 0) {
           Alert.alert('Missing Info', 'Please enter your timeline in weeks');
           return;
         }
       }
 
       if (mode === "workout") {
-        if (!profile.workoutDaysPerWeek || profile.workoutDaysPerWeek <= 0) {
+        if (!mergedProfile.workoutDaysPerWeek || mergedProfile.workoutDaysPerWeek <= 0) {
           Alert.alert('Missing Info', 'Please enter how many days per week you workout');
           return;
         }
-        if (profile.workoutDays.length !== profile.workoutDaysPerWeek) {
-          Alert.alert('Missing Info', `Please select ${profile.workoutDaysPerWeek} workout days`);
+        if (mergedProfile.workoutDays.length !== mergedProfile.workoutDaysPerWeek) {
+          Alert.alert('Missing Info', `Please select ${mergedProfile.workoutDaysPerWeek} workout days`);
           return;
         }
       }
 
-      const bmr = calculateBMR(profile.weight, profile.height, profile.age, profile.gender);
-      const tdee = calculateTDEE(bmr, profile.activityLevel);
-      const waterGoal = Math.round(profile.weight * 33);
-      const restDays = WEEKDAYS.filter(day => !profile.workoutDays.includes(day));
+      // ✅ Calculate using merged values
+      const bmr = calculateBMR(mergedProfile.weight, mergedProfile.height, mergedProfile.age, mergedProfile.gender);
+      const tdee = calculateTDEE(bmr, mergedProfile.activityLevel);
+      const waterGoal = Math.round(mergedProfile.weight * 33);
+      const restDays = WEEKDAYS.filter(day => !mergedProfile.workoutDays.includes(day));
 
       let weeklyWeightLoss = 0;
       let dailyDeficit = 0;
       let dailyCalorieGoal = tdee;
 
-      if (profile.targetWeight > 0 && profile.timeline > 0) {
-        const weightDiff = Math.abs(profile.weight - profile.targetWeight);
-        weeklyWeightLoss = weightDiff / profile.timeline;
+      if (mergedProfile.targetWeight > 0 && mergedProfile.timeline > 0) {
+        const weightDiff = Math.abs(mergedProfile.weight - mergedProfile.targetWeight);
+        weeklyWeightLoss = weightDiff / mergedProfile.timeline;
         dailyDeficit = Math.round((weeklyWeightLoss * 7700) / 7);
-        const isLosingWeight = profile.weight > profile.targetWeight;
+        const isLosingWeight = mergedProfile.weight > mergedProfile.targetWeight;
         dailyCalorieGoal = isLosingWeight ? tdee - dailyDeficit : tdee + dailyDeficit;
       }
 
-      const existingData = await AsyncStorage.getItem(`USER_PROFILE_${userId}`);
-      const existingProfile = existingData ? JSON.parse(existingData) : {};
+      // ✅ Track completion status - PRESERVE existing values
+      let basicCompleted = existingProfile.basic_completed || dbProfile?.basic_completed || false;
+      let goalsCompleted = existingProfile.goals_completed || dbProfile?.goals_completed || false;
+      let workoutCompleted = existingProfile.workout_completed || dbProfile?.workout_completed || false;
 
+      // Update only the current section
+      if (mode === "basic") basicCompleted = true;
+      if (mode === "goals") goalsCompleted = true;
+      if (mode === "workout") workoutCompleted = true;
+
+      console.log("🟡 Completion flags:", { basicCompleted, goalsCompleted, workoutCompleted });
+
+      // ✅ Create full profile data with ALL values
       const fullProfileData = {
         userId: userId,
-        name: profile.name,
-        age: profile.age,
-        weight: profile.weight,
-        height: profile.height,
-        gender: profile.gender,
-        targetWeight: profile.targetWeight || 0,
-        timeline: profile.timeline || 0,
+        name: mergedProfile.name,
+        age: mergedProfile.age,
+        weight: mergedProfile.weight,
+        height: mergedProfile.height,
+        gender: mergedProfile.gender,
+        targetWeight: mergedProfile.targetWeight || 0,
+        timeline: mergedProfile.timeline || 0,
         weeklyWeightLoss,
         dailyDeficit,
-        workoutDaysPerWeek: profile.workoutDaysPerWeek || 0,
-        workoutDays: profile.workoutDays || [],
+        workoutDaysPerWeek: mergedProfile.workoutDaysPerWeek || 0,
+        workoutDays: mergedProfile.workoutDays || [],
         restDays,
         waterGoal,
         bmr,
         tdee,
         dailyCalorieGoal,
-        activityLevel: profile.activityLevel || 1.55,
-        basic_completed: mode === "basic" ? true : (existingProfile.basic_completed || false),
-        goals_completed: mode === "goals" ? true : (existingProfile.goals_completed || false),
-        workout_completed: mode === "workout" ? true : (existingProfile.workout_completed || false),
+        activityLevel: mergedProfile.activityLevel || 1.55,
+        basic_completed: basicCompleted,
+        goals_completed: goalsCompleted,
+        workout_completed: workoutCompleted,
         setupDate: new Date().toISOString(),
       };
 
+      // ✅ Save to AsyncStorage
       await AsyncStorage.setItem(`USER_PROFILE_${userId}`, JSON.stringify(fullProfileData));
-      await AsyncStorage.setItem(STORAGE_KEYS.BF_WEIGHT_KG, profile.weight.toString());
-      await AsyncStorage.setItem(STORAGE_KEYS.USER_NAME, profile.name);
+      await AsyncStorage.setItem(STORAGE_KEYS.BF_WEIGHT_KG, mergedProfile.weight.toString());
+      await AsyncStorage.setItem(STORAGE_KEYS.USER_NAME, mergedProfile.name);
 
+      // ✅ Save water data
       if (waterGoal) {
         const waterData = {
           date: new Date().toISOString().split("T")[0],
@@ -389,6 +517,7 @@ export default function ProfileScreen() {
         await AsyncStorage.setItem(STORAGE_KEYS.WATER_DATA, JSON.stringify(waterData));
       }
 
+      // ✅ Save calories data
       if (dailyCalorieGoal && dailyCalorieGoal > 0) {
         const calData = await AsyncStorage.getItem(STORAGE_KEYS.CALORIES_DATA);
         const parsedCalData = calData ? JSON.parse(calData) : {};
@@ -399,18 +528,20 @@ export default function ProfileScreen() {
         }));
       }
 
+      // ✅ Save to backend
       const dbProfileData = {
         userId: userId,
-        name: profile.name,
-        age: profile.age,
-        weight: profile.weight,
-        height: profile.height,
-        gender: profile.gender,
-        targetWeight: profile.targetWeight || 0,
-        timeline: profile.timeline || 0,
-        activityLevel: profile.activityLevel || 1.55,
-        workoutDays: profile.workoutDays || [],
-        workoutDaysPerWeek: profile.workoutDaysPerWeek || 0,
+        name: mergedProfile.name,
+        email: email,
+        age: mergedProfile.age,
+        weight: mergedProfile.weight,
+        height: mergedProfile.height,
+        gender: mergedProfile.gender,
+        targetWeight: mergedProfile.targetWeight || 0,
+        timeline: mergedProfile.timeline || 0,
+        activityLevel: mergedProfile.activityLevel || 1.55,
+        workoutDays: mergedProfile.workoutDays || [],
+        workoutDaysPerWeek: mergedProfile.workoutDaysPerWeek || 0,
         waterGoal,
         bmr,
         tdee,
@@ -418,23 +549,31 @@ export default function ProfileScreen() {
         weeklyWeightLoss,
         dailyDeficit,
         restDays,
-        basic_completed: mode === "basic" ? true : (existingProfile.basic_completed || false),
-        goals_completed: mode === "goals" ? true : (existingProfile.goals_completed || false),
-        workout_completed: mode === "workout" ? true : (existingProfile.workout_completed || false),
+        basic_completed: basicCompleted,
+        goals_completed: goalsCompleted,
+        workout_completed: workoutCompleted,
       };
+
+      console.log("🟡 Saving to backend:", JSON.stringify(dbProfileData, null, 2));
 
       try {
         await saveProfile(dbProfileData);
+        console.log("✅ Profile saved to backend successfully");
       } catch (error) {
         console.error('⚠️ Database save failed:', error);
       }
 
+      // ✅ Refresh profile context
+      await refreshProfile();
+
+      // ✅ Emit event
       appEvents.emit(PROFILE_UPDATED, {
-        basic_completed: fullProfileData.basic_completed,
-        goals_completed: fullProfileData.goals_completed,
-        workout_completed: fullProfileData.workout_completed,
+        basic_completed: basicCompleted,
+        goals_completed: goalsCompleted,
+        workout_completed: workoutCompleted,
       });
 
+      // ✅ Navigate
       if (mode === "basic") {
         router.replace('/(tabs)/home');
       } else if (mode === "goals") {
@@ -450,7 +589,6 @@ export default function ProfileScreen() {
       Alert.alert("Error", "Failed to save profile. Please try again.");
     }
   };
-
   const bmr = calculateBMR(profile.weight, profile.height, profile.age, profile.gender);
   const tdee = calculateTDEE(bmr, profile.activityLevel);
   const restDays = WEEKDAYS.filter(day => !profile.workoutDays.includes(day));
@@ -464,7 +602,7 @@ export default function ProfileScreen() {
   );
 
   if (loading) {
-    return <CustomLoader  fullScreen={true} />;
+    return <CustomLoader fullScreen={true} />;
   }
 
   return (
@@ -477,6 +615,7 @@ export default function ProfileScreen() {
 
       <SafeAreaView style={styles.safeArea}>
         <ScrollView
+          ref={scrollViewRef}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
@@ -526,7 +665,7 @@ export default function ProfileScreen() {
           </View>
 
           {/* Progress Ring */}
-        
+
 
           {/* Basic Information Section */}
           {(mode === "basic" || mode === "all") && (
@@ -561,7 +700,7 @@ export default function ProfileScreen() {
                         <TextInput
                           style={[styles.input, { backgroundColor: colors.surfaceContainerLow, color: colors.text, borderColor: colors.border }]}
                           value={profile.name}
-                          onChangeText={(val) => setProfile({ ...profile, name: val })}
+                          onChangeText={(val) => handleTextChange('name', val)}
                           placeholder="Enter your name"
                           placeholderTextColor={colors.textMuted}
                         />
@@ -573,7 +712,7 @@ export default function ProfileScreen() {
                           <TextInput
                             style={[styles.input, { backgroundColor: colors.surfaceContainerLow, color: colors.text, borderColor: colors.border }]}
                             value={profile.age === 0 ? "" : profile.age.toString()}
-                            onChangeText={(val) => setProfile({ ...profile, age: val ? parseInt(val) : 0 })}
+                            onChangeText={(val) => handleTextChange('age', val)}
                             keyboardType="numeric"
                             placeholder="Years"
                             placeholderTextColor={colors.textMuted}
@@ -585,7 +724,7 @@ export default function ProfileScreen() {
                           <TextInput
                             style={[styles.input, { backgroundColor: colors.surfaceContainerLow, color: colors.text, borderColor: colors.border }]}
                             value={profile.height === 0 ? "" : profile.height.toString()}
-                            onChangeText={(val) => setProfile({ ...profile, height: val ? parseInt(val) : 0 })}
+                            onChangeText={(val) => handleTextChange('height', val)}
                             keyboardType="numeric"
                             placeholder="cm"
                             placeholderTextColor={colors.textMuted}
@@ -598,7 +737,7 @@ export default function ProfileScreen() {
                         <TextInput
                           style={[styles.input, { backgroundColor: colors.surfaceContainerLow, color: colors.text, borderColor: colors.border }]}
                           value={profile.weight === 0 ? "" : profile.weight.toString()}
-                          onChangeText={(val) => setProfile({ ...profile, weight: val ? parseFloat(val) : 0 })}
+                          onChangeText={(val) => handleTextChange('weight', val ? parseFloat(val) : 0)}
                           keyboardType="numeric"
                           placeholder="kg"
                           placeholderTextColor={colors.textMuted}
@@ -635,7 +774,8 @@ export default function ProfileScreen() {
 
                       <TouchableOpacity
                         style={[styles.saveButton, { backgroundColor: colors.primary }]}
-                        onPress={() => toggleEditMode('basic')}
+                        onPress={() => handleSave()}
+
                       >
                         <Text style={styles.saveButtonText}>Save Changes</Text>
                       </TouchableOpacity>
@@ -727,8 +867,7 @@ export default function ProfileScreen() {
                           <TextInput
                             style={[styles.weightInput, { backgroundColor: colors.surfaceContainerLow, color: colors.text, borderColor: colors.border }]}
                             value={profile.targetWeight === 0 ? "" : profile.targetWeight.toString()}
-                            onChangeText={(val) => setProfile({ ...profile, targetWeight: val ? parseFloat(val) : 0 })}
-                            keyboardType="numeric"
+                            onChangeText={(val) => handleTextChange('targetWeight', val ? parseFloat(val) : 0)}
                             placeholder="0"
                             placeholderTextColor={colors.textMuted}
                           />
@@ -742,7 +881,7 @@ export default function ProfileScreen() {
                           <TextInput
                             style={[styles.timelineInput, { backgroundColor: colors.surfaceContainerLow, color: colors.text, borderColor: colors.border }]}
                             value={profile.timeline === 0 ? "" : profile.timeline.toString()}
-                            onChangeText={(val) => setProfile({ ...profile, timeline: val ? parseInt(val) : 0 })}
+                            onChangeText={(val) => handleTextChange('timeline', val ? parseInt(val) : 0)}
                             keyboardType="numeric"
                             placeholder="12"
                             placeholderTextColor={colors.textMuted}
@@ -815,7 +954,7 @@ export default function ProfileScreen() {
 
                       <TouchableOpacity
                         style={[styles.editButton, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.border }]}
-                        onPress={() => toggleEditMode('goals')}
+                        onPress={() => handleSave()}
                       >
                         <Feather name="edit-2" size={16} color={colors.primary} />
                         <Text style={[styles.editButtonText, { color: colors.primary }]}>Edit Goals</Text>
@@ -832,7 +971,7 @@ export default function ProfileScreen() {
             <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <TouchableOpacity
                 style={styles.cardHeader}
-                onPress={() => toggleSection('workout')}
+                onPress={() => handleSave()} 
                 activeOpacity={0.7}
               >
                 <View style={styles.cardHeaderLeft}>
@@ -952,6 +1091,7 @@ export default function ProfileScreen() {
                       <TouchableOpacity
                         style={[styles.editButton, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.border }]}
                         onPress={() => toggleEditMode('workout')}
+
                       >
                         <Feather name="edit-2" size={16} color={colors.primary} />
                         <Text style={[styles.editButtonText, { color: colors.primary }]}>Edit Schedule</Text>

@@ -18,7 +18,7 @@ export default function GoogleSignInScreen() {
       console.log('🆔 User UID:', user.uid);
       
       // Navigate to profile setup screen
-      router.replace('/(auth)/profile-setup?mode=basic');
+      router.replace('/(tabs)/profile-setup?mode=basic');
     } catch (error: any) {
       console.error('❌ Sign-in error:', error);
       Alert.alert('Sign-In Failed', error.message);

@@ -20,7 +20,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path, Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
-import { WebView } from 'react-native-webview';
+import YoutubePlayer from 'react-native-youtube-iframe';
 import { CustomLoader } from '../../components/CustomLoader';
 import { useTheme } from '../../context/themecontext';
 
@@ -124,8 +124,9 @@ export default function ExerciseDetailScreen() {
   const [recentVolume, setRecentVolume] = useState(0);
   const [previousVolume, setPreviousVolume] = useState(0);
   const [chartData, setChartData] = useState<{ date: string; value: number }[]>([]);
-  const [videoId, setVideoId] = useState<string | null>(null);
-  const [showVideo, setShowVideo] = useState(false);
+  const [youtubeVideoId, setYoutubeVideoId] = useState<string | null>(null);
+  const [videoLoading, setVideoLoading] = useState(false);
+  const [videoError, setVideoError] = useState(false);
 
   useEffect(() => {
     loadExercise();
@@ -143,6 +144,7 @@ export default function ExerciseDetailScreen() {
     try {
       if (params.exercise) {
         const parsedExercise = JSON.parse(params.exercise as string);
+        console.log('Loaded exercise from params:', parsedExercise);
         setExercise(parsedExercise);
       }
     } catch (error) {
@@ -153,42 +155,53 @@ export default function ExerciseDetailScreen() {
     }
   };
 
-  const findVideoForExercise = (exerciseName: string) => {
-    if (!exerciseName) {
-      setVideoId(null);
-      return;
-    }
-
+  const findVideoForExercise = async (exerciseName: string) => {
+    if (!exerciseName) return;
     const name = exerciseName.toLowerCase().trim();
 
-    // 1️⃣ Exact match
+    // Check hardcoded map first
     if (EXERCISE_VIDEOS[name]) {
-      setVideoId(EXERCISE_VIDEOS[name]);
+      setYoutubeVideoId(EXERCISE_VIDEOS[name]);
       return;
     }
-
-    // 2️⃣ Contains match
     for (const key of Object.keys(EXERCISE_VIDEOS)) {
       if (name.includes(key)) {
-        setVideoId(EXERCISE_VIDEOS[key]);
+        setYoutubeVideoId(EXERCISE_VIDEOS[key]);
         return;
       }
     }
 
-    // 3️⃣ Word match (VERY IMPORTANT)
-    const words = name.split(' ');
-
-    for (const key of Object.keys(EXERCISE_VIDEOS)) {
-      for (const word of words) {
-        if (key.includes(word)) {
-          setVideoId(EXERCISE_VIDEOS[key]);
-          return;
-        }
+    // Check AsyncStorage cache
+    try {
+      const cacheKey = 'YT_' + name.replace(/\s+/g, '_');
+      const cached = await AsyncStorage.getItem(cacheKey);
+      if (cached) {
+        setYoutubeVideoId(cached);
+        return;
       }
-    }
+    } catch (e) { }
 
-    // ❌ No match found
-    setVideoId(null);
+    // Call YouTube API
+    setVideoLoading(true);
+    try {
+      const q = encodeURIComponent(`${exerciseName} exercise tutorial proper form`);
+      const res = await fetch(
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${q}&type=video&maxResults=1&key=${YOUTUBE_API_KEY}`
+      );
+      const data = await res.json();
+      const id = data.items?.[0]?.id?.videoId;
+      if (id) {
+        setYoutubeVideoId(id);
+        const cacheKey = 'YT_' + name.replace(/\s+/g, '_');
+        await AsyncStorage.setItem(cacheKey, id);
+      } else {
+        setVideoError(true);
+      }
+    } catch {
+      setVideoError(true);
+    } finally {
+      setVideoLoading(false);
+    }
   };
 
   const loadWorkoutHistory = async (exerciseName: string) => {
@@ -331,6 +344,7 @@ export default function ExerciseDetailScreen() {
       router.push({
         pathname: '/(tabs)/logExercise-screen',
         params: {
+          exerciseId: exercise.id,
           exerciseName: exercise.name,
           muscle: exercise.muscle,
           equipment: exercise.equipment,
@@ -473,13 +487,13 @@ export default function ExerciseDetailScreen() {
     return path;
   };
 
- if ( loading) {
-  return (
-    <CustomLoader 
-      fullScreen={true} 
-    />
-  );
-}
+  if (loading) {
+    return (
+      <CustomLoader
+        fullScreen={true}
+      />
+    );
+  }
 
   if (!exercise) {
     return (
@@ -505,7 +519,7 @@ export default function ExerciseDetailScreen() {
   const chartPath = getChartPath();
   const areaPath = getAreaPath();
   const chartMaxValue = getChartMaxValue();
-
+  const YOUTUBE_API_KEY = 'AIzaSyCfwkOXwC5kIOG3wLrDxc4uEYGcJRC2lIg';
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* HERO SECTION */}
@@ -522,7 +536,7 @@ export default function ExerciseDetailScreen() {
         >
           <SafeAreaView style={styles.heroSafeArea}>
             <View style={styles.heroTopNav}>
-              <View style={styles.navButton} /> 
+              <View style={styles.navButton} />
 
               <TouchableOpacity style={styles.navButton} onPress={toggleFavorite}>
                 <BlurView intensity={80} tint="dark" style={styles.navButtonBlur}>
@@ -720,31 +734,37 @@ export default function ExerciseDetailScreen() {
           </View>
         </View>
 
-        {/* INLINE VIDEO PLAYER SECTION */}
-        {videoId && (
-          <View style={{ margin: 20 }}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Video Tutorial</Text>
+        {/* VIDEO SECTION */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Video Tutorial</Text>
 
-            <View style={{ height: 220, borderRadius: 16, overflow: 'hidden', marginTop: 10 }}>
-              <WebView
-                source={{
-                  uri: `https://www.youtube.com/embed/${videoId}?playsinline=1`
+          {/* Loading */}
+          {videoLoading && (
+            <View style={[styles.noVideoCard, { backgroundColor: colors.card }]}>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text style={[styles.noVideoSubtitle, { color: colors.textSecondary, marginTop: 12 }]}>
+                Finding tutorial...
+              </Text>
+            </View>
+          )}
+
+          {/* Player */}
+          {!videoLoading && youtubeVideoId && (
+            <View style={{ borderRadius: 16, overflow: 'hidden', marginTop: 12 }}>
+              <YoutubePlayer
+                height={220}
+                videoId={youtubeVideoId}
+                play={false}
+                onError={() => {
+                  setVideoError(true);
+                  setYoutubeVideoId(null);
                 }}
-                javaScriptEnabled={true}
-                domStorageEnabled={true}
-                allowsFullscreenVideo={true}
-                mediaPlaybackRequiresUserAction={false}
-                allowsInlineMediaPlayback={true}
-                originWhitelist={['*']}
-                userAgent="Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 Chrome/88.0.4324.93 Mobile Safari/537.36"
               />
             </View>
-          </View>
-        )}
+          )}
 
-        {/* NO VIDEO AVAILABLE SECTION */}
-        {!videoId && (
-          <View style={styles.section}>
+          {/* No video fallback */}
+          {!videoLoading && (videoError || !youtubeVideoId) && (
             <View style={[styles.noVideoCard, { backgroundColor: colors.card }]}>
               <View style={[styles.noVideoIconContainer, { backgroundColor: colors.border }]}>
                 <Ionicons name="videocam-off-outline" size={32} color={colors.textMuted} />
@@ -757,21 +777,20 @@ export default function ExerciseDetailScreen() {
                 style={styles.searchYouTubeButton}
                 onPress={() => {
                   const query = encodeURIComponent(`${exercise.name} exercise tutorial proper form`);
-                  const youtubeUrl = `https://www.youtube.com/results?search_query=${query}`;
-                  Linking.openURL(youtubeUrl);
+                  Linking.openURL(`https://www.youtube.com/results?search_query=${query}`);
                 }}
               >
-                <LinearGradient
-                  colors={['#FF0000', '#CC0000']}
-                  style={styles.searchYouTubeGradient}
-                >
+                <LinearGradient colors={['#FF0000', '#CC0000']} style={styles.searchYouTubeGradient}>
                   <Ionicons name="logo-youtube" size={20} color="#FFFFFF" />
                   <Text style={styles.searchYouTubeText}>Search on YouTube</Text>
                 </LinearGradient>
               </TouchableOpacity>
             </View>
-          </View>
-        )}
+          )}
+        </View>
+
+       
+     
 
         {/* MUSCLE FOCUS SECTION */}
         <View style={styles.section}>
@@ -846,7 +865,29 @@ export default function ExerciseDetailScreen() {
             ))}
           </View>
         </View>
-
+        <TouchableOpacity
+          onPress={async () => {
+            try {
+              const res = await fetch(
+                `https://www.googleapis.com/youtube/v3/search?part=snippet&q=bench+press+exercise&type=video&maxResults=1&key=${YOUTUBE_API_KEY}`
+              );
+              const data = await res.json();
+              if (data.error) {
+                Alert.alert('❌ Failed', data.error.message);
+              } else {
+                const videoId = data.items?.[0]?.id?.videoId;
+                Alert.alert('✅ Working!', `Video ID: ${videoId}`);
+              }
+            } catch (e) {
+              Alert.alert('❌ Network Error', String(e));
+            }
+          }}
+          style={{ backgroundColor: 'red', padding: 16, margin: 20, borderRadius: 12 }}
+        >
+          <Text style={{ color: 'white', textAlign: 'center', fontWeight: 'bold' }}>
+            Test YouTube API
+          </Text>
+        </TouchableOpacity>
         {/* START EXERCISE BUTTON */}
         <TouchableOpacity
           style={styles.startExerciseButton}

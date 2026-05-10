@@ -124,21 +124,33 @@ export const fetchExercisesByMuscle = async (muscle: string): Promise<Exercise[]
 // ========================================
 
 export const calculateCaloriesBurned = async (
-  activity: string,
+  exerciseId: string,
   weight: number,
   duration: number
 ) => {
+  try {
+    console.log(`Calculating calories for exerciseId: ${exerciseId}, weight: ${weight}, duration: ${duration} minutes`);
 
-  const url =
-    `${BACKEND_BASE_URL}/calories-burned?activity=${encodeURIComponent(activity)}&weight=${weight}&duration=${duration}`;
+    const url = `${BACKEND_BASE_URL}/api/calories-burned?exerciseId=${exerciseId}&weight=${weight}&duration=${duration}`;
 
-  const res = await fetchWithTimeout(url);
+    const res = await fetchWithTimeout(url);
+    console.log(`API Status: ${res.status}`);
 
-  if (!res.ok) throw new Error("Failed to calculate calories");
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error("API Error:", errorText);
+      throw new Error(`Failed to calculate calories: ${res.status}`);
+    }
 
-  return res.json();
+    const data = await res.json();
+    console.log("Calories burned:", data.calories_burned);
+
+    return data;
+  } catch (error) {
+    console.error("Error in calculateCaloriesBurned:", error);
+    throw error;
+  }
 };
-
 // ========================================
 // FOOD SEARCH
 // ========================================
@@ -270,8 +282,8 @@ export const getMuscleGroups = async (): Promise<string[]> => {
   } catch {
 
     return [
-      'back','cardio','chest','lower arms','lower legs',
-      'neck','shoulders','upper arms','upper legs','waist'
+      'back', 'cardio', 'chest', 'lower arms', 'lower legs',
+      'neck', 'shoulders', 'upper arms', 'upper legs', 'waist'
     ];
   }
 };
@@ -292,6 +304,84 @@ export const getEquipmentList = async (): Promise<string[]> => {
   }
 };
 
+
+// ......................................
+// Food logs from db
+
+export const logFoodToBackend = async (foodData: {
+  userId: string;
+  foodName: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  mealType: string;
+  quantity: number;
+}): Promise<any> => {
+  try {
+    const response = await fetch(`${BACKEND_BASE_URL}/api/food/log`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(foodData)
+    });
+    
+    if (!response.ok) throw new Error("Failed to log food");
+    return await response.json();
+  } catch (error) {
+    console.error("Log food error:", error);
+    return null;
+  }
+};
+
+// Get today's food logs from backend
+export const getTodayFoodLogs = async (userId: string): Promise<any> => {
+  try {
+    const response = await fetch(`${BACKEND_BASE_URL}/api/food/logs/${userId}`);
+    if (!response.ok) throw new Error("Failed to get food logs");
+    const data = await response.json();
+    return data; // Returns { logs, totals }
+  } catch (error) {
+    console.error("Get food logs error:", error);
+    return { logs: [], totals: { total_calories: 0, total_protein: 0, total_carbs: 0, total_fat: 0 } };
+  }
+};
+
+
+
+export const saveWorkoutToBackend = async (workoutData: {
+  userId: string;
+  exerciseId: string;
+  exerciseName: string;
+  sets: any[];
+  durationMinutes: number;
+  notes: string;
+}): Promise<any> => {
+  try {
+    const response = await fetch(`${BACKEND_BASE_URL}/api/workouts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(workoutData)
+    });
+    
+    if (!response.ok) throw new Error("Failed to save workout");
+    return await response.json();
+  } catch (error) {
+    console.error("Save workout error:", error);
+    return null;
+  }
+};
+
+// Get workout history from backend
+export const getWorkoutHistory = async (userId: string): Promise<any[]> => {
+  try {
+    const response = await fetch(`${BACKEND_BASE_URL}/api/workouts/${userId}`);
+    if (!response.ok) throw new Error("Failed to get workouts");
+    return await response.json();
+  } catch (error) {
+    console.error("Get workouts error:", error);
+    return [];
+  }
+};
 // ========================================
 // HEALTH CHECK
 // ========================================
@@ -324,6 +414,21 @@ export const saveUserProfile = async (profile: UserProfile) => {
 
   } catch {
 
+    return false;
+  }
+};
+export const deleteFoodLog = async (logId: string): Promise<boolean> => {
+  try {
+    const response = await fetch(`${BACKEND_BASE_URL}/api/food/log/${logId}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) {
+      console.error("Failed to delete from backend");
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error("Backend delete error:", error);
     return false;
   }
 };

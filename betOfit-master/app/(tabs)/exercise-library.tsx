@@ -41,19 +41,11 @@ const saveToCache = async (muscle: string, data: any[]) => {
 };
 // Muscle Groups with PNG images
 const MUSCLE_GROUPS = [
-  // {
-  //   id: 'all',
-  //   label: 'All',
-  //   icon: 'grid',
-  //   image: null,
-  //   gradient: ['#f7e1a0', '#ff8e08'] as const,
-  //   count: 0,
-  // },
   {
     id: 'chest',
     label: 'Chest',
     icon: 'fitness',
-    image: null,
+    image: require('../../assets/images/chest.png'), // ← ADD THIS
     gradient: ['#FF9966', '#FF5E62'] as const,
     filterMuscles: ['chest'],
     count: 0,
@@ -62,7 +54,7 @@ const MUSCLE_GROUPS = [
     id: 'back',
     label: 'Back',
     icon: 'body',
-    image: null,
+    image: require('../../assets/images/back.png'), // ← ADD THIS
     gradient: ['#4A90E2', '#5C7CDB'] as const,
     filterMuscles: ['back'],
     count: 0,
@@ -71,7 +63,7 @@ const MUSCLE_GROUPS = [
     id: 'legs',
     label: 'Legs',
     icon: 'walk',
-    image: null,
+    image: require('../../assets/images/legs.png'), // ← ADD THIS
     gradient: ['#11998E', '#38EF7D'] as const,
     filterMuscles: ['legs'],
     count: 0,
@@ -80,7 +72,7 @@ const MUSCLE_GROUPS = [
     id: 'shoulders',
     label: 'Shoulders',
     icon: 'body',
-    image: null,
+    image: require('../../assets/images/shoulders.png'), // ← ADD THIS
     gradient: ['#A770EF', '#CF8BF3'] as const,
     filterMuscles: ['shoulders'],
     count: 0,
@@ -89,7 +81,7 @@ const MUSCLE_GROUPS = [
     id: 'arms',
     label: 'Arms',
     icon: 'barbell',
-    image: null,
+    image: require('../../assets/images/arms.png'), // ← ADD THIS
     gradient: ['#667EEA', '#764BA2'] as const,
     filterMuscles: ['arms'],
     count: 0,
@@ -98,7 +90,7 @@ const MUSCLE_GROUPS = [
     id: 'abs',
     label: 'Abs',
     icon: 'shield',
-    image: null,
+    image: require('../../assets/images/abs.png'), // ← ADD THIS
     gradient: ['#F093FB', '#F5576C'] as const,
     filterMuscles: ['abs'],
     count: 0,
@@ -106,6 +98,7 @@ const MUSCLE_GROUPS = [
 ];
 
 interface Exercise {
+  id: string;
   name: string;
   type: string;
   muscle: string;
@@ -156,13 +149,14 @@ export default function ExerciseLibraryScreen() {
   const [recentExercises, setRecentExercises] = useState<Exercise[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-
+  const [filteredExercises, setFilteredExercises] = useState<Exercise[]>([]);
+  const [isChangingMuscle, setIsChangingMuscle] = useState(false);
   // Refs for scrolling
   const muscleScrollRef = useRef<ScrollView>(null);
   const musclePositions = useRef<{ [key: string]: number }>({});
   const loadingTimeoutRef = useRef<NodeJS.Timeout[]>([]);
   const currentMuscleRef = useRef<string>('');
-
+  const [isLoadingMuscle, setIsLoadingMuscle] = useState(false);
   // Load data on mount
   useEffect(() => {
     handleMusclePress('chest'); // default
@@ -179,7 +173,19 @@ export default function ExerciseLibraryScreen() {
   );
 
 
-
+  // Filter exercises based on search query
+  useEffect(() => {
+    if (searchQuery.trim() === '') {
+      setFilteredExercises(exercises);
+    } else {
+      const filtered = exercises.filter(ex =>
+        ex.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        ex.muscle.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        ex.equipment.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      setFilteredExercises(filtered);
+    }
+  }, [searchQuery, exercises]);
   // Scroll to selected muscle when it changes
   useEffect(() => {
     if (selectedMuscle && musclePositions.current[selectedMuscle] !== undefined) {
@@ -189,174 +195,9 @@ export default function ExerciseLibraryScreen() {
       });
     }
   }, [selectedMuscle]);
-  // Loading Skeleton Component
-  const SkeletonLoader = () => (
-    <View style={{ padding: 20 }}>
-      {[1, 2, 3, 4].map((item) => (
-        <Animated.View
-          key={item}
-          entering={FadeIn.duration(500)}
-          style={[
-            styles.skeletonItem,
-            { backgroundColor: colors.border }
-          ]}
-        >
-          <View style={[styles.skeletonImage, { backgroundColor: colors.border }]} />
-          <View style={styles.skeletonContent}>
-            <View style={[styles.skeletonLine, { width: '80%', backgroundColor: colors.border }]} />
-            <View style={[styles.skeletonLine, { width: '60%', backgroundColor: colors.border }]} />
-            <View style={[styles.skeletonLine, { width: '40%', backgroundColor: colors.border }]} />
-          </View>
-        </Animated.View>
-      ))}
-    </View>
-  );
 
 
-  // Load cached data immediately
-  // const loadCachedDataFirst = async () => {
-  //   try {
-  //     const cached = await AsyncStorage.getItem('ALL_EXERCISES_CACHE');
-  //     if (cached) {
-  //       const data = JSON.parse(cached);
-  //       // Only use cache if it has exercises AND is not empty
-  //       if (data.exercises && data.exercises.length > 0) {
-  //         console.log('✅ Using cached data with', data.exercises.length, 'exercises');
-  //         setExercises(data.exercises);
-  //         // setFilteredExercises(data.exercises);
-  //         updateMuscleCounts(data.exercises);
-  //         selectFeaturedExercise(data.exercises);
-  //         setInitialLoading(false);
-  //         setLoading(false);
 
-  //         // Check if cache is older than 7 days, refresh in background
-  //         const age = Date.now() - data.timestamp;
-  //         if (age > 7 * 24 * 60 * 60 * 1000) {
-  //           console.log('📱 Cache older than 7 days, refreshing in background');
-  //           loadAllExercisesInBackground(true);
-  //         }
-  //         return;
-  //       } else {
-  //         console.log('⚠️ Cache is empty, fetching fresh data');
-  //         await AsyncStorage.removeItem('ALL_EXERCISES_CACHE');
-  //       }
-  //     }
-  //     // No cache or empty cache, fetch fresh data
-  //     await loadAllExercisesInBackground();
-  //   } catch (error) {
-  //     console.error('Cache error:', error);
-  //     await loadAllExercisesInBackground();
-  //   } finally {
-  //     setInitialLoading(false);
-  //   }
-  // };
-
-  // Load all exercises in background
-  // const loadAllExercisesInBackground = async (silent: boolean = false) => {
-  //   if (!silent) {
-  //     setLoading(true);
-  //   }
-
-  //   try {
-  //     const muscleStrings = ['chest', 'back', 'legs', 'shoulders', 'arms', 'abs'];
-  //     const allExercises: Exercise[] = [];
-
-  //     // Load each muscle group sequentially
-  //     for (const muscle of muscleStrings) {
-  //       try {
-  //         setLoadingMore(true);
-  //         const muscleExercises = await fetchExercisesByMuscle(muscle);
-
-  //         if (muscleExercises && muscleExercises.length > 0) {
-  //           allExercises.push(...muscleExercises);
-
-  //           // Update UI incrementally for better UX
-  //           setExercises(prev => {
-  //             const combined = [...prev, ...muscleExercises];
-  //             const unique = Array.from(
-  //               new Map(combined.map(ex => [ex.name.toLowerCase(), ex])).values()
-  //             );
-  //             return unique;
-  //           });
-  //         }
-  //       } catch (error) {
-  //         console.error(`Failed to fetch ${muscle}:`, error);
-  //       } finally {
-  //         setLoadingMore(false);
-  //       }
-  //     }
-
-  //     // Remove duplicates and save to cache
-  //     const uniqueExercises = Array.from(
-  //       new Map(allExercises.map(ex => [ex.name.toLowerCase(), ex])).values()
-  //     );
-
-  //     if (uniqueExercises.length > 0) {
-  //       await AsyncStorage.setItem('ALL_EXERCISES_CACHE', JSON.stringify({
-  //         exercises: uniqueExercises,
-  //         timestamp: Date.now(),
-  //       }));
-  //       console.log('✅ Cached', uniqueExercises.length, 'exercises');
-  //     }
-  //   } catch (error) {
-  //     console.error('Background fetch error:', error);
-  //   } finally {
-  //     setLoading(false);
-  //     setIsRefreshing(false);
-  //     setLoadingMore(false);
-  //   }
-  // };
-
-  const updateMuscleCounts = (allExercises: Exercise[]) => {
-    const updated = muscleGroups.map(group => {
-      if (group.id === 'all') {
-        return { ...group, count: allExercises.length };
-      }
-      const count = allExercises.filter(ex =>
-        ex && ex.muscle && group.filterMuscles?.some(muscle =>
-          (ex.muscle || '').toLowerCase().includes(muscle.toLowerCase())
-        )
-      ).length;
-      return { ...group, count };
-    });
-    setMuscleGroups(updated);
-  };
-  const exerciseMap = useMemo(() => {
-    const map: any = {};
-
-    exercises.forEach(ex => {
-      const key = ex.muscle?.toLowerCase();
-
-      if (!map[key]) map[key] = [];
-      map[key].push(ex);
-    });
-
-    return map;
-  }, [exercises]);
-
-  // const filteredExercises = useMemo(() => {
-  //   if (selectedMuscle === 'all') return exercises;
-
-  //   const muscleGroup = muscleGroups.find(m => m.id === selectedMuscle);
-
-  //   if (!muscleGroup?.filterMuscles) return exercises;
-
-  //   let result: Exercise[] = [];
-
-  //   muscleGroup.filterMuscles.forEach(muscle => {
-  //     const data = exerciseMap[muscle];
-  //     if (data) result.push(...data);
-  //   });
-
-  //   if (searchQuery.trim()) {
-  //     const query = searchQuery.toLowerCase();
-  //     result = result.filter(ex =>
-  //       ex.name.toLowerCase().includes(query)
-  //     );
-  //   }
-
-  //   return result;
-  // }, [selectedMuscle, searchQuery, exerciseMap]);
 
   const loadRecentWorkouts = async () => {
     try {
@@ -432,6 +273,7 @@ export default function ExerciseLibraryScreen() {
 
   const navigateToDetail = (exercise: Exercise) => {
     const exerciseData = {
+      id: exercise.id,
       name: exercise.name,
       type: exercise.type,
       muscle: exercise.muscle,
@@ -449,84 +291,71 @@ export default function ExerciseLibraryScreen() {
   };
 
   const handleMusclePress = useCallback(async (muscleId: string) => {
-    // Update current muscle ref
-    currentMuscleRef.current = muscleId;
-    setSelectedMuscle(muscleId);
+    if (currentMuscleRef.current === muscleId) return;
 
-    // Clear all pending timeouts from previous muscle
-    loadingTimeoutRef.current.forEach(timeout => clearTimeout(timeout));
-    loadingTimeoutRef.current = [];
-
-    // Clear exercises immediately for smooth transition
+    // Show loading immediately
+    setIsLoadingMuscle(true);
     setExercises([]);
+    setSelectedMuscle(muscleId);
+    currentMuscleRef.current = muscleId;
 
     try {
       const cache = await getCache();
-      const cachedData = cache[muscleId];
-      const dataToLoad = cachedData || await fetchExercisesByMuscle(muscleId);
+      let cachedData = cache[muscleId];
 
       if (!cachedData) {
-        await saveToCache(muscleId, dataToLoad);
+        cachedData = await fetchExercisesByMuscle(muscleId);
+        await saveToCache(muscleId, cachedData);
       }
 
-      // Check if this is still the current muscle (user didn't switch)
-      if (currentMuscleRef.current !== muscleId) {
-        return; // Cancel loading if user switched to another muscle
+      // Update counts for muscle groups
+      setMuscleGroups(prev => prev.map(m =>
+        m.id === muscleId ? { ...m, count: cachedData.length } : m
+      ));
+
+      // Check if still current muscle
+      if (currentMuscleRef.current === muscleId) {
+        setExercises(cachedData);
       }
-
-      // Load exercises one by one
-      for (let i = 0; i < dataToLoad.length; i++) {
-        const timeout = setTimeout(() => {
-          // Double-check before adding each exercise
-          if (currentMuscleRef.current === muscleId) {
-            setExercises(prev => [...prev, dataToLoad[i]]);
-          }
-        }, i * 30);
-
-        loadingTimeoutRef.current.push(timeout);
-      }
-
-      setLoading(false);
     } catch (error) {
       console.error('Error:', error);
-      setLoading(false);
+    } finally {
+      if (currentMuscleRef.current === muscleId) {
+        setIsLoadingMuscle(false);
+      }
     }
   }, []);
+
+  const getMuscleImage = (muscle: string) => {
+    const muscleLower = muscle.toLowerCase();
+    if (muscleLower.includes('chest')) return require('../../assets/images/chest.png');
+    if (muscleLower.includes('back')) return require('../../assets/images/back.png');
+    if (muscleLower.includes('leg')) return require('../../assets/images/legs.png');
+    if (muscleLower.includes('shoulder')) return require('../../assets/images/shoulders.png');
+    if (muscleLower.includes('arm')) return require('../../assets/images/arms.png');
+    if (muscleLower.includes('ab')) return require('../../assets/images/abs.png');
+    return require('../../assets/images/chest.png');
+  };
 
   const renderMuscleCard = (muscle: typeof MUSCLE_GROUPS[0], index: number) => (
     <TouchableOpacity
       key={muscle.id}
       onPress={() => handleMusclePress(muscle.id)}
       activeOpacity={0.8}
-      onLayout={(event) => {
-        musclePositions.current[muscle.id] = event.nativeEvent.layout.x;
-      }}
     >
       <LinearGradient
         colors={muscle.gradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[
-          styles.muscleCard,
-          selectedMuscle === muscle.id && styles.muscleCardActive
-        ]}
+        style={[styles.muscleCard, selectedMuscle === muscle.id && styles.muscleCardActive]}
       >
-        <View style={styles.muscleIconContainer}>
-          {muscle.image ? (
-            <Image
-              source={muscle.image}
-              style={styles.muscleImage}
-              resizeMode="contain"
-            />
-          ) : (
-            <Ionicons name={muscle.icon as any} size={28} color="#FFFFFF" />
-          )}
+        <Image source={muscle.image} style={styles.muscleFullImage} resizeMode="cover" />
+
+        {/* Text with background color from theme */}
+        <View style={[styles.muscleCardBottom, { backgroundColor: colors.background }]}>
+          <Text style={[styles.muscleCount, { color: colors.textSecondary }]}>{muscle.count} Exercises</Text>
+          <Text style={[styles.muscleLabel, { color: colors.text }]}>{muscle.label}</Text>
         </View>
 
-        <View style={styles.muscleCardBottom}>
-          <Text style={styles.muscleCount}>{muscle.count} Exercises</Text>
-          <Text style={styles.muscleLabel}>{muscle.label}</Text>
-        </View>
+        {selectedMuscle === muscle.id && <View style={styles.activeIndicator} />}
       </LinearGradient>
     </TouchableOpacity>
   );
@@ -594,16 +423,16 @@ export default function ExerciseLibraryScreen() {
         >
 
           {/* 🎯 TOP VISUAL */}
-          <LinearGradient
-            colors={getMuscleGradient(item.muscle)}
+          <Image
+            source={getMuscleImage(item.muscle)}
             style={{
-              height: 110,
-              justifyContent: 'center',
-              alignItems: 'center',
+              width: '100%',
+              height: 140,
+              backgroundColor: colors.surfaceContainerLow,
             }}
-          >
-            <Ionicons name="fitness" size={34} color="#fff" />
-          </LinearGradient>
+            resizeMode="cover"
+          />
+
 
           {/* 🧠 CONTENT */}
           <View style={{ padding: 14 }}>
@@ -662,14 +491,11 @@ export default function ExerciseLibraryScreen() {
         onPress={() => navigateToDetail(item)}
         activeOpacity={0.8}
       >
-        <LinearGradient
-          colors={getMuscleGradient(item.muscle)}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
+        <Image
+          source={getMuscleImage(item.muscle)}
           style={styles.listImageContainer}
-        >
-          <Ionicons name="fitness" size={32} color="#FFFFFF" />
-        </LinearGradient>
+          resizeMode="cover"
+        />
         <View style={styles.listContent}>
           <Text style={[styles.listTitle, { color: colors.text }]}>{item.name}</Text>
           <Text style={[styles.listMuscle, { color: colors.textSecondary }]}>
@@ -770,7 +596,7 @@ export default function ExerciseLibraryScreen() {
 
         {/* MAIN CONTENT */}
         <FlatList
-          data={exercises}
+          data={filteredExercises}
           renderItem={viewMode === 'grid' ? renderGridItem : renderListItem}
           keyExtractor={(item, index) => item.name + index}
           numColumns={viewMode === 'grid' ? 2 : 1}
@@ -792,11 +618,6 @@ export default function ExerciseLibraryScreen() {
                   <Text style={[styles.sectionTitle, { color: colors.text }]}>
                     Muscle Groups
                   </Text>
-                  <TouchableOpacity>
-                    <Text style={[styles.sectionLink, { color: colors.primary }]}>
-                      View Atlas
-                    </Text>
-                  </TouchableOpacity>
                 </View>
 
                 <ScrollView
@@ -926,14 +747,21 @@ export default function ExerciseLibraryScreen() {
           }
 
           ListEmptyComponent={
-            !loading ? (
+            isLoadingMuscle ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+                  Loading {muscleGroups.find(m => m.id === selectedMuscle)?.label} exercises...
+                </Text>
+              </View>
+            ) : !loading && exercises.length === 0 ? (
               <View style={styles.emptyContainer}>
                 <Ionicons name="barbell" size={64} color={colors.textMuted} />
                 <Text style={[styles.emptyTitle, { color: colors.text }]}>
                   No exercises found
                 </Text>
                 <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-                  Try adjusting your search
+                  Try selecting a different muscle group
                 </Text>
               </View>
             ) : null
@@ -1040,16 +868,46 @@ const makeStyles = (colors: any) => StyleSheet.create({
     gap: 16,
   },
   muscleCard: {
-    width: 128,
-    height: 160,
-    borderRadius: 16,
-    padding: 16,
-    justifyContent: 'space-between',
+    width: 140,
+    height: 180,
+    borderRadius: 20,
+    overflow: 'hidden',
+    position: 'relative',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+
+  muscleFullImage: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    top: 0,
+    left: 0,
+  },
+  muscleOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '60%',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+  },
+  muscleCardBottom: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    right: 12,
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    gap: 2,
+    zIndex: 2,
   },
   muscleCardActive: {
     transform: [{ scale: 1.05 }],
@@ -1062,24 +920,29 @@ const makeStyles = (colors: any) => StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    zIndex: 2,
   },
+
   muscleImage: {
     width: 32,
     height: 32,
   },
-  muscleCardBottom: {
-    gap: 4,
-  },
+
   muscleCount: {
     fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontWeight: '400',
+    color: colors.background,
+    fontWeight: '500',
   },
+
   muscleLabel: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.background,
   },
+
   // View Toggle
   viewToggleSection: {
     flexDirection: 'row',
@@ -1317,6 +1180,18 @@ const makeStyles = (colors: any) => StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+
+  activeIndicator: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    zIndex: 3,
+  },
+  activeIndicatorDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
   // Skeleton
   skeletonItem: {
     flexDirection: 'row',
@@ -1361,4 +1236,5 @@ const makeStyles = (colors: any) => StyleSheet.create({
     fontSize: 14,
     marginTop: 8,
   },
+
 });
