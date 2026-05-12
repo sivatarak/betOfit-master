@@ -9,6 +9,7 @@
     "userInterfaceStyle": "automatic",
     "android": {
       "package": "com.sivatarak.betofit",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#0D0D0D",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
