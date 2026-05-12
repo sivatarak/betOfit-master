@@ -319,13 +319,21 @@ export const logFoodToBackend = async (foodData: {
   quantity: number;
 }): Promise<any> => {
   try {
+    console.log("Sending to backend:", foodData); // ← ADD THIS
+
     const response = await fetch(`${BACKEND_BASE_URL}/api/food/log`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(foodData)
     });
-    
-    if (!response.ok) throw new Error("Failed to log food");
+
+    console.log("Response status:", response.status); // ← ADD THIS
+
+    if (!response.ok) {
+      const errorBody = await response.json();
+      console.log("Error body:", errorBody); // ← ADD THIS
+      throw new Error("Failed to log food");
+    }
     return await response.json();
   } catch (error) {
     console.error("Log food error:", error);
@@ -362,7 +370,7 @@ export const saveWorkoutToBackend = async (workoutData: {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(workoutData)
     });
-    
+
     if (!response.ok) throw new Error("Failed to save workout");
     return await response.json();
   } catch (error) {
@@ -430,6 +438,22 @@ export const deleteFoodLog = async (logId: string): Promise<boolean> => {
   } catch (error) {
     console.error("Backend delete error:", error);
     return false;
+  }
+};
+
+export const fetchExerciseById = async (id: string) => {
+  try {
+    const response = await fetch(`${BACKEND_BASE_URL}/api/exercises/${id}`);
+    console.log(`API CALL: /api/exercises/${id} - Status: ${response.status}`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch exercise');
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('fetchExerciseById error:', error);
+    throw error;
   }
 };
 

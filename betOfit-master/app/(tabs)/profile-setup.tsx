@@ -602,9 +602,9 @@ export default function ProfileScreen() {
   );
 
   if (loading) {
-    return <CustomLoader fullScreen={true} />;
+    return <CustomLoader fullScreen />;
   }
-
+   
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Subtle gradient background */}
@@ -622,7 +622,7 @@ export default function ProfileScreen() {
           {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={24} color={colors.text} />
+              
             </TouchableOpacity>
             <Text style={[styles.headerTitle, { color: colors.text }]}>Profile</Text>
             <View style={{ width: 40 }} />
@@ -632,7 +632,7 @@ export default function ProfileScreen() {
           <View style={styles.profileImageSection}>
             <TouchableOpacity
               style={styles.profileImageContainer}
-              onPress={showBottomSheetModal}
+              // onPress={showBottomSheetModal}
               activeOpacity={0.9}
             >
               <LinearGradient
@@ -646,15 +646,15 @@ export default function ProfileScreen() {
                     {profile.name ? profile.name.charAt(0).toUpperCase() : '👤'}
                   </Text>
                 )}
-                {uploadingPhoto && (
+                {/* {uploadingPhoto && (
                   <View style={styles.uploadOverlay}>
                     <ActivityIndicator size="large" color="#FFFFFF" />
                   </View>
-                )}
+                )} */}
               </LinearGradient>
-              <View style={[styles.editIconBadge, { backgroundColor: colors.primary }]}>
+              {/* <View style={[styles.editIconBadge, { backgroundColor: colors.primary }]}>
                 <Feather name="camera" size={16} color="#FFFFFF" />
-              </View>
+              </View> */}
             </TouchableOpacity>
             <Text style={[styles.profileName, { color: colors.text }]}>
               {profile.name || "Add Your Name"}
@@ -1206,6 +1206,7 @@ export default function ProfileScreen() {
           </Animated.View>
         </View>
       </Modal>
+      {loading && <CustomLoader fullScreen />}
     </View>
   );
 }

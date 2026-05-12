@@ -10,6 +10,7 @@ import { appEvents, PROFILE_UPDATED } from './utils/eventEmitter';
 import { ProfileProvider, useProfile } from '../context/profileContext';
 import { TodayProvider } from "@/context/todayContext";
 import { CustomLoader } from "../components/CustomLoader";
+import { BackHandler } from 'react-native';
 // Event for pending navigation to prevent bounce-back
 export const PENDING_NAVIGATION = 'PENDING_NAVIGATION';
 
@@ -18,6 +19,20 @@ function RootLayoutNav() {
   const router = useRouter();
   const segments = useSegments();
   const pathname = usePathname();
+
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => {
+        if (router.canGoBack()) {
+          router.back();
+          return true;
+        }
+        return false;
+      }
+    );
+    return () => backHandler.remove();
+  }, []);
 
   const [profileStatus, setProfileStatus] = useState({
     basic_completed: false,
@@ -257,17 +272,18 @@ function RootLayoutNav() {
   }
   return <Slot />;
 }
- function TodayWrapper({ children }: { children: React.ReactNode }) {
-    const { dailyCalorieGoal, loading } = useProfile();
-    return (
-      <TodayProvider baseCalorieGoal={dailyCalorieGoal} profileLoading={loading}>
-        {children}
-      </TodayProvider>
-    );
-  }
+function TodayWrapper({ children }: { children: React.ReactNode }) {
+  const { dailyCalorieGoal, loading } = useProfile();
+  return (
+    <TodayProvider baseCalorieGoal={dailyCalorieGoal} profileLoading={loading}>
+      {children}
+    </TodayProvider>
+  );
+}
 export default function RootLayout() {
   const [showSplash, setShowSplash] = useState(true);
- 
+  
+
   useEffect(() => {
     console.log('⏱️ Splash timer started');
     const timer = setTimeout(() => {

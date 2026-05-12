@@ -23,6 +23,7 @@ import Svg, { Path, Circle, Defs, LinearGradient as SvgLinearGradient, Stop } fr
 import YoutubePlayer from 'react-native-youtube-iframe';
 import { CustomLoader } from '../../components/CustomLoader';
 import { useTheme } from '../../context/themecontext';
+import { fetchExerciseById } from '../services/exerciseApi';
 
 const { width, height } = Dimensions.get('window');
 
@@ -136,7 +137,7 @@ export default function ExerciseDetailScreen() {
     if (exercise) {
       loadWorkoutHistory(exercise.name);
       checkIfFavorite(exercise.name);
-      findVideoForExercise(exercise.name);
+
     }
   }, [exercise]);
 
@@ -144,11 +145,20 @@ export default function ExerciseDetailScreen() {
     try {
       if (params.exercise) {
         const parsedExercise = JSON.parse(params.exercise as string);
-        console.log('Loaded exercise from params:', parsedExercise);
-        setExercise(parsedExercise);
+
+        if (parsedExercise.id) {
+          const data = await fetchExerciseById(parsedExercise.id);
+          setExercise(data);
+
+          if (data.youtube_video_id) {
+            setYoutubeVideoId(data.youtube_video_id);
+          }
+        } else {
+          setExercise(parsedExercise);
+        }
       }
     } catch (error) {
-      console.error('Error parsing exercise:', error);
+      console.error('Error loading exercise:', error);
       Alert.alert('Error', 'Failed to load exercise details');
     } finally {
       setLoading(false);
@@ -383,8 +393,8 @@ export default function ExerciseDetailScreen() {
   const getProTip = (): string => {
     if (!exercise) return 'Focus on form over weight';
 
-    const name = exercise.name.toLowerCase();
-    const muscle = exercise.muscle.toLowerCase();
+    const name = (exercise.name || '').toLowerCase();
+    const muscle = (exercise.muscle || exercise.target || '').toLowerCase();
 
     if (name.includes('bench') || name.includes('press') && muscle.includes('chest')) {
       return 'Squeeze chest at the top and keep shoulders pinned back';
@@ -519,7 +529,7 @@ export default function ExerciseDetailScreen() {
   const chartPath = getChartPath();
   const areaPath = getAreaPath();
   const chartMaxValue = getChartMaxValue();
-  const YOUTUBE_API_KEY = 'AIzaSyCfwkOXwC5kIOG3wLrDxc4uEYGcJRC2lIg';
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* HERO SECTION */}
@@ -789,8 +799,8 @@ export default function ExerciseDetailScreen() {
           )}
         </View>
 
-       
-     
+
+
 
         {/* MUSCLE FOCUS SECTION */}
         <View style={styles.section}>
@@ -865,29 +875,7 @@ export default function ExerciseDetailScreen() {
             ))}
           </View>
         </View>
-        <TouchableOpacity
-          onPress={async () => {
-            try {
-              const res = await fetch(
-                `https://www.googleapis.com/youtube/v3/search?part=snippet&q=bench+press+exercise&type=video&maxResults=1&key=${YOUTUBE_API_KEY}`
-              );
-              const data = await res.json();
-              if (data.error) {
-                Alert.alert('❌ Failed', data.error.message);
-              } else {
-                const videoId = data.items?.[0]?.id?.videoId;
-                Alert.alert('✅ Working!', `Video ID: ${videoId}`);
-              }
-            } catch (e) {
-              Alert.alert('❌ Network Error', String(e));
-            }
-          }}
-          style={{ backgroundColor: 'red', padding: 16, margin: 20, borderRadius: 12 }}
-        >
-          <Text style={{ color: 'white', textAlign: 'center', fontWeight: 'bold' }}>
-            Test YouTube API
-          </Text>
-        </TouchableOpacity>
+       
         {/* START EXERCISE BUTTON */}
         <TouchableOpacity
           style={styles.startExerciseButton}

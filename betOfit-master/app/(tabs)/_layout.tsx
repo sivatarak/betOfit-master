@@ -1,17 +1,20 @@
 // app/(tabs)/_layout.tsx
-import { Tabs, useSegments,usePathname } from "expo-router";
+import { Tabs, useSegments, usePathname } from "expo-router";
 import { useTheme } from "../../context/themecontext";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../../context/AuthContext";
+import { Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 export default function TabsLayout() {
   const { colors } = useTheme();
   const segments = useSegments();
   const pathname = usePathname();
   const { user } = useAuth();
-  
+  const insets = useSafeAreaInsets();
+
   const [isOnboarding, setIsOnboarding] = useState(false);
 
   useEffect(() => {
@@ -23,9 +26,9 @@ export default function TabsLayout() {
     const cachedProfile = await AsyncStorage.getItem(`USER_PROFILE_${user.uid}`);
     if (cachedProfile) {
       const profile = JSON.parse(cachedProfile);
-      const isComplete = profile.basic_completed && 
-                         profile.goals_completed && 
-                         profile.workout_completed;
+      const isComplete = profile.basic_completed &&
+        profile.goals_completed &&
+        profile.workout_completed;
       setIsOnboarding(!isComplete);
     } else {
       setIsOnboarding(true);
@@ -38,46 +41,50 @@ export default function TabsLayout() {
 
   return (
     <Tabs
+      backBehavior="history"
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
           display: shouldHideTabBar ? 'none' : 'flex',
           backgroundColor: colors.card,
-          height: 60,
+          height: Platform.OS === 'android' ? 60 + insets.bottom : 60,
+          paddingBottom: Platform.OS === 'android' ? insets.bottom : 0,
+          borderTopColor: colors.border,
+          elevation: 0,
         },
         tabBarActiveTintColor: colors.primary,
       }}
     >
-      <Tabs.Screen 
-        name="home" 
-        options={{ 
-          title: "Home", 
-          tabBarIcon: ({ color }) => <Ionicons name="home" size={24} color={color} /> 
-        }} 
+      <Tabs.Screen
+        name="home"
+        options={{
+          title: "Home",
+          tabBarIcon: ({ color }) => <Ionicons name="home" size={24} color={color} />
+        }}
       />
-      <Tabs.Screen 
-        name="stats" 
-        options={{ 
-          title: "Stats", 
-          tabBarIcon: ({ color }) => <Ionicons name="bar-chart-outline" size={24} color={color} /> 
-        }} 
+      <Tabs.Screen
+        name="stats"
+        options={{
+          title: "Stats",
+          tabBarIcon: ({ color }) => <Ionicons name="bar-chart-outline" size={24} color={color} />
+        }}
       />
-      <Tabs.Screen 
-        name="history" 
-        options={{ 
-          title: "History", 
-          tabBarIcon: ({ color }) => <Ionicons name="time-outline" size={24} color={color} /> 
-        }} 
+      <Tabs.Screen
+        name="history"
+        options={{
+          title: "History",
+          tabBarIcon: ({ color }) => <Ionicons name="time-outline" size={24} color={color} />
+        }}
       />
 
       {/* Profile tab — hidden during onboarding, visible after */}
-      <Tabs.Screen 
-        name="profile-setup" 
-        options={{ 
+      <Tabs.Screen
+        name="profile-setup"
+        options={{
           title: "Profile",
           href: '/(tabs)/profile-setup?mode=all',
           tabBarIcon: ({ color }) => <Ionicons name="person" size={24} color={color} />
-        }} 
+        }}
       />
 
       {/* Hidden screens */}

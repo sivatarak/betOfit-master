@@ -474,6 +474,12 @@ export default function CaloriesScreen() {
   const dinnerCarbs = dinnerItems.reduce((sum, e) => sum + e.carbs, 0);
   const dinnerFat = dinnerItems.reduce((sum, e) => sum + e.fat, 0);
 
+  const handleAddPress = (mealType: "breakfast" | "lunch" | "dinner" | "snack") => {
+    setSelectedMealType(mealType);
+    setResults([]);
+    setQuery("");
+    searchInputRef.current?.focus();
+  };
   const removeFoodEntry = async (id: string) => {
     const entry = history.find((h) => h.id === id);
     if (!entry) return;
@@ -707,7 +713,7 @@ export default function CaloriesScreen() {
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
-                {loading && <CustomLoader fullScreen />}
+
               </View>
             )}
 
@@ -861,6 +867,7 @@ export default function CaloriesScreen() {
           </View>
         </View>
       )}
+      {loading && <CustomLoader fullScreen />}
 
     </View>
   );

@@ -345,9 +345,9 @@ export default function WorkoutDashboard() {
   }));
 
 
-  if (loading) {
-    return <CustomLoader fullScreen={true} />;
-  }
+  // if (loading) {
+  //   return <CustomLoader fullScreen={true} />;
+  // }
 
 
   return (
@@ -638,6 +638,7 @@ export default function WorkoutDashboard() {
           <View style={{ height: 60 }} />
         </ScrollView>
       </SafeAreaView>
+      {loading && <CustomLoader fullScreen />}
     </View>
   );
 }

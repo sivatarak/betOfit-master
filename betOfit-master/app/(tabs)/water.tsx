@@ -247,9 +247,7 @@ export default function WaterScreen() {
             ? "Goal achieved! 🎉"
             : "Keep it up!";
 
-  if (loading) {
-    return <CustomLoader fullScreen={true} />;
-  }
+  
 
   function WaterCircularProgress({ current, goal, remaining, colors }: {
     current: number;
@@ -319,13 +317,9 @@ export default function WaterScreen() {
         >
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.headerIcon}>
-              <Ionicons name="arrow-back" size={24} color={colors.text} />
-            </TouchableOpacity>
+           
             <Text style={[styles.headerTitle, { color: colors.text }]}>Hydration</Text>
-            <TouchableOpacity style={styles.headerIcon}>
-              <Ionicons name="settings-outline" size={24} color={colors.text} />
-            </TouchableOpacity>
+            
           </View>
 
           {/* Interactive Liquid Ring Section */}
@@ -543,6 +537,7 @@ export default function WaterScreen() {
           <View style={{ height: 40 }} />
         </ScrollView>
       </SafeAreaView>
+         {loading && <CustomLoader fullScreen />}
     </View>
   );
 }
@@ -554,9 +549,10 @@ const styles = StyleSheet.create({
   scrollContent: { paddingHorizontal: 20, paddingBottom: 100 },
   header: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "center",
     alignItems: "center",
     marginBottom: 20,
+    marginTop: 20,
   },
   headerIcon: { width: 40, height: 40, justifyContent: "center", alignItems: "center" },
   headerTitle: { fontSize: 20, fontWeight: "800" },

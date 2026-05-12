@@ -39,13 +39,23 @@ const saveToCache = async (muscle: string, data: any[]) => {
 
   await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cache));
 };
+
+// Pre-load all images once
+const MUSCLE_IMAGES = {
+  chest: require('../../assets/images/chest.png'),
+  back: require('../../assets/images/back.png'),
+  legs: require('../../assets/images/legs.png'),
+  shoulders: require('../../assets/images/shoulders.png'),
+  arms: require('../../assets/images/arms.png'),
+  abs: require('../../assets/images/abs.png'),
+};
 // Muscle Groups with PNG images
 const MUSCLE_GROUPS = [
   {
     id: 'chest',
     label: 'Chest',
     icon: 'fitness',
-    image: require('../../assets/images/chest.png'), // ← ADD THIS
+    image: MUSCLE_IMAGES.chest, // ← ADD THIS
     gradient: ['#FF9966', '#FF5E62'] as const,
     filterMuscles: ['chest'],
     count: 0,
@@ -54,7 +64,7 @@ const MUSCLE_GROUPS = [
     id: 'back',
     label: 'Back',
     icon: 'body',
-    image: require('../../assets/images/back.png'), // ← ADD THIS
+    image: MUSCLE_IMAGES.back, // ← ADD THIS
     gradient: ['#4A90E2', '#5C7CDB'] as const,
     filterMuscles: ['back'],
     count: 0,
@@ -63,7 +73,7 @@ const MUSCLE_GROUPS = [
     id: 'legs',
     label: 'Legs',
     icon: 'walk',
-    image: require('../../assets/images/legs.png'), // ← ADD THIS
+    image: MUSCLE_IMAGES.legs, // ← ADD THIS
     gradient: ['#11998E', '#38EF7D'] as const,
     filterMuscles: ['legs'],
     count: 0,
@@ -72,7 +82,7 @@ const MUSCLE_GROUPS = [
     id: 'shoulders',
     label: 'Shoulders',
     icon: 'body',
-    image: require('../../assets/images/shoulders.png'), // ← ADD THIS
+    image: MUSCLE_IMAGES.shoulders, // ← ADD THIS
     gradient: ['#A770EF', '#CF8BF3'] as const,
     filterMuscles: ['shoulders'],
     count: 0,
@@ -81,7 +91,7 @@ const MUSCLE_GROUPS = [
     id: 'arms',
     label: 'Arms',
     icon: 'barbell',
-    image: require('../../assets/images/arms.png'), // ← ADD THIS
+    image: MUSCLE_IMAGES.arms, // ← ADD THIS
     gradient: ['#667EEA', '#764BA2'] as const,
     filterMuscles: ['arms'],
     count: 0,
@@ -90,7 +100,7 @@ const MUSCLE_GROUPS = [
     id: 'abs',
     label: 'Abs',
     icon: 'shield',
-    image: require('../../assets/images/abs.png'), // ← ADD THIS
+    image: MUSCLE_IMAGES.abs, // ← ADD THIS
     gradient: ['#F093FB', '#F5576C'] as const,
     filterMuscles: ['abs'],
     count: 0,
@@ -328,13 +338,13 @@ export default function ExerciseLibraryScreen() {
 
   const getMuscleImage = (muscle: string) => {
     const muscleLower = muscle.toLowerCase();
-    if (muscleLower.includes('chest')) return require('../../assets/images/chest.png');
-    if (muscleLower.includes('back')) return require('../../assets/images/back.png');
-    if (muscleLower.includes('leg')) return require('../../assets/images/legs.png');
-    if (muscleLower.includes('shoulder')) return require('../../assets/images/shoulders.png');
-    if (muscleLower.includes('arm')) return require('../../assets/images/arms.png');
-    if (muscleLower.includes('ab')) return require('../../assets/images/abs.png');
-    return require('../../assets/images/chest.png');
+    if (muscleLower.includes('chest')) return MUSCLE_IMAGES.chest;
+    if (muscleLower.includes('back')) return MUSCLE_IMAGES.back;
+    if (muscleLower.includes('leg')) return MUSCLE_IMAGES.legs;
+    if (muscleLower.includes('shoulder')) return MUSCLE_IMAGES.shoulders;
+    if (muscleLower.includes('arm') || muscleLower.includes('bicep') || muscleLower.includes('tricep')) return MUSCLE_IMAGES.arms;
+    if (muscleLower.includes('ab') || muscleLower.includes('core')) return MUSCLE_IMAGES.abs;
+    return MUSCLE_IMAGES.chest;
   };
 
   const renderMuscleCard = (muscle: typeof MUSCLE_GROUPS[0], index: number) => (
@@ -397,7 +407,7 @@ export default function ExerciseLibraryScreen() {
   //   );
   // };
 
-  const renderGridItem = ({ item }: { item: Exercise }) => {
+  const renderGridItem = useCallback(({ item }: { item: Exercise }) => {
     return (
       <TouchableOpacity
         activeOpacity={1}
@@ -425,12 +435,14 @@ export default function ExerciseLibraryScreen() {
           {/* 🎯 TOP VISUAL */}
           <Image
             source={getMuscleImage(item.muscle)}
+            defaultSource={MUSCLE_IMAGES.chest}
             style={{
               width: '100%',
               height: 140,
               backgroundColor: colors.surfaceContainerLow,
             }}
             resizeMode="cover"
+            fadeDuration={0}
           />
 
 
@@ -479,7 +491,7 @@ export default function ExerciseLibraryScreen() {
         </Animated.View>
       </TouchableOpacity>
     );
-  };
+  }, [colors]);
 
   const renderListItem = ({ item, index }: { item: Exercise; index: number }) => (
     <Animated.View
@@ -493,8 +505,10 @@ export default function ExerciseLibraryScreen() {
       >
         <Image
           source={getMuscleImage(item.muscle)}
+          defaultSource={MUSCLE_IMAGES.chest}
           style={styles.listImageContainer}
           resizeMode="cover"
+          fadeDuration={0}
         />
         <View style={styles.listContent}>
           <Text style={[styles.listTitle, { color: colors.text }]}>{item.name}</Text>
