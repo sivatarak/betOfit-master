@@ -628,10 +628,7 @@ export default function ProfileScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Subtle gradient background */}
-      <LinearGradient
-        colors={isDark ? ['#1a1a2e', '#16213e'] : ['#f8f9fa', '#ffffff']}
-        style={StyleSheet.absoluteFill}
-      />
+     
 
       <SafeAreaView style={styles.safeArea}>
         <ScrollView
