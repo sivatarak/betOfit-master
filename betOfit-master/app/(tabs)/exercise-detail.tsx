@@ -355,11 +355,11 @@ export default function ExerciseDetailScreen() {
         pathname: '/(tabs)/logExercise-screen',
         params: {
           exerciseId: exercise.id,
-          exerciseName: exercise.name,
-          muscle: exercise.muscle,
-          equipment: exercise.equipment,
-          difficulty: exercise.difficulty,
-          type: exercise.type,
+          exerciseName: exercise.name || '',
+          muscle: exercise.muscle || '',
+          equipment: exercise.equipment || 'bodyweight',
+          difficulty: exercise.difficulty || 'beginner',
+          type: exercise.type || 'strength',
         },
       });
     } catch (error) {
@@ -875,7 +875,7 @@ export default function ExerciseDetailScreen() {
             ))}
           </View>
         </View>
-       
+
         {/* START EXERCISE BUTTON */}
         <TouchableOpacity
           style={styles.startExerciseButton}

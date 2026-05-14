@@ -103,36 +103,46 @@ export default function ProfileScreen() {
     try {
       const currentUser = auth().currentUser;
       const userId = currentUser?.uid;
-
       if (!userId) return;
 
-      // Try to load from AsyncStorage first
-      const cachedProfile = await AsyncStorage.getItem(`USER_PROFILE_${userId}`);
-      let profileData = cachedProfile ? JSON.parse(cachedProfile) : null;
+      // Always fetch fresh from DB
+      const dbProfile = await getProfile(userId);
+      console.log('🔥 DB Profile:', JSON.stringify(dbProfile, null, 2));
 
-      // If not in cache or incomplete, fetch from database
-      if (!profileData || !profileData.age || !profileData.height) {
-        const dbProfile = await getProfile(userId);
-        if (dbProfile) {
-          profileData = dbProfile;
-          // Update cache
-          await AsyncStorage.setItem(`USER_PROFILE_${userId}`, JSON.stringify(dbProfile));
-        }
-      }
+      if (dbProfile) {
+        // Update cache with fresh DB data
+        await AsyncStorage.setItem(`USER_PROFILE_${userId}`, JSON.stringify(dbProfile));
 
-      if (profileData) {
         setProfile({
-          name: profileData.name || "",
-          age: profileData.age || 0,
-          height: profileData.height || 0,
-          weight: profileData.weight || 0,
-          gender: profileData.gender || "male",
-          activityLevel: profileData.activityLevel || 1.55,
-          targetWeight: profileData.targetWeight || 0,
-          timeline: profileData.timeline || 0,
-          workoutDaysPerWeek: profileData.workoutDaysPerWeek || 0,
-          workoutDays: profileData.workoutDays || [],
+          name: dbProfile.name || "",
+          age: dbProfile.age || 0,
+          height: parseFloat(dbProfile.height) || 0,
+          weight: parseFloat(dbProfile.weight) || 0,
+          gender: dbProfile.gender || "male",
+          activityLevel: parseFloat(dbProfile.activity_level) || 1.55,
+          targetWeight: parseFloat(dbProfile.target_weight) || 0,
+          timeline: dbProfile.timeline || 0,
+          workoutDaysPerWeek: dbProfile.workout_days_per_week || 0,
+          workoutDays: dbProfile.workout_days || [],
         });
+      } else {
+        // Fallback to cache if DB fails
+        const cachedProfile = await AsyncStorage.getItem(`USER_PROFILE_${userId}`);
+        if (cachedProfile) {
+          const data = JSON.parse(cachedProfile);
+          setProfile({
+            name: data.name || "",
+            age: data.age || 0,
+            height: parseFloat(data.height) || 0,
+            weight: parseFloat(data.weight) || 0,
+            gender: data.gender || "male",
+            activityLevel: parseFloat(data.activity_level || data.activityLevel) || 1.55,
+            targetWeight: parseFloat(data.target_weight || data.targetWeight) || 0,
+            timeline: data.timeline || 0,
+            workoutDaysPerWeek: data.workout_days_per_week || data.workoutDaysPerWeek || 0,
+            workoutDays: data.workout_days || data.workoutDays || [],
+          });
+        }
       }
     } catch (error) {
       console.error("Error loading profile:", error);
@@ -284,14 +294,14 @@ export default function ProfileScreen() {
         setProfile({
           name: data.name || "",
           age: data.age || 0,
-          height: data.height || 0,
-          weight: data.weight || 0,
+          height: parseFloat(data.height) || 0,
+          weight: parseFloat(data.weight) || 0,
           gender: data.gender || "male",
-          activityLevel: data.activityLevel || 1.55,
-          targetWeight: data.targetWeight || 0,
+          activityLevel: parseFloat(data.activity_level || data.activityLevel) || 1.55,
+          targetWeight: parseFloat(data.target_weight || data.targetWeight) || 0,
           timeline: data.timeline || 0,
-          workoutDaysPerWeek: data.workoutDaysPerWeek || 0,
-          workoutDays: data.workoutDays || [],
+          workoutDaysPerWeek: data.workout_days_per_week || data.workoutDaysPerWeek || 0,
+          workoutDays: data.workout_days || data.workoutDays || [],
         });
       } else {
         setProfile({
@@ -574,14 +584,24 @@ export default function ProfileScreen() {
       });
 
       // ✅ Navigate
-      if (mode === "basic") {
+      // ✅ Navigate
+      if (mode === "all") {
+        // Stay on same screen, just show success
+        Alert.alert('✅ Success', 'Profile updated successfully!');
+        // Reload profile to show updated data
+        await loadCompleteProfile();
+        // Close all edit modes
+        setEditMode({
+          basic: false,
+          goals: false,
+          workout: false,
+        });
+      } else if (mode === "basic") {
         router.replace('/(tabs)/home');
       } else if (mode === "goals") {
         router.replace('/(tabs)/calories');
       } else if (mode === "workout") {
         router.replace('/(tabs)/workout');
-      } else if (mode === "all") {
-        router.back();
       }
 
     } catch (error) {
@@ -604,7 +624,7 @@ export default function ProfileScreen() {
   if (loading) {
     return <CustomLoader fullScreen />;
   }
-   
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Subtle gradient background */}
@@ -622,7 +642,7 @@ export default function ProfileScreen() {
           {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-              
+
             </TouchableOpacity>
             <Text style={[styles.headerTitle, { color: colors.text }]}>Profile</Text>
             <View style={{ width: 40 }} />
@@ -772,13 +792,14 @@ export default function ProfileScreen() {
                         </View>
                       </View>
 
-                      <TouchableOpacity
-                        style={[styles.saveButton, { backgroundColor: colors.primary }]}
-                        onPress={() => handleSave()}
-
-                      >
-                        <Text style={styles.saveButtonText}>Save Changes</Text>
-                      </TouchableOpacity>
+                      {mode !== "all" && (
+                        <TouchableOpacity
+                          style={[styles.saveButton, { backgroundColor: colors.primary }]}
+                          onPress={() => handleSave()}
+                        >
+                          <Text style={styles.saveButtonText}>Save Changes</Text>
+                        </TouchableOpacity>
+                      )}
                     </>
                   ) : (
                     <>
@@ -917,13 +938,14 @@ export default function ProfileScreen() {
                           ))}
                         </ScrollView>
                       </View>
-
-                      <TouchableOpacity
-                        style={[styles.saveButton, { backgroundColor: colors.primary }]}
-                        onPress={() => toggleEditMode('goals')}
-                      >
-                        <Text style={styles.saveButtonText}>Save Changes</Text>
-                      </TouchableOpacity>
+                      {mode !== "all" && (
+                        <TouchableOpacity
+                          style={[styles.saveButton, { backgroundColor: colors.primary }]}
+                          onPress={() => handleSave()}
+                        >
+                          <Text style={styles.saveButtonText}>Save Changes</Text>
+                        </TouchableOpacity>
+                      )}
                     </>
                   ) : (
                     <>
@@ -954,7 +976,7 @@ export default function ProfileScreen() {
 
                       <TouchableOpacity
                         style={[styles.editButton, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.border }]}
-                        onPress={() => handleSave()}
+                        onPress={() => toggleEditMode('goals')}
                       >
                         <Feather name="edit-2" size={16} color={colors.primary} />
                         <Text style={[styles.editButtonText, { color: colors.primary }]}>Edit Goals</Text>
@@ -971,7 +993,7 @@ export default function ProfileScreen() {
             <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <TouchableOpacity
                 style={styles.cardHeader}
-                onPress={() => handleSave()} 
+                onPress={() => toggleSection('workout')}
                 activeOpacity={0.7}
               >
                 <View style={styles.cardHeaderLeft}>
@@ -1055,20 +1077,24 @@ export default function ProfileScreen() {
                         </View>
                       </View>
 
-                      <TouchableOpacity
-                        style={[styles.saveButton, { backgroundColor: colors.primary }]}
-                        onPress={() => toggleEditMode('workout')}
-                      >
-                        <Text style={styles.saveButtonText}>Save Changes</Text>
-                      </TouchableOpacity>
+                      {mode !== "all" && (
+                        <TouchableOpacity
+                          style={[styles.saveButton, { backgroundColor: colors.primary }]}
+                          onPress={() => handleSave()}
+                        >
+                          <Text style={styles.saveButtonText}>Save Changes</Text>
+                        </TouchableOpacity>
+                      )}
                     </>
                   ) : (
                     <>
                       <View style={styles.workoutStats}>
                         <View style={[styles.workoutStatCard, { backgroundColor: colors.primary + '10' }]}>
-                          <Ionicons name="calendar-outline" size={24} color={colors.primary} />
-                          <Text style={[styles.workoutStatValue, { color: colors.text }]}>{profile.workoutDaysPerWeek || "Not set"}</Text>
-                          <Text style={[styles.workoutStatLabel, { color: colors.textSecondary }]}>Days/Week</Text>
+                          <Ionicons name="bed-outline" size={24} color={colors.primary} />
+                          <Text style={[styles.workoutStatValue, { color: colors.text }]}>
+                            {7 - (profile.workoutDays.length || 0)}
+                          </Text>
+                          <Text style={[styles.workoutStatLabel, { color: colors.textSecondary }]}>Rest Days</Text>
                         </View>
                         <View style={[styles.workoutStatCard, { backgroundColor: colors.primary + '10' }]}>
                           <Ionicons name="fitness-outline" size={24} color={colors.primary} />

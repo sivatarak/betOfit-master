@@ -81,7 +81,11 @@ export default function LogExerciseScreen() {
   const styles = makeStyles(colors);
   const { updateAfterWorkout } = useToday();
   const params = useLocalSearchParams<LogExerciseParams>();
-  const trackingMode = getTrackingMode(params.type, params.equipment, params.exerciseName);
+  const trackingMode = getTrackingMode(
+    params.type as string || '',
+    params.equipment as string || '',
+    params.exerciseName as string || ''
+  );
 
   const createEmptySet = (): WorkoutSet => {
     const base = { id: Date.now().toString(), setNumber: 0, actualDuration: 0, caloriesBurned: 0 };
@@ -441,14 +445,7 @@ export default function LogExerciseScreen() {
         <LinearGradient colors={['rgba(249,250,251,0.4)', colors.background]} style={styles.headerGradient}>
           <SafeAreaView style={styles.safeHeader}>
             <View style={styles.topBar}>
-              <TouchableOpacity onPress={() => {
-                Alert.alert('Discard?', 'Progress will be lost.', [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Discard', style: 'destructive', onPress: () => router.back() }
-                ]);
-              }}>
-                <Ionicons name="arrow-back" size={26} color={colors.text} />
-              </TouchableOpacity>
+             
 
               <View style={styles.headerCenter}>
                 <Text style={[styles.exerciseTitle, { color: colors.text }]} numberOfLines={1}>
