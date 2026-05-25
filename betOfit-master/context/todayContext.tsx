@@ -56,8 +56,8 @@ const defaultData: TodayData = {
 export const TodayProvider: React.FC<{
   children: React.ReactNode;
   baseCalorieGoal: number;
-  profileLoading: boolean;  
-}> = ({ children, baseCalorieGoal,profileLoading  }) => {
+  profileLoading: boolean;
+}> = ({ children, baseCalorieGoal, profileLoading }) => {
 
   const [data, setData] = useState<TodayData>(defaultData);
 
@@ -284,20 +284,20 @@ export const TodayProvider: React.FC<{
   // OPTIMISTIC UPDATES
   // ─────────────────────────────────────────
   const updateAfterFoodLog = useCallback((
-    calories: number, protein: number, carbs: number, fat: number,
-  ) => {
-    setData(prev => calculate(
-      prev.todayEaten + calories,
-      prev.todayBurned,
-      prev.totalProtein + protein,
-      prev.totalCarbs + carbs,
-      prev.totalFat + fat,
-      prev.waterIntake,
-      prev.workoutCount,
-      prev.activeMinutes,
-      baseCalorieGoal,
-    ));
-  }, [baseCalorieGoal, calculate]);
+  calories: number, protein: number, carbs: number, fat: number,
+) => {
+  setData(prev => calculate(
+    Number(prev.todayEaten) + Number(calories),
+    Number(prev.todayBurned),
+    Number(prev.totalProtein) + Number(protein),
+    Number(prev.totalCarbs) + Number(carbs),
+    Number(prev.totalFat) + Number(fat),
+    Number(prev.waterIntake),
+    Number(prev.workoutCount),
+    Number(prev.activeMinutes),
+    baseCalorieGoal,
+  ));
+}, [baseCalorieGoal, calculate]);
 
   const updateAfterWorkout = useCallback((
     caloriesBurned: number, minutes: number,
@@ -318,14 +318,14 @@ export const TodayProvider: React.FC<{
   // ─────────────────────────────────────────
   // LIFECYCLE
   // ─────────────────────────────────────────
- useEffect(() => {
-  console.log('🗓️ TodayContext effect: profileLoading =', profileLoading, 'goal =', baseCalorieGoal);
-  if (!profileLoading && baseCalorieGoal > 0) {
-    console.log('🗓️ TodayContext: firing refreshToday with goal =', baseCalorieGoal);
-    refreshToday();
-  }
-  
-}, [baseCalorieGoal, profileLoading]);
+  useEffect(() => {
+    console.log('🗓️ TodayContext effect: profileLoading =', profileLoading, 'goal =', baseCalorieGoal);
+    if (!profileLoading && baseCalorieGoal > 0) {
+      console.log('🗓️ TodayContext: firing refreshToday with goal =', baseCalorieGoal);
+      refreshToday();
+    }
+
+  }, [baseCalorieGoal, profileLoading]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state: AppStateStatus) => {

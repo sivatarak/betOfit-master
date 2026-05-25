@@ -132,14 +132,23 @@ export default function CaloriesScreen() {
     return () => clearTimeout(delay);
   }, [query]);
 
+  const lastRefreshRef = React.useRef<number>(0);
+
   useFocusEffect(
     useCallback(() => {
-      refreshToday();
+      const now = Date.now();
+      // Only refresh if more than 30 seconds since last refresh
+      if (now - lastRefreshRef.current > 30000) {
+        lastRefreshRef.current = now;
+        refreshToday();
+      }
     }, [refreshToday])
   );
 
   function CircularProgress({ remaining, goal, eaten, size = CIRCLE_SIZE, colors }: CircularProgressProps) {
-    const percentage = (eaten / goal) * 100;
+    const safeGoal = goal > 0 ? goal : 1;
+    const safeEaten = Math.max(eaten, 0); // never below 0
+    const percentage = Math.min(Math.max((safeEaten / safeGoal) * 100, 0), 100);
     const strokeWidth = 12;
     const radius = (size - strokeWidth) / 2;
     const circumference = 2 * Math.PI * radius;
@@ -175,9 +184,19 @@ export default function CaloriesScreen() {
             transform={`rotate(-90 ${size / 2} ${size / 2})`}
           />
         </Svg>
-        <View style={styles.circleCenter}>
-          <Text style={[styles.remainingAmount, { color: colors.text }]}>{remaining}</Text>
-          <Text style={[styles.remainingLabel, { color: colors.textSecondary }]}>kcal left</Text>
+        <View style={[styles.circleCenter, { width: size * 0.65 }]}>
+          <Text
+            adjustsFontSizeToFit
+            numberOfLines={1}
+            style={[styles.remainingAmount, {
+              color: remaining < 0 ? '#EF4444' : colors.text
+            }]}
+          >
+            {isNaN(remaining) ? '0' : Math.abs(Math.round(remaining))}
+          </Text>
+          <Text style={[styles.remainingLabel, { color: colors.textSecondary }]}>
+            {remaining < 0 ? 'over goal' : 'kcal left'}
+          </Text>
         </View>
       </View>
     );
@@ -290,7 +309,14 @@ export default function CaloriesScreen() {
       if (localSaved) {
         const data = JSON.parse(localSaved);
         const today = new Date().toISOString().split("T")[0];
-        const todayEntries = data.history?.filter((e: FoodEntry) => e.date === today) || [];
+        const todayEntries = (data.history?.filter((e: FoodEntry) => e.date === today) || [])
+          .map((e: FoodEntry) => ({
+            ...e,
+            calories: parseFloat(e.calories as any) || 0,
+            protein: parseFloat(e.protein as any) || 0,
+            carbs: parseFloat(e.carbs as any) || 0,
+            fat: parseFloat(e.fat as any) || 0,
+          }));
         const todayCalories = todayEntries.reduce((sum: number, e: FoodEntry) => sum + e.calories, 0);
 
         setHistory(todayEntries);
@@ -484,10 +510,18 @@ export default function CaloriesScreen() {
     const entry = history.find((h) => h.id === id);
     if (!entry) return;
 
+    console.log('🗑️ Removing entry:', {
+      calories: entry.calories,
+      type: typeof entry.calories
+    });
     const updatedHistory = history.filter((h) => h.id !== id);
-
     setHistory(updatedHistory);
-    updateAfterFoodLog(-entry.calories, -entry.protein, -entry.carbs, -entry.fat);
+    const calories = parseFloat(entry.calories as any) || 0;
+    const protein = parseFloat(entry.protein as any) || 0;
+    const carbs = parseFloat(entry.carbs as any) || 0;
+    const fat = parseFloat(entry.fat as any) || 0;
+
+    updateAfterFoodLog(-calories, -protein, -carbs, -fat);
 
     await AsyncStorage.setItem("CALORIES_DATA_V2", JSON.stringify({
       history: updatedHistory,
@@ -495,8 +529,9 @@ export default function CaloriesScreen() {
 
     const currentUser = auth().currentUser;
     const userId = currentUser?.uid;
-    if (userId && id.length > 10) {
-      deleteFoodLog(id);
+    if (userId) {
+      await deleteFoodLog(String(id));
+      console.log('✅ Deleted from backend:', id);
     }
   };
 
@@ -513,10 +548,10 @@ export default function CaloriesScreen() {
         const formattedLogs: FoodEntry[] = backendData.logs.map((log: any) => ({
           id: log.id,
           name: log.food_name,
-          calories: log.calories,
-          protein: log.protein,
-          carbs: log.carbs,
-          fat: log.fat,
+          calories: parseFloat(log.calories) || 0,
+          protein: parseFloat(log.protein) || 0,
+          carbs: parseFloat(log.carbs) || 0,
+          fat: parseFloat(log.fat) || 0,
           quantity: log.quantity,
           unit: "g",
           date: new Date(log.logged_at).toISOString().split("T")[0],
@@ -978,10 +1013,14 @@ const makeStyles = (colors: any) => StyleSheet.create({
   circleCenter: {
     position: "absolute",
     alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
   },
   remainingAmount: {
     fontSize: 36,
     fontWeight: "800",
+    textAlign: "center",
+    maxWidth: "100%",
   },
   remainingLabel: {
     fontSize: 13,

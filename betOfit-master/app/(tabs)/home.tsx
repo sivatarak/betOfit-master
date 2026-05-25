@@ -238,6 +238,8 @@ export default function Home() {
     progressPercent,
     refreshToday,
   } = useToday();
+
+  console.log('Today Eaten:', todayEaten);
   // FIND and REPLACE entire widgetData useMemo
 
   const widgetData = useMemo(() => {
