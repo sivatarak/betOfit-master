@@ -1,5 +1,6 @@
 // app/(tabs)/water.tsx
 import React, { useEffect, useCallback, useState, useMemo, useRef } from "react";
+import auth from '@react-native-firebase/auth';
 import {
   View,
   Text,
@@ -43,6 +44,7 @@ import {
   WATER_KEY,
   WaterData,
   syncWaterWithBackend,
+  deleteWaterFromBackend
 } from "../utils/waterUtils";
 import { useProfile } from '../../context/profileContext';
 import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from "react-native-svg";
@@ -101,12 +103,7 @@ export default function WaterScreen() {
     ).start();
   }, []);
 
-  const liquidStyle = useAnimatedStyle(() => {
-    const fillHeight = interpolate(liquidFill.value, [0, 1], [0, 100]);
-    return {
-      clipPath: `inset(${100 - fillHeight}% 0 0 0)`,
-    };
-  });
+
 
   // Load initial data - ONCE
   useEffect(() => {
@@ -189,6 +186,12 @@ export default function WaterScreen() {
     };
     await AsyncStorage.setItem(WATER_KEY, JSON.stringify(updated));
     setWaterData(updated);
+    // ✅ Now tells backend too
+    const userId = auth().currentUser?.uid;
+    if (userId && lastEntry.id) {
+      await deleteWaterFromBackend(userId, lastEntry.id);
+    }
+
   };
 
   const reset = async () => {
@@ -247,7 +250,7 @@ export default function WaterScreen() {
             ? "Goal achieved! 🎉"
             : "Keep it up!";
 
-  
+
 
   function WaterCircularProgress({ current, goal, remaining, colors }: {
     current: number;
@@ -317,9 +320,9 @@ export default function WaterScreen() {
         >
           {/* Header */}
           <View style={styles.header}>
-           
+
             <Text style={[styles.headerTitle, { color: colors.text }]}>Hydration</Text>
-            
+
           </View>
 
           {/* Interactive Liquid Ring Section */}
@@ -537,7 +540,7 @@ export default function WaterScreen() {
           <View style={{ height: 40 }} />
         </ScrollView>
       </SafeAreaView>
-         {loading && <CustomLoader fullScreen />}
+      {loading && <CustomLoader fullScreen />}
     </View>
   );
 }

@@ -27,6 +27,30 @@ export interface WaterData {
   history: WaterLog[];
   streak: number;
 }
+// Delete single log from backend
+export const deleteWaterFromBackend = async (userId: string, logId: string) => {
+  try {
+    await fetch(`${BACKEND_URL}/api/water/${logId}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId })
+    });
+  } catch (error) {
+    console.log('Delete failed:', error);
+  }
+};
+
+// Reset today from backend
+export const resetWaterFromBackend = async (userId: string) => {
+  try {
+    await fetch(`${BACKEND_URL}/api/water/reset/${userId}`, {
+      method: 'DELETE',
+    });
+  } catch (error) {
+    console.log('Reset failed:', error);
+  }
+};
+
 
 // ========================================
 // BACKEND API CALLS
@@ -66,6 +90,7 @@ const getTodayWaterFromBackend = async (userId: string): Promise<number> => {
     return 0;
   }
 };
+
 
 // ========================================
 // EXISTING UTILITIES (KEPT AS IS)
