@@ -44,7 +44,8 @@ import {
   WATER_KEY,
   WaterData,
   syncWaterWithBackend,
-  deleteWaterFromBackend
+  deleteWaterFromBackend,
+  resetWaterFromBackend,
 } from "../utils/waterUtils";
 import { useProfile } from '../../context/profileContext';
 import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from "react-native-svg";
@@ -188,8 +189,8 @@ export default function WaterScreen() {
     setWaterData(updated);
     // ✅ Now tells backend too
     const userId = auth().currentUser?.uid;
-    if (userId && lastEntry.id) {
-      await deleteWaterFromBackend(userId, lastEntry.id);
+    if (userId) {
+      await deleteWaterFromBackend(userId);
     }
 
   };
@@ -213,11 +214,18 @@ export default function WaterScreen() {
               history: [],
               streak: waterData.streak,
             };
+
+            // ✅ clear local first
             await AsyncStorage.setItem(WATER_KEY, JSON.stringify(resetData));
             setWaterData(resetData);
-            // ← ADD THIS — cancel the 1-hour post-drink reminder on reset
             await cancelAllWaterNotifications();
-            await scheduleMorningReminders(); //
+            await scheduleMorningReminders();
+
+            // ✅ clear backend too
+            const userId = auth().currentUser?.uid;
+            if (userId) {
+              await resetWaterFromBackend(userId);
+            }
           },
         },
       ]

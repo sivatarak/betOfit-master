@@ -26,6 +26,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useProfile } from '../../context/profileContext';
 import { useToday } from '../../context/todayContext';
 const { width } = Dimensions.get("window");
+const { colors, theme } = useTheme();
 
 // Widget Card Component
 const WidgetCard = ({ type, data, colors }: any) => {
@@ -76,56 +77,144 @@ const WidgetCard = ({ type, data, colors }: any) => {
         </LinearGradient>
       );
     } else if (isWorkoutDay && isNewUser) {
-      // New user - encourage to start
       return (
         <LinearGradient
-          colors={[colors.primary, colors.secondary]}
+          colors={[colors.background, '#FF8A00']}
           style={styles.widgetCard}
         >
+          {/* Header */}
           <View style={styles.widgetHeader}>
-            <Ionicons name="rocket" size={28} color="#FFF" />
-            <Text style={styles.widgetTitle}>Start Your Journey!</Text>
+            <View style={styles.iconContainer}>
+              <Ionicons
+                name="rocket"
+                size={42}
+                color="#FF8A00"
+              />
+            </View>
+
+            <View style={{ marginLeft: 18 }}>
+              <Text style={styles.widgetTitle}>
+                Start Your Journey
+              </Text>
+
+              <View style={styles.lineContainer}>
+                <View style={styles.line} />
+                <View style={styles.dot} />
+              </View>
+            </View>
           </View>
-          <Text style={styles.widgetMessage}>
+
+          {/* Main Text */}
+          <Text style={[styles.widgetMessage,{color: colors.text}]}>
             Today is a perfect day to begin your fitness transformation.
           </Text>
-          <Text style={styles.widgetSubtitle}>
+
+          <Text style={[styles.widgetSubtitle,{color: colors.text}]}>
             Try a full body workout to get started!
           </Text>
+
+          {/* Button */}
           <TouchableOpacity
-            style={styles.widgetButton}
+            style={[styles.widgetButton,  { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={() => router.push('/(tabs)/workout')}
           >
-            <Text style={styles.widgetButtonText}>Browse Exercises</Text>
-            <Ionicons name="arrow-forward" size={18} color="#FFF" />
+            <View style={styles.buttonLeft}>
+              <View style={styles.smallIconContainer}>
+                <Ionicons
+                  name="barbell"
+                  size={28}
+                  color="#FF8A00"
+                />
+              </View>
+
+              <Text style={styles.widgetButtonText}>
+                Browse Exercises
+              </Text>
+            </View>
+
+            <Ionicons
+              name="arrow-forward"
+              size={28}
+              color="#FF8A00"
+            />
           </TouchableOpacity>
         </LinearGradient>
       );
     } else {
       // Rest day
+      // Rest day
       return (
         <LinearGradient
-          colors={['#10B981', '#059669']}
+          colors={[colors.background, '#10B981']}
           style={styles.widgetCard}
         >
+          {/* Header */}
           <View style={styles.widgetHeader}>
-            <Ionicons name="bed" size={28} color="#FFF" />
-            <Text style={styles.widgetTitle}>Rest Day</Text>
+            <View style={styles.iconContainer}>
+              <Ionicons
+                name="bed"
+                size={42}
+                color="#10B981"
+              />
+            </View>
+
+            <View style={{ marginLeft: 18 }}>
+              <Text style={styles.widgetTitle}>
+                Rest Day
+              </Text>
+
+              <View style={styles.lineContainer}>
+                <View style={[styles.line, { backgroundColor: '#10B981' }]} />
+                <View style={[styles.dot, { backgroundColor: '#10B981' }]} />
+              </View>
+            </View>
           </View>
-          <Text style={styles.widgetMessage}>
-            Your muscles need recovery to grow stronger.
+
+          {/* Main Text */}
+          <Text style={[styles.widgetMessage,{color: colors.text}]}>
+            Your muscles need proper recovery to grow stronger and perform better.
           </Text>
-          <Text style={styles.widgetSubtitle}>
-            💧 Stay hydrated{'\n'}
-            🧘 Light stretching recommended{'\n'}
-            😴 Get 7-8 hours of sleep
+
+          <Text style={[styles.widgetSubtitle,{color: colors.text}]}>
+            💧 Stay hydrated{"\n"}
+            🧘 Light stretching recommended{"\n"}
+            😴 Get 7–8 hours of sleep
           </Text>
+
+          {/* Button */}
           <TouchableOpacity
-            style={styles.widgetButton}
+            style={[styles.widgetButton,  { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={() => router.push('/(tabs)/stats')}
           >
-            <Text style={styles.widgetButtonText}>View Your Progress</Text>
-            <Ionicons name="arrow-forward" size={18} color="#FFF" />
+            <View style={styles.buttonLeft}>
+              <View
+                style={[
+                  styles.smallIconContainer,
+                  { borderColor: '#10B981' }
+                ]}
+              >
+                <Ionicons
+                  name="stats-chart"
+                  size={28}
+                  color="#10B981"
+                />
+              </View>
+
+              <Text
+                style={[
+                  styles.widgetButtonText,
+                  { color: '#10B981' }
+                ]}
+              >
+                View Progress
+              </Text>
+            </View>
+
+            <Ionicons
+              name="arrow-forward"
+              size={28}
+              color="#10B981"
+            />
           </TouchableOpacity>
         </LinearGradient>
       );
@@ -191,20 +280,56 @@ const WidgetCard = ({ type, data, colors }: any) => {
     const styles = makeStyles(colors);
     return (
       <LinearGradient
-        colors={['#8B5CF6', '#7C3AED']}
+        colors={[colors.background, '#935cf1']}
         style={styles.widgetCard}
       >
+        {/* Header */}
         <View style={styles.widgetHeader}>
-          <Text style={styles.widgetIcon}>{randomTip.icon}</Text>
-          <Text style={styles.widgetTitle}>{randomTip.title}</Text>
+          <View style={styles.iconContainer}>
+            <Text style={{ fontSize: 38 }}>{randomTip.icon}</Text>
+          </View>
+
+          <View style={{ marginLeft: 18 }}>
+            <Text style={styles.widgetTitle}>
+              {randomTip.title}
+            </Text>
+
+            <View style={styles.lineContainer}>
+              <View style={styles.line} />
+              <View style={styles.dot} />
+            </View>
+          </View>
         </View>
-        <Text style={styles.widgetMessage}>{randomTip.message}</Text>
+
+        {/* Message */}
+        <Text style={[styles.widgetMessage,{color: colors.text}]}>
+          {randomTip.message}
+        </Text>
+
+        {/* Button */}
         <TouchableOpacity
-          style={styles.widgetButton}
+          style={[styles.widgetButton,  { backgroundColor: colors.card, borderColor: colors.border }]}
           onPress={() => router.push('/(tabs)/stats')}
         >
-          <Text style={styles.widgetButtonText}>Track Your Stats</Text>
-          <Ionicons name="arrow-forward" size={18} color="#FFF" />
+          <View style={styles.buttonLeft}>
+            <View style={styles.smallIconContainer}>
+              <Ionicons
+                name="stats-chart"
+                size={28}
+                color="#FF8A00"
+              />
+            </View>
+
+            <Text style={styles.widgetButtonText}>
+              Track Your Stats
+            </Text>
+          </View>
+
+          <Ionicons
+            name="arrow-forward"
+            size={28}
+            color="#FF8A00"
+          />
         </TouchableOpacity>
       </LinearGradient>
     );
@@ -430,7 +555,7 @@ export default function Home() {
 
   // Handle manual scroll
   const onScroll = (event: any) => {
-    const slideSize = width - 40;
+    const slideSize = width;
     const index = Math.round(event.nativeEvent.contentOffset.x / slideSize);
     setCurrentWidgetIndex(index);
 
@@ -539,13 +664,15 @@ export default function Home() {
               ref={flatListRef}
               data={widgetData}
               horizontal
-              pagingEnabled
               showsHorizontalScrollIndicator={false}
+              snapToInterval={width - 10}
+              snapToAlignment="center"
+              decelerationRate="fast"
+              disableIntervalMomentum={true}
+              contentContainerStyle={{ paddingHorizontal: 10 }}
+              pagingEnabled
               onScroll={onScroll}
               scrollEventThrottle={16}
-              snapToInterval={width - 40}
-              decelerationRate="fast"
-              contentContainerStyle={{ paddingRight: 20 }}
               renderItem={({ item }) => (
                 <WidgetCard type={item.type} data={item.data} colors={colors} />
               )}
@@ -709,7 +836,7 @@ const makeStyles = (colors: any) =>
       flex: 1,
     },
     scrollContent: {
-      padding: 20,
+      padding: 16,
       paddingTop: Platform.OS === 'ios' ? 60 : 20,
       paddingBottom: 100,
     },
@@ -789,37 +916,125 @@ const makeStyles = (colors: any) =>
       marginBottom: 24,
     },
     widgetCard: {
-      width: width - 40,
-      borderRadius: 20,
+      marginHorizontal: 15,
+      marginVertical: 15,
       padding: 20,
-      marginRight: 0,
+      width: width - 50,
+
+      borderRadius: 24,
+
+      borderWidth: 1.5,
+      borderColor: '#FF8A00',
+
+      shadowColor: '#FF8A00',
+      shadowOffset: {
+        width: 0,
+        height: 0,
+      },
+      shadowOpacity: 0.4,
+      shadowRadius: 8,
+
+      elevation: 6,
     },
+
     widgetHeader: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 12,
-      marginBottom: 12,
+      marginBottom: 28,
     },
+
+    iconContainer: {
+      width: 60,
+      height: 60,
+      borderRadius: 30,
+
+      justifyContent: 'center',
+      alignItems: 'center',
+
+      borderWidth: 1.5,
+      borderColor: '#FF8A00',
+
+      shadowColor: '#FF8A00',
+      shadowOpacity: 0.8,
+      shadowRadius: 10,
+
+      elevation: 10,
+    },
+
+    widgetTitle: {
+      fontSize: 22,
+      fontWeight: '800',
+      color: '#FF8A00',
+    },
+
+    lineContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 12,
+    },
+
+    line: {
+      width: 90,
+      height: 8,
+      borderRadius: 10,
+      backgroundColor: '#FF8A00',
+    },
+
+    dot: {
+      width: 12,
+      height: 12,
+      borderRadius: 6,
+      backgroundColor: '#FF8A00',
+      marginLeft: 12,
+    },
+
+    widgetMessage: {
+      fontSize: 16,
+      lineHeight: 24,
+      fontWeight: '500',
+
+      color: '#EAEAEA',
+
+      marginBottom: 10,
+    },
+
+    widgetSubtitle: {
+      fontSize: 13,
+      lineHeight: 20,
+
+      color: '#BDBDBD',
+
+      marginBottom: 20,
+    },
+
+    buttonLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+
+    smallIconContainer: {
+      width: 45,
+      height: 45,
+      borderRadius: 22,
+
+      justifyContent: 'center',
+      alignItems: 'center',
+
+      borderWidth: 1.5,
+      borderColor: '#FF8A00',
+
+      marginRight: 10,
+    },
+
+    widgetButtonText: {
+      fontSize: 16,
+      fontWeight: '700',
+
+      color: '#FF8A00',
+    },
+
     widgetIcon: {
       fontSize: 28,
-    },
-    widgetTitle: {
-      fontSize: 20,
-      fontWeight: '800',
-      color: '#FFF',
-      flex: 1,
-    },
-    widgetSubtitle: {
-      fontSize: 14,
-      color: 'rgba(255,255,255,0.9)',
-      marginBottom: 12,
-      lineHeight: 20,
-    },
-    widgetMessage: {
-      fontSize: 15,
-      color: 'rgba(255,255,255,0.95)',
-      marginBottom: 16,
-      lineHeight: 22,
     },
     exercisesList: {
       gap: 8,
@@ -848,29 +1063,34 @@ const makeStyles = (colors: any) =>
     widgetButton: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
-      gap: 8,
-      backgroundColor: 'rgba(255,255,255,0.2)',
-      paddingVertical: 14,
-      paddingHorizontal: 20,
-      borderRadius: 12,
-      marginTop: 4,
+      justifyContent: 'space-between',
+
+      borderWidth: 1.5,
+      
+
+      borderRadius: 20,
+
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+
+      backgroundColor: colors.background,
+
+    
+      shadowOpacity: 0.5,
+      shadowRadius: 6,
+
+      elevation: 4,
+
+      marginTop: 10,
     },
-    widgetButtonText: {
-      color: '#FFF',
-      fontSize: 15,
-      fontWeight: '700',
-    },
+
     dotContainer: {
       flexDirection: 'row',
       justifyContent: 'center',
       gap: 8,
       marginTop: 16,
     },
-    dot: {
-      height: 8,
-      borderRadius: 4,
-    },
+
     // Balance Card
     balanceCard: {
       borderRadius: 20,

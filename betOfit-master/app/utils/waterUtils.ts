@@ -28,26 +28,49 @@ export interface WaterData {
   streak: number;
 }
 // Delete single log from backend
-export const deleteWaterFromBackend = async (userId: string, logId: string) => {
+export const deleteWaterFromBackend = async (userId: string) => {
   try {
-    await fetch(`${BACKEND_URL}/api/water/${logId}`, {
+    const response = await fetch(`${BACKEND_URL}/api/water/delete`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId })
+      body: JSON.stringify({ userId }) // ✅ only userId needed
     });
+
+    if (!response.ok) {
+      console.log('❌ Delete failed:', response.status);
+      return null;
+    }
+
+    const result = await response.json();
+    console.log('✅ Water deleted from backend:', result);
+    return result;
   } catch (error) {
     console.log('Delete failed:', error);
+    return null;
   }
 };
 
 // Reset today from backend
 export const resetWaterFromBackend = async (userId: string) => {
   try {
-    await fetch(`${BACKEND_URL}/api/water/reset/${userId}`, {
-      method: 'DELETE',
-    });
+    const response = await fetch(
+      `${BACKEND_URL}/api/water/reset/${userId}`,
+      {
+        method: 'DELETE',
+      }
+    );
+
+    if (!response.ok) {
+      console.log('❌ Reset failed:', response.status);
+      return null;
+    }
+
+    const result = await response.json();
+    console.log('✅ Water reset on backend:', result);
+    return result;
   } catch (error) {
     console.log('Reset failed:', error);
+    return null;
   }
 };
 
