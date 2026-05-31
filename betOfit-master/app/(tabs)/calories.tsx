@@ -349,7 +349,7 @@ export default function CaloriesScreen() {
 
     searchQuery = searchQuery.trim();
 
-    if (!searchQuery || searchQuery.length < 2) {
+    if (!searchQuery || searchQuery.length < 3) {
       setResults([]);
       setLoading(false);
       return;
