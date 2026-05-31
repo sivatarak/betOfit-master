@@ -23,12 +23,14 @@ import Animated, {
   interpolate,
 } from "react-native-reanimated";
 import {
+  onFirstAppOpen,          // ← NEW
   schedulePostDrinkReminder,
   scheduleMorningReminders,
   scheduleDailyWaterReminders,
   checkLateAndNoDrink,
   cancelAllWaterNotifications,
 } from '../utils/waterNotification';
+
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -106,29 +108,26 @@ export default function WaterScreen() {
 
 
 
-  // Load initial data - ONCE
+  //  In your load useEffect — add onFirstAppOpen()
   useEffect(() => {
-    const load = async () => {
-      try {
-        const goalValue = waterGoal > 0 ? waterGoal : 2500;
-        const data = await loadWaterData(weight || 70);
-        setWaterData({
-          ...data,
-          goal: goalValue,
-        });
-        await scheduleMorningReminders();
-        await scheduleDailyWaterReminders();
-        await checkLateAndNoDrink(data.current);
-      } catch (e) {
-        console.log("Error loading hydration:", e);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, []); // Empty dependency - run once on mount
-
-  // Update goal when profile context updates
+  const load = async () => {
+    try {
+      await onFirstAppOpen();          // ← ADD: runs only on very first launch
+      const goalValue = waterGoal > 0 ? waterGoal : 2500;
+      const data = await loadWaterData(weight || 70);
+      setWaterData({ ...data, goal: goalValue });
+      await scheduleMorningReminders();
+      await scheduleDailyWaterReminders();
+      await checkLateAndNoDrink(data.current);
+    } catch (e) {
+      console.log('Error loading hydration:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+  load();
+}, []);
+// Update goal when profile context updates
   useEffect(() => {
     if (waterGoal > 0 && !loading) {
       setWaterData(prev => ({
