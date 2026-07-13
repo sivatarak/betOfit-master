@@ -18,8 +18,8 @@ export default function TabsLayout() {
   const [isOnboarding, setIsOnboarding] = useState(false);
 
   useEffect(() => {
-    checkOnboardingStatus();
-  }, [user]);
+  checkOnboardingStatus();
+}, [user, pathname]);
 
   const checkOnboardingStatus = async () => {
     if (!user) return;

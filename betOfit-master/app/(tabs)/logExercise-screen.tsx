@@ -14,9 +14,11 @@ import {
   ImageBackground,
   Dimensions,
   Modal,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -45,6 +47,7 @@ interface LogExerciseParams {
   equipment: string;
   difficulty: string;
   type: string;
+
 }
 
 type SetTimerState = 'idle' | 'running' | 'paused';
@@ -80,12 +83,17 @@ export default function LogExerciseScreen() {
   const { colors, theme } = useTheme();
   const styles = makeStyles(colors);
   const { updateAfterWorkout } = useToday();
-  const params = useLocalSearchParams<LogExerciseParams>();
+  const params = useLocalSearchParams();
   const trackingMode = getTrackingMode(
     params.type as string || '',
     params.equipment as string || '',
     params.exerciseName as string || ''
   );
+
+  const appState = useRef<AppStateStatus>('active');
+  const backgroundTime = useRef<number>(0);
+  const setTimerStateRef = useRef<SetTimerState>('idle');
+
 
   const createEmptySet = (): WorkoutSet => {
     const base = { id: Date.now().toString(), setNumber: 0, actualDuration: 0, caloriesBurned: 0 };
@@ -130,6 +138,80 @@ export default function LogExerciseScreen() {
   };
 
   const elapsedSeconds = Math.floor((new Date().getTime() - startTime.getTime()) / 1000);
+
+  // 🔙 COMEBACK ALERT (FIXED)
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      if (appState.current === 'active' && nextState === 'background') {
+        backgroundTime.current = Date.now();
+      }
+
+      if (
+        (appState.current === 'background' || appState.current === 'inactive') &&
+        nextState === 'active'
+      ) {
+        const awaySeconds = Math.floor((Date.now() - backgroundTime.current) / 1000);
+
+        if (awaySeconds >= 60 && setTimerStateRef.current === 'running') {
+          const mins = Math.floor(awaySeconds / 60);
+          const secs = awaySeconds % 60;
+          const label = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
+          Alert.alert(
+            '⏸️ Welcome Back!',
+            `You were away for ${label}. Your set timer is still running — what would you like to do?`,
+            [
+              { text: 'Keep Going', style: 'cancel' },
+              { text: 'Pause & Log', onPress: () => pauseAndLogRef.current() },
+            ]
+          );
+        }
+      }
+
+      appState.current = nextState;
+    });
+
+    return () => subscription.remove();
+  }, []);
+
+  // ⏰ 5-MINUTE IDLE ALERT — fires when user paused and did nothing for 5 minutes
+  useEffect(() => {
+    if (setTimerState === 'idle' && completedSets.length > 0) {
+      awayFromScreenTimer.current = setTimeout(() => {
+        Vibration.vibrate([0, 300, 200, 300]);
+        Alert.alert(
+          '💪 Still Working Out?',
+          `You have ${completedSets.length} set(s) logged but haven't continued for 5 minutes. What would you like to do?`,
+          [
+            { text: 'Keep Going', style: 'cancel' },
+            {
+              text: 'Save & Finish',
+              onPress: () => saveWorkout(),
+            },
+            {
+              text: 'Discard Workout',
+              style: 'destructive',
+              onPress: () => {
+                setCompletedSets([]);
+                router.back();
+              },
+            },
+          ]
+        );
+      }, 5 * 60 * 1000); // 5 minutes
+    } else {
+      if (awayFromScreenTimer.current) {
+        clearTimeout(awayFromScreenTimer.current);
+        awayFromScreenTimer.current = null;
+      }
+    }
+
+    return () => {
+      if (awayFromScreenTimer.current) {
+        clearTimeout(awayFromScreenTimer.current);
+      }
+    };
+  }, [setTimerState, completedSets.length]);
 
   // Load user weight
   useEffect(() => {
@@ -229,6 +311,12 @@ export default function LogExerciseScreen() {
     setModalVisible(true);
     Vibration.vibrate(100);
   };
+  useEffect(() => {
+    pauseAndLogRef.current = pauseAndLog;
+  });
+  const navigation = useNavigation();
+  const pauseAndLogRef = useRef<() => void>(pauseAndLog);
+  const awayFromScreenTimer = useRef<any>(null);
 
   // Calculate calories for single set
   // Calculate calories for single set
@@ -286,6 +374,13 @@ export default function LogExerciseScreen() {
     });
   };
 
+  const handleModalClose = () => {
+    setModalVisible(false);   // ← must be setModalVisible(false), NOT handleModalClose()
+    setSetTimerState('idle');
+    setSetElapsedTime(0);
+    setRestStartTime(0);
+    setRestElapsedTime(0);
+  };
   // ✅ COMPLETE SET
   const completeSet = async () => {
     // Validate inputs
@@ -311,7 +406,7 @@ export default function LogExerciseScreen() {
     const setWithCalories = { ...currentSet, caloriesBurned: calories };
 
     setCompletedSets(prev => [...prev, setWithCalories]);
-    setModalVisible(false);
+    handleModalClose();
 
     // Reset timer state
     setSetTimerState('idle');
@@ -445,7 +540,7 @@ export default function LogExerciseScreen() {
         <LinearGradient colors={['rgba(249,250,251,0.4)', colors.background]} style={styles.headerGradient}>
           <SafeAreaView style={styles.safeHeader}>
             <View style={styles.topBar}>
-             
+
 
               <View style={styles.headerCenter}>
                 <Text style={[styles.exerciseTitle, { color: colors.text }]} numberOfLines={1}>
@@ -639,12 +734,12 @@ export default function LogExerciseScreen() {
         animationType="fade"
         transparent={true}
         visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={() => handleModalClose()}
       >
         <TouchableOpacity
           style={styles.modalOverlay}
           activeOpacity={1}
-          onPress={() => setModalVisible(false)}
+          onPress={() => handleModalClose()}
         >
           <TouchableOpacity
             style={[styles.modalContent, { backgroundColor: colors.card, borderColor: 'rgba(255,255,255,0.3)' }]}
@@ -661,7 +756,7 @@ export default function LogExerciseScreen() {
                 </Text>
               </View>
               <TouchableOpacity
-                onPress={() => setModalVisible(false)}
+                onPress={() => handleModalClose()}
                 style={[styles.modalCloseBtn, { backgroundColor: colors.border }]}
               >
                 <Ionicons name="close" size={24} color={colors.textSecondary} />

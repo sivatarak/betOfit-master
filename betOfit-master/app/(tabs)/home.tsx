@@ -1,4 +1,3 @@
-// app/(tabs)/home.tsx
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   View,
@@ -25,58 +24,64 @@ import { CustomLoader } from '../../components/CustomLoader';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useProfile } from '../../context/profileContext';
 import { useToday } from '../../context/todayContext';
+import { generateSmartSuggestion, SuggestionInput } from "../utils/smartsuggestionengine";
 const { width } = Dimensions.get("window");
-const { colors, theme } = useTheme();
-
+ 
 // Widget Card Component
 const WidgetCard = ({ type, data, colors }: any) => {
+  const styles = makeStyles(colors);
+ 
   // SECTION 1: WORKOUT PLAN
   if (type === 'workout') {
     const isWorkoutDay = data?.today?.is_workout_day;
     const isNewUser = data?.user?.is_new_user;
     const lastWeek = data?.last_week_same_day;
     const todayName = data?.today?.day_name;
-    const styles = makeStyles(colors);
-    if (isWorkoutDay && lastWeek) {
-      // Established user - show last week's workout
-      return (
-        <LinearGradient
-          colors={[colors.primary, colors.secondary]}
-          style={styles.widgetCard}
-        >
-          <View style={styles.widgetHeader}>
-            <Ionicons name="barbell" size={28} color="#FFF" />
-            <Text style={styles.widgetTitle}>Today's Workout Plan</Text>
-          </View>
-          <Text style={styles.widgetSubtitle}>
-            Last {todayName} you did:
-          </Text>
-          <View style={styles.exercisesList}>
-            {lastWeek.exercises.slice(0, 3).map((ex: any, i: number) => (
-              <View key={i} style={styles.exerciseItem}>
-                <Ionicons name="checkmark-circle" size={16} color="#FFF" />
-                <Text style={styles.exerciseText}>{ex.name}</Text>
-              </View>
-            ))}
-          </View>
-          <View style={styles.widgetStats}>
-            <Text style={styles.widgetStatText}>
-              ⏱️ {lastWeek.total_duration} min
-            </Text>
-            <Text style={styles.widgetStatText}>
-              🔥 ~{lastWeek.total_calories_burned} kcal
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={styles.widgetButton}
-            onPress={() => router.push('/(tabs)/workout')}
+ 
+    if (isWorkoutDay) {
+      if (lastWeek) {
+        // Established user - show last week's workout
+        return (
+          <LinearGradient
+            colors={[colors.primary, colors.secondary]}
+            style={styles.widgetCard}
           >
-            <Text style={styles.widgetButtonText}>Start Workout</Text>
-            <Ionicons name="arrow-forward" size={18} color="#FFF" />
-          </TouchableOpacity>
-        </LinearGradient>
-      );
-    } else if (isWorkoutDay && isNewUser) {
+            <View style={styles.widgetHeader}>
+              <Ionicons name="barbell" size={28} color="#FFF" />
+              <Text style={styles.widgetTitle}>Today's Workout Plan</Text>
+            </View>
+            <Text style={styles.widgetSubtitle}>
+              Last {todayName} you did:
+            </Text>
+            <View style={styles.exercisesList}>
+              {lastWeek.exercises.slice(0, 3).map((ex: any, i: number) => (
+                <View key={i} style={styles.exerciseItem}>
+                  <Ionicons name="checkmark-circle" size={16} color="#FFF" />
+                  <Text style={styles.exerciseText}>{ex.name}</Text>
+                </View>
+              ))}
+            </View>
+            <View style={styles.widgetStats}>
+              <Text style={styles.widgetStatText}>
+                ⏱️ {lastWeek.total_duration} min
+              </Text>
+              <Text style={styles.widgetStatText}>
+                🔥 ~{lastWeek.total_calories_burned} kcal
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.widgetButton}
+              onPress={() => router.push('/(tabs)/workout')}
+            >
+              <Text style={styles.widgetButtonText}>Start Workout</Text>
+              <Ionicons name="arrow-forward" size={18} color="#FFF" />
+            </TouchableOpacity>
+          </LinearGradient>
+        );
+      }
+ 
+      // Workout day, but no last-week history to show — covers BOTH brand
+      // new users and existing users with no logged data for this weekday.
       return (
         <LinearGradient
           colors={[colors.background, '#FF8A00']}
@@ -85,148 +90,110 @@ const WidgetCard = ({ type, data, colors }: any) => {
           {/* Header */}
           <View style={styles.widgetHeader}>
             <View style={styles.iconContainer}>
-              <Ionicons
-                name="rocket"
-                size={42}
-                color="#FF8A00"
-              />
+              <Ionicons name="rocket" size={42} color="#FF8A00" />
             </View>
-
+ 
             <View style={{ marginLeft: 18 }}>
               <Text style={styles.widgetTitle}>
-                Start Your Journey
+                {isNewUser ? 'Start Your Journey' : "Today's Workout"}
               </Text>
-
+ 
               <View style={styles.lineContainer}>
                 <View style={styles.line} />
                 <View style={styles.dot} />
               </View>
             </View>
           </View>
-
+ 
           {/* Main Text */}
-          <Text style={[styles.widgetMessage,{color: colors.text}]}>
-            Today is a perfect day to begin your fitness transformation.
+          <Text style={[styles.widgetMessage, { color: colors.text }]}>
+            {isNewUser
+              ? 'Today is a perfect day to begin your fitness transformation.'
+              : `${todayName} is a scheduled workout day — no history logged for it yet.`}
           </Text>
-
-          <Text style={[styles.widgetSubtitle,{color: colors.text}]}>
+ 
+          <Text style={[styles.widgetSubtitle, { color: colors.text }]}>
             Try a full body workout to get started!
           </Text>
-
+ 
           {/* Button */}
           <TouchableOpacity
-            style={[styles.widgetButton,  { backgroundColor: colors.card, borderColor: colors.border }]}
+            style={[styles.widgetButton, { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={() => router.push('/(tabs)/workout')}
           >
             <View style={styles.buttonLeft}>
               <View style={styles.smallIconContainer}>
-                <Ionicons
-                  name="barbell"
-                  size={28}
-                  color="#FF8A00"
-                />
+                <Ionicons name="barbell" size={28} color="#FF8A00" />
               </View>
-
-              <Text style={styles.widgetButtonText}>
-                Browse Exercises
-              </Text>
+ 
+              <Text style={styles.widgetButtonText}>Browse Exercises</Text>
             </View>
-
-            <Ionicons
-              name="arrow-forward"
-              size={28}
-              color="#FF8A00"
-            />
-          </TouchableOpacity>
-        </LinearGradient>
-      );
-    } else {
-      // Rest day
-      // Rest day
-      return (
-        <LinearGradient
-          colors={[colors.background, '#10B981']}
-          style={styles.widgetCard}
-        >
-          {/* Header */}
-          <View style={styles.widgetHeader}>
-            <View style={styles.iconContainer}>
-              <Ionicons
-                name="bed"
-                size={42}
-                color="#10B981"
-              />
-            </View>
-
-            <View style={{ marginLeft: 18 }}>
-              <Text style={styles.widgetTitle}>
-                Rest Day
-              </Text>
-
-              <View style={styles.lineContainer}>
-                <View style={[styles.line, { backgroundColor: '#10B981' }]} />
-                <View style={[styles.dot, { backgroundColor: '#10B981' }]} />
-              </View>
-            </View>
-          </View>
-
-          {/* Main Text */}
-          <Text style={[styles.widgetMessage,{color: colors.text}]}>
-            Your muscles need proper recovery to grow stronger and perform better.
-          </Text>
-
-          <Text style={[styles.widgetSubtitle,{color: colors.text}]}>
-            💧 Stay hydrated{"\n"}
-            🧘 Light stretching recommended{"\n"}
-            😴 Get 7–8 hours of sleep
-          </Text>
-
-          {/* Button */}
-          <TouchableOpacity
-            style={[styles.widgetButton,  { backgroundColor: colors.card, borderColor: colors.border }]}
-            onPress={() => router.push('/(tabs)/stats')}
-          >
-            <View style={styles.buttonLeft}>
-              <View
-                style={[
-                  styles.smallIconContainer,
-                  { borderColor: '#10B981' }
-                ]}
-              >
-                <Ionicons
-                  name="stats-chart"
-                  size={28}
-                  color="#10B981"
-                />
-              </View>
-
-              <Text
-                style={[
-                  styles.widgetButtonText,
-                  { color: '#10B981' }
-                ]}
-              >
-                View Progress
-              </Text>
-            </View>
-
-            <Ionicons
-              name="arrow-forward"
-              size={28}
-              color="#10B981"
-            />
+ 
+            <Ionicons name="arrow-forward" size={28} color="#FF8A00" />
           </TouchableOpacity>
         </LinearGradient>
       );
     }
+ 
+    // Rest day (isWorkoutDay is false)
+    return (
+      <LinearGradient
+        colors={[colors.background, '#10B981']}
+        style={styles.widgetCard}
+      >
+        {/* Header */}
+        <View style={styles.widgetHeader}>
+          <View style={styles.iconContainer}>
+            <Ionicons name="bed" size={42} color="#10B981" />
+          </View>
+ 
+          <View style={{ marginLeft: 18 }}>
+            <Text style={styles.widgetTitle}>Rest Day</Text>
+ 
+            <View style={styles.lineContainer}>
+              <View style={[styles.line, { backgroundColor: '#10B981' }]} />
+              <View style={[styles.dot, { backgroundColor: '#10B981' }]} />
+            </View>
+          </View>
+        </View>
+ 
+        {/* Main Text */}
+        <Text style={[styles.widgetMessage, { color: colors.text }]}>
+          Your muscles need proper recovery to grow stronger and perform better.
+        </Text>
+ 
+        <Text style={[styles.widgetSubtitle, { color: colors.text }]}>
+          💧 Stay hydrated{"\n"}
+          🧘 Light stretching recommended{"\n"}
+          😴 Get 7–8 hours of sleep
+        </Text>
+ 
+        {/* Button */}
+        <TouchableOpacity
+          style={[styles.widgetButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={() => router.push('/(tabs)/stats')}
+        >
+          <View style={styles.buttonLeft}>
+            <View style={[styles.smallIconContainer, { borderColor: '#10B981' }]}>
+              <Ionicons name="stats-chart" size={28} color="#10B981" />
+            </View>
+ 
+            <Text style={[styles.widgetButtonText, { color: '#10B981' }]}>
+              View Progress
+            </Text>
+          </View>
+ 
+          <Ionicons name="arrow-forward" size={28} color="#10B981" />
+        </TouchableOpacity>
+      </LinearGradient>
+    );
   }
-
+ 
   // SECTION 2: SMART SUGGESTION
   if (type === 'suggestion') {
     const suggestion = data;
-    const styles = makeStyles(colors);
     if (!suggestion) return null;
-
+ 
     return (
       <LinearGradient
         colors={[suggestion.color, suggestion.color + 'CC']}
@@ -250,7 +217,7 @@ const WidgetCard = ({ type, data, colors }: any) => {
       </LinearGradient>
     );
   }
-
+ 
   // SECTION 3: DAILY TIP
   if (type === 'tip') {
     const tips = [
@@ -275,9 +242,8 @@ const WidgetCard = ({ type, data, colors }: any) => {
         message: "Small daily progress beats occasional perfection. Stay consistent!"
       }
     ];
-
+ 
     const randomTip = tips[Math.floor(Math.random() * tips.length)];
-    const styles = makeStyles(colors);
     return (
       <LinearGradient
         colors={[colors.background, '#935cf1']}
@@ -288,62 +254,49 @@ const WidgetCard = ({ type, data, colors }: any) => {
           <View style={styles.iconContainer}>
             <Text style={{ fontSize: 38 }}>{randomTip.icon}</Text>
           </View>
-
+ 
           <View style={{ marginLeft: 18 }}>
-            <Text style={styles.widgetTitle}>
-              {randomTip.title}
-            </Text>
-
+            <Text style={styles.widgetTitle}>{randomTip.title}</Text>
+ 
             <View style={styles.lineContainer}>
               <View style={styles.line} />
               <View style={styles.dot} />
             </View>
           </View>
         </View>
-
+ 
         {/* Message */}
-        <Text style={[styles.widgetMessage,{color: colors.text}]}>
+        <Text style={[styles.widgetMessage, { color: colors.text }]}>
           {randomTip.message}
         </Text>
-
+ 
         {/* Button */}
         <TouchableOpacity
-          style={[styles.widgetButton,  { backgroundColor: colors.card, borderColor: colors.border }]}
+          style={[styles.widgetButton, { backgroundColor: colors.card, borderColor: colors.border }]}
           onPress={() => router.push('/(tabs)/stats')}
         >
           <View style={styles.buttonLeft}>
             <View style={styles.smallIconContainer}>
-              <Ionicons
-                name="stats-chart"
-                size={28}
-                color="#FF8A00"
-              />
+              <Ionicons name="stats-chart" size={28} color="#FF8A00" />
             </View>
-
-            <Text style={styles.widgetButtonText}>
-              Track Your Stats
-            </Text>
+ 
+            <Text style={styles.widgetButtonText}>Track Your Stats</Text>
           </View>
-
-          <Ionicons
-            name="arrow-forward"
-            size={28}
-            color="#FF8A00"
-          />
+ 
+          <Ionicons name="arrow-forward" size={28} color="#FF8A00" />
         </TouchableOpacity>
       </LinearGradient>
     );
   }
-
+ 
   return null;
 };
-
+ 
 export default function Home() {
   const { colors, theme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { name, workoutDays } = useProfile();
-  console.log('Welcome:', name);
-
+ 
   const [userName, setUserName] = useState("");
   const [greeting, setGreeting] = useState("Good morning");
   const [lastWeekWorkout, setLastWeekWorkout] = useState<any>(null);
@@ -363,16 +316,20 @@ export default function Home() {
     progressPercent,
     refreshToday,
   } = useToday();
+ 
+  // 🧪 TEST INFUSION — delete this useEffect when done testing.
+  // Runs the pure-function test suite for the suggestion engine once on
+  // mount, in dev builds only, and prints PASS/FAIL results to the
+  // Metro/console log. Doesn't touch app state, home screen UI, or the
+  // real generateSmartSuggestion call below.
 
-  console.log('Today Eaten:', todayEaten);
-  // FIND and REPLACE entire widgetData useMemo
-
+ 
   const widgetData = useMemo(() => {
     const widgets = [];
-
+ 
     const todayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
     const isWorkoutDay = workoutDays.includes(todayName);
-
+ 
     const workoutWidgetData = {
       today: {
         is_workout_day: isWorkoutDay,
@@ -384,51 +341,53 @@ export default function Home() {
       },
       last_week_same_day: lastWeekWorkout,
     };
-
+ 
     widgets.push({ type: 'workout', data: workoutWidgetData });
-
+ 
     if (smartSuggestion) {
       widgets.push({ type: 'suggestion', data: smartSuggestion });
     }
-
+ 
     widgets.push({ type: 'tip', data: null });
-
+ 
     return widgets;
   }, [lastWeekWorkout, isNewUser, todayBurned, smartSuggestion, workoutDays]);
+ 
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return "Good morning";
     if (hour < 18) return "Good afternoon";
     return "Good evening";
   };
-
+ 
   const loadWorkoutWidget = useCallback(async () => {
     try {
       const historyStr = await AsyncStorage.getItem('WORKOUT_HISTORY');
-
+ 
       // Check if new user
       if (!historyStr || JSON.parse(historyStr).length === 0) {
         setIsNewUser(true);
+        setLastWeekWorkout(null);
         return;
       }
-
+ 
       const history = JSON.parse(historyStr);
       setIsNewUser(false);
-
+ 
       // Get same day last week
       const lastWeek = new Date();
       lastWeek.setDate(lastWeek.getDate() - 7);
       const lastWeekDate = lastWeek.toISOString().split('T')[0];
-
+ 
       const lastWeekWorkouts = history.filter(
         (w: any) => w.date === lastWeekDate
       );
-
+ 
       if (lastWeekWorkouts.length === 0) {
         setLastWeekWorkout(null);
         return;
       }
-
+ 
       setLastWeekWorkout({
         exercises: lastWeekWorkouts.map((w: any) => ({
           name: w.exerciseName
@@ -440,138 +399,75 @@ export default function Home() {
           (s: number, w: any) => s + (w.caloriesBurned || 0), 0
         ),
       });
-
+ 
     } catch (e) {
       console.log('Workout widget error:', e);
     }
   }, []);
-
-
-  const generateSmartSuggestion = useCallback(() => {
-    const todayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
-    const isWorkoutDay = workoutDays.includes(todayName);
-    const caloriesDiff = todayEaten - adjustedGoal;
-    const workedOut = todayBurned > 0;
-
-    if (isWorkoutDay) {
-      if (caloriesDiff > 300 && !workedOut) {
-        return {
-          icon: "🔥",
-          title: "Burn Extra Calories!",
-          message: `You're ${Math.round(caloriesDiff)} kcal over your goal.`,
-          suggestion: "Do a 30-min cardio session to burn ~250 kcal!",
-          action: "Start Workout",
-          actionRoute: "/(tabs)/workout",
-          color: "#F97316"
-        };
-      }
-      if (workedOut && caloriesDiff < -300) {
-        return {
-          icon: "💪",
-          title: "Great Workout! Refuel!",
-          message: `You're ${Math.abs(Math.round(caloriesDiff))} kcal under.`,
-          suggestion: "Have a protein shake or healthy meal to recover!",
-          action: "Log Food",
-          actionRoute: "/(tabs)/calories",
-          color: "#3B82F6"
-        };
-      }
-      if (workedOut && Math.abs(caloriesDiff) < 200) {
-        return {
-          icon: "✅",
-          title: "Perfect Balance!",
-          message: "You hit your goals today!",
-          suggestion: "Keep up the amazing work! 🎉",
-          action: null,
-          actionRoute: null,
-          color: "#10B981"
-        };
-      }
-      if (!workedOut && Math.abs(caloriesDiff) < 300) {
-        return {
-          icon: "💪",
-          title: "Time for Workout!",
-          message: `Today is ${todayName} - a workout day!`,
-          suggestion: "Let's crush this workout!",
-          action: "Start Workout",
-          actionRoute: "/(tabs)/workout",
-          color: "#8B5CF6"
-        };
-      }
-    }
-
-    if (!isWorkoutDay) {
-      if (caloriesDiff > 300) {
-        return {
-          icon: "😬",
-          title: "Rest Day Overeating",
-          message: `You're ${Math.round(caloriesDiff)} kcal over.`,
-          suggestion: "Try lighter meals tomorrow or add a light walk.",
-          action: null,
-          actionRoute: null,
-          color: "#EF4444"
-        };
-      }
-      return {
-        icon: "😌",
-        title: "Perfect Rest Day!",
-        message: "Your body is recovering well.",
-        suggestion: "Stay hydrated and sleep well!",
-        action: null,
-        actionRoute: null,
-        color: "#10B981"
-      };
-    }
-
-    return null;
-  }, [todayEaten, adjustedGoal, todayBurned, workoutDays]);
-
-  // ADD this useEffect after generateSmartSuggestion function
+ 
   useEffect(() => {
-    const suggestion = generateSmartSuggestion();
+    const todayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+    const suggestion = generateSmartSuggestion({
+      todayName,
+      workoutDays,
+      todayEaten,
+      adjustedGoal,
+      todayBurned,
+    });
     setSmartSuggestion(suggestion);
-  }, [generateSmartSuggestion]);
-
+  }, [todayEaten, adjustedGoal, todayBurned, workoutDays]);
+ 
   // Auto-rotate widgets
   useEffect(() => {
     const startAutoRotate = () => {
       autoRotateTimer.current = setInterval(() => {
         setCurrentWidgetIndex((prev) => {
-          const nextIndex = (prev + 1) % widgetData.length;
-          flatListRef.current?.scrollToIndex({ index: nextIndex, animated: true });
+          const len = widgetData.length;
+          if (len === 0) return prev;
+          const nextIndex = (prev + 1) % len;
+          if (nextIndex < len) {
+            flatListRef.current?.scrollToIndex({ index: nextIndex, animated: true });
+          }
           return nextIndex;
         });
       }, 30000); // 30 seconds
     };
-
+ 
     startAutoRotate();
-
+ 
     return () => {
       if (autoRotateTimer.current) {
         clearInterval(autoRotateTimer.current);
       }
     };
   }, [widgetData.length]);
-
-  // Handle manual scroll
+ 
+  // Handle manual scroll — only updates the tracked index.
   const onScroll = (event: any) => {
     const slideSize = width;
     const index = Math.round(event.nativeEvent.contentOffset.x / slideSize);
     setCurrentWidgetIndex(index);
-
-    // Reset auto-rotate timer on manual scroll
+  };
+ 
+  // Timer only resets once a manual swipe actually finishes, instead of on
+  // every scroll frame.
+  const onMomentumScrollEnd = () => {
     if (autoRotateTimer.current) {
       clearInterval(autoRotateTimer.current);
-      autoRotateTimer.current = setInterval(() => {
-        setCurrentWidgetIndex((prev) => {
-          const nextIndex = (prev + 1) % widgetData.length;
-          flatListRef.current?.scrollToIndex({ index: nextIndex, animated: true });
-          return nextIndex;
-        });
-      }, 30000);
     }
+    autoRotateTimer.current = setInterval(() => {
+      setCurrentWidgetIndex((prev) => {
+        const len = widgetData.length;
+        if (len === 0) return prev;
+        const nextIndex = (prev + 1) % len;
+        if (nextIndex < len) {
+          flatListRef.current?.scrollToIndex({ index: nextIndex, animated: true });
+        }
+        return nextIndex;
+      });
+    }, 30000);
   };
-
+ 
   const refreshData = useCallback(async () => {
     try {
       const currentUser = auth().currentUser;
@@ -580,42 +476,38 @@ export default function Home() {
         setLoading(false);
         return;
       }
-
+ 
       const photoURL = currentUser?.photoURL;
       if (photoURL) setUserPhoto(photoURL.split('=')[0]);
       setUserName(currentUser?.displayName || name || 'User');
       setGreeting(getGreeting());
-
+ 
       await loadWorkoutWidget();
-
+ 
     } catch (error) {
       console.log('Error:', error);
     } finally {
       setLoading(false);
     }
   }, [loadWorkoutWidget, name]);
-
+ 
   useEffect(() => {
     refreshData();
   }, [refreshData]);
-
+ 
   useFocusEffect(
     useCallback(() => {
       refreshData();
       refreshToday();
     }, [refreshData, refreshToday])
   );
-
-  // if (loading) {
-  //   return <CustomLoader fullScreen={true} />;
-  // }
-
+ 
   const dailyProgress = progressPercent;
-
+ 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={theme === "dark" ? "light-content" : "dark-content"} />
-
+ 
       <SafeAreaView style={styles.safeArea}>
         <ScrollView
           contentContainerStyle={styles.scrollContent}
@@ -650,14 +542,14 @@ export default function Home() {
                 <Text style={[styles.userName, { color: colors.text }]}>{userName}</Text>
               </View>
             </View>
-            <TouchableOpacity
+            {/* <TouchableOpacity
               style={[styles.notificationButton, { backgroundColor: colors.card }]}
               onPress={() => Alert.alert('Notifications', 'No new notifications')}
             >
               <Ionicons name="notifications-outline" size={24} color={colors.text} />
-            </TouchableOpacity>
+            </TouchableOpacity> */}
           </View>
-
+ 
           {/* AUTO-ROTATING WIDGET CAROUSEL */}
           <View style={styles.widgetContainer}>
             <FlatList
@@ -672,13 +564,14 @@ export default function Home() {
               contentContainerStyle={{ paddingHorizontal: 10 }}
               pagingEnabled
               onScroll={onScroll}
+              onMomentumScrollEnd={onMomentumScrollEnd}
               scrollEventThrottle={16}
               renderItem={({ item }) => (
                 <WidgetCard type={item.type} data={item.data} colors={colors} />
               )}
               keyExtractor={(item, index) => `widget-${index}`}
             />
-
+ 
             {/* Dot Indicators */}
             <View style={styles.dotContainer}>
               {widgetData.map((_, index) => (
@@ -697,14 +590,14 @@ export default function Home() {
               ))}
             </View>
           </View>
-
+ 
           {/* TODAY'S BALANCE CARD */}
           <View style={[styles.balanceCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={styles.balanceHeader}>
               <Ionicons name="stats-chart" size={24} color={colors.primary} />
               <Text style={[styles.balanceTitle, { color: colors.text }]}>Today's Balance</Text>
             </View>
-
+ 
             <View style={styles.balanceRow}>
               <View style={styles.balanceItem}>
                 <Text style={[styles.balanceLabel, { color: colors.textSecondary }]}>Eaten</Text>
@@ -719,14 +612,14 @@ export default function Home() {
                 <Text style={[styles.balanceValue, { color: colors.text }]}>{todayBurned} kcal</Text>
               </View>
             </View>
-
+ 
             <View style={styles.netCaloriesContainer}>
               <Text style={[styles.netCaloriesLabel, { color: colors.textSecondary }]}>Net</Text>
               <Text style={[styles.netCaloriesValue, { color: colors.primary }]}>
                 {netCalories} / {adjustedGoal} kcal
               </Text>
             </View>
-
+ 
             {/* Progress Bar */}
             <View style={[styles.progressBarBg, { backgroundColor: colors.border }]}>
               <View
@@ -743,12 +636,12 @@ export default function Home() {
               {Math.round(dailyProgress)}% of daily goal
             </Text>
           </View>
-
+ 
           {/* QUICK ACTIONS */}
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Quick Actions</Text>
           </View>
-
+ 
           <View style={styles.quickActionsGrid}>
             <TouchableOpacity
               style={[styles.quickAction, { backgroundColor: `${colors.primary}15` }]}
@@ -759,7 +652,7 @@ export default function Home() {
               </View>
               <Text style={[styles.quickActionLabel, { color: colors.text }]}>Log Food</Text>
             </TouchableOpacity>
-
+ 
             <TouchableOpacity
               style={[styles.quickAction, { backgroundColor: `${colors.accent}15` }]}
               onPress={() => router.push('/(tabs)/water')}
@@ -769,7 +662,7 @@ export default function Home() {
               </View>
               <Text style={[styles.quickActionLabel, { color: colors.text }]}>Add Water</Text>
             </TouchableOpacity>
-
+ 
             <TouchableOpacity
               style={[styles.quickAction, { backgroundColor: `${colors.secondary}15` }]}
               onPress={() => router.push('/(tabs)/workout')}
@@ -779,54 +672,17 @@ export default function Home() {
               </View>
               <Text style={[styles.quickActionLabel, { color: colors.text }]}>Workout</Text>
             </TouchableOpacity>
-
-
           </View>
-
+ 
           <View style={{ height: 100 }} />
         </ScrollView>
       </SafeAreaView>
-
-      {/* BOTTOM NAVIGATION */}
-      {/* <BlurView
-        intensity={90}
-        tint={theme === "dark" ? "dark" : "light"}
-        style={[styles.bottomNav, { borderTopColor: colors.border }]}
-      >
-        <TouchableOpacity style={styles.navItem}>
-          <Ionicons name="home" size={28} color={colors.primary} />
-          <Text style={[styles.navText, { color: colors.primary }]}>Home</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => router.push('/(tabs)/stats')}
-        >
-          <Ionicons name="bar-chart-outline" size={28} color={colors.textSecondary} />
-          <Text style={[styles.navText, { color: colors.textSecondary }]}>Stats</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => router.push('/(tabs)/history')}
-        >
-          <Ionicons name="time-outline" size={28} color={colors.textSecondary} />
-          <Text style={[styles.navText, { color: colors.textSecondary }]}>History</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => router.push('/(auth)/profile-setup?mode=all')}
-        >
-          <Ionicons name="person-outline" size={28} color={colors.textSecondary} />
-          <Text style={[styles.navText, { color: colors.textSecondary }]}>Profile</Text>
-        </TouchableOpacity>
-      </BlurView> */}
+ 
       {loading && <CustomLoader fullScreen />}
     </View>
   );
 }
-
+ 
 const makeStyles = (colors: any) =>
   StyleSheet.create({
     container: {
@@ -916,16 +772,16 @@ const makeStyles = (colors: any) =>
       marginBottom: 24,
     },
     widgetCard: {
-      marginHorizontal: 15,
-      marginVertical: 15,
-      padding: 20,
+      marginHorizontal: 16.5,
+      marginVertical: 17,
+      padding: 15,
       width: width - 50,
-
+ 
       borderRadius: 24,
-
+ 
       borderWidth: 1.5,
       borderColor: '#FF8A00',
-
+ 
       shadowColor: '#FF8A00',
       shadowOffset: {
         width: 0,
@@ -933,53 +789,53 @@ const makeStyles = (colors: any) =>
       },
       shadowOpacity: 0.4,
       shadowRadius: 8,
-
+ 
       elevation: 6,
     },
-
+ 
     widgetHeader: {
       flexDirection: 'row',
       alignItems: 'center',
       marginBottom: 28,
     },
-
+ 
     iconContainer: {
       width: 60,
       height: 60,
       borderRadius: 30,
-
+ 
       justifyContent: 'center',
       alignItems: 'center',
-
+ 
       borderWidth: 1.5,
       borderColor: '#FF8A00',
-
+ 
       shadowColor: '#FF8A00',
       shadowOpacity: 0.8,
       shadowRadius: 10,
-
+ 
       elevation: 10,
     },
-
+ 
     widgetTitle: {
       fontSize: 22,
       fontWeight: '800',
       color: '#FF8A00',
     },
-
+ 
     lineContainer: {
       flexDirection: 'row',
       alignItems: 'center',
       marginTop: 12,
     },
-
+ 
     line: {
       width: 90,
       height: 8,
       borderRadius: 10,
       backgroundColor: '#FF8A00',
     },
-
+ 
     dot: {
       width: 12,
       height: 12,
@@ -987,52 +843,52 @@ const makeStyles = (colors: any) =>
       backgroundColor: '#FF8A00',
       marginLeft: 12,
     },
-
+ 
     widgetMessage: {
       fontSize: 16,
       lineHeight: 24,
       fontWeight: '500',
-
+ 
       color: '#EAEAEA',
-
+ 
       marginBottom: 10,
     },
-
+ 
     widgetSubtitle: {
       fontSize: 13,
       lineHeight: 20,
-
+ 
       color: '#BDBDBD',
-
+ 
       marginBottom: 20,
     },
-
+ 
     buttonLeft: {
       flexDirection: 'row',
       alignItems: 'center',
     },
-
+ 
     smallIconContainer: {
       width: 45,
       height: 45,
       borderRadius: 22,
-
+ 
       justifyContent: 'center',
       alignItems: 'center',
-
+ 
       borderWidth: 1.5,
       borderColor: '#FF8A00',
-
+ 
       marginRight: 10,
     },
-
+ 
     widgetButtonText: {
       fontSize: 16,
       fontWeight: '700',
-
+ 
       color: '#FF8A00',
     },
-
+ 
     widgetIcon: {
       fontSize: 28,
     },
@@ -1064,33 +920,33 @@ const makeStyles = (colors: any) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-
+ 
       borderWidth: 1.5,
-      
-
+ 
+ 
       borderRadius: 20,
-
+ 
       paddingVertical: 12,
       paddingHorizontal: 14,
-
+ 
       backgroundColor: colors.background,
-
-    
+ 
+ 
       shadowOpacity: 0.5,
       shadowRadius: 6,
-
+ 
       elevation: 4,
-
+ 
       marginTop: 10,
     },
-
+ 
     dotContainer: {
       flexDirection: 'row',
       justifyContent: 'center',
       gap: 8,
       marginTop: 16,
     },
-
+ 
     // Balance Card
     balanceCard: {
       borderRadius: 20,
@@ -1186,7 +1042,6 @@ const makeStyles = (colors: any) =>
       fontWeight: '600',
     },
     // Bottom Navigation
-
     navItem: {
       alignItems: 'center',
       gap: 4,
@@ -1197,3 +1052,4 @@ const makeStyles = (colors: any) =>
       letterSpacing: 0.5,
     },
   });
+ 

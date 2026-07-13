@@ -1,0 +1,8 @@
+.git
+*.log
+.expo
+web-build
+dist
+android/.gradle
+android/build
+ios/build

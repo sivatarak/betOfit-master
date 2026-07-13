@@ -338,13 +338,14 @@ export default function ExerciseLibraryScreen() {
 
   const getMuscleImage = (muscle: string) => {
     const muscleLower = muscle.toLowerCase();
-    if (muscleLower.includes('chest')) return MUSCLE_IMAGES.chest;
-    if (muscleLower.includes('back')) return MUSCLE_IMAGES.back;
-    if (muscleLower.includes('leg')) return MUSCLE_IMAGES.legs;
-    if (muscleLower.includes('shoulder')) return MUSCLE_IMAGES.shoulders;
-    if (muscleLower.includes('arm') || muscleLower.includes('bicep') || muscleLower.includes('tricep')) return MUSCLE_IMAGES.arms;
-    if (muscleLower.includes('ab') || muscleLower.includes('core')) return MUSCLE_IMAGES.abs;
-    return MUSCLE_IMAGES.chest;
+    console.log("🎯 GET IMAGE FOR MUSCLE:", muscleLower);
+    if (muscleLower.includes('chest') || muscleLower.includes('pectoral')) return MUSCLE_IMAGES.chest;
+    if (muscleLower.includes('back') || muscleLower.includes('lat') || muscleLower.includes('trap')) return MUSCLE_IMAGES.back;
+    if (muscleLower.includes('leg') || muscleLower.includes('quad') || muscleLower.includes('hamstring') || muscleLower.includes('glute') || muscleLower.includes('calf')) return MUSCLE_IMAGES.legs;
+    if (muscleLower.includes('shoulder') || muscleLower.includes('delt')) return MUSCLE_IMAGES.shoulders;
+    if (muscleLower.includes('arm') || muscleLower.includes('bicep') || muscleLower.includes('tricep') || muscleLower.includes('forearm')) return MUSCLE_IMAGES.arms;
+    if (muscleLower.includes('waist') || muscleLower.includes('core') || muscleLower.includes('oblique') || muscleLower.includes('stomach') || muscleLower.includes('abdomen')) return MUSCLE_IMAGES.abs;
+    return MUSCLE_IMAGES.chest; // true fallback for unknown muscles
   };
 
   const renderMuscleCard = (muscle: typeof MUSCLE_GROUPS[0], index: number) => (

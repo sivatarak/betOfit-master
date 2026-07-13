@@ -13,6 +13,16 @@ import { CustomLoader } from "../components/CustomLoader";
 import { BackHandler } from 'react-native';
 // Event for pending navigation to prevent bounce-back
 export const PENDING_NAVIGATION = 'PENDING_NAVIGATION';
+import * as Notifications from 'expo-notifications';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList:   true,
+    shouldPlaySound:  true,
+    shouldSetBadge:   false,
+  }),
+});
 
 function RootLayoutNav() {
   const { user, loading } = useAuth();

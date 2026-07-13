@@ -1,9 +1,10 @@
 // services/exerciseApi.ts
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import auth from '@react-native-firebase/auth';
 import { Alert } from 'react-native';
 
-const BACKEND_BASE_URL = 'https://fitness-backend-iota.vercel.app/';
+const BACKEND_BASE_URL   = 'https://fitness-backend-iota.vercel.app/';
 
 // ========================================
 // TYPES
@@ -96,7 +97,7 @@ export const fetchExercisesByMuscle = async (muscle: string): Promise<Exercise[]
 
   try {
 
-    const res = await fetch(`${BACKEND_BASE_URL}/api/exercises?bodyPart=${encodeURIComponent(bodyPart)}`);
+    const res = await fetch(`${BACKEND_BASE_URL  }/api/exercises?bodyPart=${encodeURIComponent(bodyPart)}`);
     console.log(`API CALL: /api/exercises?bodyPart=${encodeURIComponent(bodyPart)} - Status: ${res.status}`);
     if (!res.ok) throw new Error();
 
@@ -131,7 +132,7 @@ export const calculateCaloriesBurned = async (
   try {
     console.log(`Calculating calories for exerciseId: ${exerciseId}, weight: ${weight}, duration: ${duration} minutes`);
 
-    const url = `${BACKEND_BASE_URL}/api/calories-burned?exerciseId=${exerciseId}&weight=${weight}&duration=${duration}`;
+    const url = `${BACKEND_BASE_URL  }/api/calories-burned?exerciseId=${exerciseId}&weight=${weight}&duration=${duration}`;
 
     const res = await fetchWithTimeout(url);
     console.log(`API Status: ${res.status}`);
@@ -151,6 +152,79 @@ export const calculateCaloriesBurned = async (
     throw error;
   }
 };
+// ─── Meal Schedule APIs ────────────────────────────────────
+
+
+
+// ✅ Add this helper at the top of exerciseApi.ts (outside functions)
+const getAuthToken = async (): Promise<string> => {
+  const currentUser = auth().currentUser;
+  if (!currentUser) return '';
+  return await currentUser.getIdToken();
+};
+
+// ✅ Updated getMealSchedule
+export const getMealSchedule = async (userId: string) => {
+  try {
+    const response = await fetch(`${BACKEND_BASE_URL}/meal-schedule/${userId}`, {
+      headers: { 'Authorization': `Bearer ${await getAuthToken()}` }
+    });
+    const data = await response.json();
+    return data.schedule;
+  } catch (error) {
+    console.error('getMealSchedule error:', error);
+    return null;
+  }
+};
+
+// ✅ Updated saveMealSchedule
+export const saveMealSchedule = async (userId: string, schedule: any) => {
+  try {
+    await fetch(`${BACKEND_BASE_URL}/meal-schedule`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${await getAuthToken()}`
+      },
+      body: JSON.stringify({ userId, schedule }),
+    });
+  } catch (error) {
+    console.error('saveMealSchedule error:', error);
+  }
+};
+
+// ✅ Updated getMealSuggestions
+export const getMealSuggestions = async (userId: string) => {
+  try {
+    const response = await fetch(`${BACKEND_BASE_URL}/meal-suggestions/${userId}`, {
+      headers: { 'Authorization': `Bearer ${await getAuthToken()}` }
+    });
+    return await response.json();
+  } catch (error) {
+    console.error('getMealSuggestions error:', error);
+    return null;
+  }
+};
+
+// ✅ Updated logReminderEvent
+export const logReminderEvent = async (
+  userId: string,
+  mealType: string,
+  action: 'sent' | 'dismissed' | 'logged_after_reminder'
+) => {
+  try {
+    await fetch(`${BACKEND_BASE_URL}/meal-reminder-log`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${await getAuthToken()}`
+      },
+      body: JSON.stringify({ userId, mealType, action, reminderSentAt: new Date().toISOString() }),
+    });
+  } catch (error) {
+    console.error('logReminderEvent error:', error);
+  }
+};
 // ========================================
 // FOOD SEARCH
 // ========================================
@@ -160,7 +234,7 @@ export const searchFood = async (query: string): Promise<FoodItem[]> => {
   if (q.length < 2) return [];
 
   try {
-    const url = `${BACKEND_BASE_URL}/api/food/search?q=${encodeURIComponent(q)}`;
+    const url = `${BACKEND_BASE_URL   }/api/food/search?q=${encodeURIComponent(q)}`;
 
     console.log("Calling API:", url);
 
@@ -207,7 +281,7 @@ export const getFoodDetails = async (foodId: string): Promise<FoodItem | null> =
   try {
 
     const res = await fetchWithTimeout(
-      `${BACKEND_BASE_URL}/api/food/details?food_id=${encodeURIComponent(foodId)}`
+      `${BACKEND_BASE_URL   }/api/food/details?food_id=${encodeURIComponent(foodId)}`
     );
 
     if (!res.ok) throw new Error();
@@ -229,6 +303,7 @@ export const getFoodDetails = async (foodId: string): Promise<FoodItem | null> =
   }
 };
 
+
 // ========================================
 // FOOD ANALYSIS
 // ========================================
@@ -242,7 +317,7 @@ export const analyzeFood = async (query: string) => {
   try {
 
     const res = await fetchWithTimeout(
-      `${BACKEND_BASE_URL}/api/food/analyze?q=${encodeURIComponent(q)}`
+      `${BACKEND_BASE_URL   }/api/food/analyze?q=${encodeURIComponent(q)}`
     );
 
     if (!res.ok) throw new Error();
@@ -273,7 +348,7 @@ export const getMuscleGroups = async (): Promise<string[]> => {
 
   try {
 
-    const res = await fetchWithTimeout(`${BACKEND_BASE_URL}/muscle-groups`);
+    const res = await fetchWithTimeout(`${BACKEND_BASE_URL   }/muscle-groups`);
 
     if (!res.ok) throw new Error();
 
@@ -292,7 +367,7 @@ export const getEquipmentList = async (): Promise<string[]> => {
 
   try {
 
-    const res = await fetchWithTimeout(`${BACKEND_BASE_URL}/equipment-list`);
+    const res = await fetchWithTimeout(`${BACKEND_BASE_URL   }/equipment-list`);
 
     if (!res.ok) throw new Error();
 
@@ -321,7 +396,7 @@ export const logFoodToBackend = async (foodData: {
   try {
     console.log("Sending to backend:", foodData); // ← ADD THIS
 
-    const response = await fetch(`${BACKEND_BASE_URL}/api/food/log`, {
+    const response = await fetch(`${BACKEND_BASE_URL   }/api/food/log`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(foodData)
@@ -344,7 +419,7 @@ export const logFoodToBackend = async (foodData: {
 // Get today's food logs from backend
 export const getTodayFoodLogs = async (userId: string): Promise<any> => {
   try {
-    const response = await fetch(`${BACKEND_BASE_URL}/api/food/logs/${userId}`);
+    const response = await fetch(`${BACKEND_BASE_URL   }/api/food/logs/${userId}`);
     if (!response.ok) throw new Error("Failed to get food logs");
     const data = await response.json();
     return data; // Returns { logs, totals }
@@ -365,7 +440,7 @@ export const saveWorkoutToBackend = async (workoutData: {
   notes: string;
 }): Promise<any> => {
   try {
-    const response = await fetch(`${BACKEND_BASE_URL}/api/workouts`, {
+    const response = await fetch(`${BACKEND_BASE_URL   }/api/workouts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(workoutData)
@@ -382,7 +457,7 @@ export const saveWorkoutToBackend = async (workoutData: {
 // Get workout history from backend
 export const getWorkoutHistory = async (userId: string): Promise<any[]> => {
   try {
-    const response = await fetch(`${BACKEND_BASE_URL}/api/workouts/${userId}`);
+    const response = await fetch(`${BACKEND_BASE_URL   }/api/workouts/${userId}`);
     if (!response.ok) throw new Error("Failed to get workouts");
     return await response.json();
   } catch (error) {
@@ -398,7 +473,7 @@ export const checkServerHealth = async (): Promise<boolean> => {
 
   try {
 
-    const res = await fetchWithTimeout(`${BACKEND_BASE_URL}/`, {}, 5000);
+    const res = await fetchWithTimeout(`${BACKEND_BASE_URL   }/`, {}, 5000);
 
     return res.ok;
 
@@ -427,7 +502,7 @@ export const saveUserProfile = async (profile: UserProfile) => {
 };
 export const deleteFoodLog = async (logId: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${BACKEND_BASE_URL}/api/food/log/${logId}`, {
+    const response = await fetch(`${BACKEND_BASE_URL   }/api/food/log/${logId}`, {
       method: "DELETE",
     });
     if (!response.ok) {
@@ -443,7 +518,7 @@ export const deleteFoodLog = async (logId: string): Promise<boolean> => {
 
 export const fetchExerciseById = async (id: string) => {
   try {
-    const response = await fetch(`${BACKEND_BASE_URL}/api/exercises/${id}`);
+    const response = await fetch(`${BACKEND_BASE_URL   }/api/exercises/${id}`);
     console.log(`API CALL: /api/exercises/${id} - Status: ${response.status}`);
     if (!response.ok) {
       throw new Error('Failed to fetch exercise');
