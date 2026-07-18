@@ -1,7 +1,7 @@
 // services/profileApi.ts
 // Frontend API service for profile and history
 
-const API_BASE = 'https://fitness-backend-iota.vercel.app/'; // UPDATE THIS!
+const API_BASE = process.env.EXPO_PUBLIC_BACKEND_URL ;
 
 // ================================
 // PROFILE APIs
@@ -144,7 +144,8 @@ export async function getDashboard(userId: string) {
     return data;
 
   } catch (error) {
-    console.error('❌ Dashboard error:', error.message);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('❌ Dashboard error:', message);
     console.error('❌ Full error:', error);
     return null;
   }

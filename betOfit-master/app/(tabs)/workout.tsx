@@ -91,6 +91,8 @@ export default function WorkoutDashboard() {
     updateAfterWorkout,
   } = useToday();
 
+  console.log("WorkoutDashboard: todayBurned:", todayBurned, "activeMinutes:", activeMinutes, "workoutCount:", workoutCount);
+
   // const [todayStats, setTodayStats] = useState<TodayStats>({
   //   caloriesBurned: 0,
   //   activeMinutes: 0,
@@ -471,8 +473,8 @@ export default function WorkoutDashboard() {
           {recentWorkouts.length > 0 && (
             <Section
               title="Recent Workouts"
-              right="See All"
-              onRightPress={() => Alert.alert('All workouts', 'Feature coming soon')}
+              // right="See All"
+              // onRightPress={() => Alert.alert('All workouts', 'Feature coming soon')}
               colors={colors}
             >
               {recentWorkouts.slice(0, 3).map((w, i) => (

@@ -653,7 +653,7 @@ export default function ExerciseLibraryScreen() {
                   {`${muscleGroups.find(m => m.id === selectedMuscle)?.label} Exercises`}
                 </Text>
 
-                <View style={[styles.viewToggle, { backgroundColor: colors.border }]}>
+                <View style={[styles.viewToggle, { backgroundColor: colors.surfaceContainerLow }]}> 
                   <TouchableOpacity
                     style={[
                       styles.toggleButton,
@@ -664,11 +664,12 @@ export default function ExerciseLibraryScreen() {
                     <Ionicons
                       name="grid"
                       size={16}
-                      color={viewMode === 'grid' ? colors.text : colors.textMuted}
+                      color={viewMode === 'grid' ? '#FFFFFF' : colors.text}
                     />
                     <Text
                       style={{
-                        color: viewMode === 'grid' ? colors.text : colors.textMuted
+                        color: viewMode === 'grid' ? '#FFFFFF' : colors.text,
+                        fontWeight: viewMode === 'grid' ? '800' : '600',
                       }}
                     >
                       GRID
@@ -685,11 +686,12 @@ export default function ExerciseLibraryScreen() {
                     <Ionicons
                       name="list"
                       size={16}
-                      color={viewMode === 'list' ? colors.text : colors.textMuted}
+                      color={viewMode === 'list' ? '#FFFFFF' : colors.text}
                     />
                     <Text
                       style={{
-                        color: viewMode === 'list' ? colors.text : colors.textMuted
+                        color: viewMode === 'list' ? '#FFFFFF' : colors.text,
+                        fontWeight: viewMode === 'list' ? '800' : '600',
                       }}
                     >
                       LIST
@@ -981,7 +983,7 @@ const makeStyles = (colors: any) => StyleSheet.create({
     borderRadius: 20,
   },
   toggleButtonActive: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.primary,
   },
   toggleText: {
     fontSize: 10,

@@ -35,6 +35,8 @@ interface UserProfile {
   timeline: number;
   workoutDaysPerWeek: number;
   workoutDays: string[];
+  dailyCalorieGoal?: number;
+  daily_calorie_goal?: number;
 }
 
 const defaultProfile: UserProfile = {
@@ -48,6 +50,7 @@ const defaultProfile: UserProfile = {
   timeline: 0,
   workoutDaysPerWeek: 0,
   workoutDays: [],
+  dailyCalorieGoal: 0,
 };
 
 const calculateBMR = (weight: number, height: number, age: number, gender: string) => {
@@ -77,7 +80,7 @@ export default function ProfileScreen() {
     goals: mode === "goals" || mode === "all",
     workout: mode === "workout" || mode === "all",
   });
-  const [inactivityTimer, setInactivityTimer] = useState<NodeJS.Timeout | null>(null);
+  const [inactivityTimer, setInactivityTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
 
   const resetInactivityTimer = () => {
@@ -124,6 +127,7 @@ export default function ProfileScreen() {
           timeline: dbProfile.timeline || 0,
           workoutDaysPerWeek: dbProfile.workout_days_per_week || 0,
           workoutDays: dbProfile.workout_days || [],
+          dailyCalorieGoal: dbProfile.daily_calorie_goal || 0,
         });
       } else {
         // Fallback to cache if DB fails
@@ -141,6 +145,7 @@ export default function ProfileScreen() {
             timeline: data.timeline || 0,
             workoutDaysPerWeek: data.workout_days_per_week || data.workoutDaysPerWeek || 0,
             workoutDays: data.workout_days || data.workoutDays || [],
+            dailyCalorieGoal: data.dailyCalorieGoal || data.daily_calorie_goal || data.dailyCalorieGoal || 0,
           });
         }
       }
@@ -302,6 +307,7 @@ export default function ProfileScreen() {
           timeline: data.timeline || 0,
           workoutDaysPerWeek: data.workout_days_per_week || data.workoutDaysPerWeek || 0,
           workoutDays: data.workout_days || data.workoutDays || [],
+          dailyCalorieGoal: data.dailyCalorieGoal || data.daily_calorie_goal || 0,
         });
       } else {
         setProfile({
@@ -315,6 +321,7 @@ export default function ProfileScreen() {
           timeline: 0,
           workoutDaysPerWeek: 0,
           workoutDays: [],
+          dailyCalorieGoal: 0,
         });
       }
     } catch (error) {
@@ -966,7 +973,7 @@ export default function ProfileScreen() {
                           <Ionicons name="flame-outline" size={20} color={colors.primary} />
                           <Text style={[styles.infoCardLabel, { color: colors.textSecondary }]}>Daily Goal</Text>
                           <Text style={[styles.infoCardValue, { color: colors.primary, fontWeight: '800' }]}>
-                            {profile.targetWeight > 0 ? (profile.weight > profile.targetWeight ? tdee - 500 : tdee + 500) : tdee} kcal
+                            {profile.dailyCalorieGoal || "Not set"} kcal
                           </Text>
                         </View>
                       </View>

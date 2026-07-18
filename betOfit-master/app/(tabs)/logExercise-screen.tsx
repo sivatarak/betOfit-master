@@ -52,6 +52,13 @@ interface LogExerciseParams {
 
 type SetTimerState = 'idle' | 'running' | 'paused';
 
+const getParamValue = (value: string | string[] | undefined): string => {
+  if (Array.isArray(value)) {
+    return value[0] ?? '';
+  }
+  return value ?? '';
+};
+
 const getTrackingMode = (type: string, equipment: string, exerciseName: string): 'reps-weight' | 'reps-only' | 'time-only' | 'time-distance' => {
   const name = exerciseName.toLowerCase();
   const equip = equipment.toLowerCase();
@@ -60,20 +67,27 @@ const getTrackingMode = (type: string, equipment: string, exerciseName: string):
   if (exerciseType === 'cardio' ||
     name.includes('run') || name.includes('jog') || name.includes('bike') ||
     name.includes('cycle') || name.includes('swim') || name.includes('rowing') ||
-    name.includes('treadmill') || name.includes('elliptical')) {
+    name.includes('treadmill') || name.includes('elliptical') ||
+    name.includes('walk') || name.includes('march')) {
     return 'time-distance';
   }
 
   if (name.includes('plank') || name.includes('wall sit') || name.includes('hold') ||
-    exerciseType === 'flexibility' || name.includes('stretch')) {
+    exerciseType === 'flexibility' || name.includes('stretch') || name.includes('mobility') ||
+    name.includes('yoga')) {
     return 'time-only';
   }
 
-  if (equip === 'body only' || equip === 'bodyweight' || equip === 'none' ||
-    name.includes('push-up') || name.includes('pushup') || name.includes('pull-up') ||
-    name.includes('pullup') || name.includes('sit-up') || name.includes('situp') ||
-    (name.includes('dip') && equip === 'body only')) {
+  const hasNoEquipment = /bodyweight|body only|body-only|no equipment|no equip|none|self|own body/.test(equip);
+  const isBodyweightName = /(push[- ]?up|pull[- ]?up|sit[- ]?up|crunch|squat|lunge|burpee|dip|bridge|dead bug|leg raise|mountain climber|wall sit|jumping jack|high knee|cobra|superman|hip thrust|glute bridge|calf raise|bird dog|flutter kick|step up|frog squat|thruster)/.test(name);
+  const hasWeightEquipment = /(dumbbell|barbell|kettlebell|machine|cable|band|medicine ball|trap bar|smith|plate|rope|bench)/.test(equip);
+
+  if (exerciseType === 'bodyweight' || hasNoEquipment || isBodyweightName) {
     return 'reps-only';
+  }
+
+  if (hasWeightEquipment) {
+    return 'reps-weight';
   }
 
   return 'reps-weight';
@@ -84,11 +98,12 @@ export default function LogExerciseScreen() {
   const styles = makeStyles(colors);
   const { updateAfterWorkout } = useToday();
   const params = useLocalSearchParams();
-  const trackingMode = getTrackingMode(
-    params.type as string || '',
-    params.equipment as string || '',
-    params.exerciseName as string || ''
-  );
+  const exerciseId = getParamValue(params.exerciseId as string | string[] | undefined);
+  const exerciseName = getParamValue(params.exerciseName as string | string[] | undefined);
+  const muscle = getParamValue(params.muscle as string | string[] | undefined);
+  const equipment = getParamValue(params.equipment as string | string[] | undefined);
+  const exerciseType = getParamValue(params.type as string | string[] | undefined);
+  const trackingMode = getTrackingMode(exerciseType, equipment, exerciseName);
 
   const appState = useRef<AppStateStatus>('active');
   const backgroundTime = useRef<number>(0);
@@ -327,11 +342,11 @@ export default function LogExerciseScreen() {
       // Round to 1 decimal place for accuracy
       durationMinutes = Math.round(durationMinutes * 10) / 10;
 
-      console.log("Exercise ID:", params.exerciseId);
+      console.log("Exercise ID:", exerciseId);
       console.log("User weight:", userWeight, "kg");
       console.log("Duration in minutes:", durationMinutes);
 
-      const result = await calculateCaloriesBurned(params.exerciseId, userWeight, durationMinutes);
+      const result = await calculateCaloriesBurned(exerciseId, userWeight, durationMinutes);
       console.log('Calories calculated:', result);
 
       // Fix: Use correct property name 'calories_burned' not 'total_calories'
@@ -347,8 +362,8 @@ export default function LogExerciseScreen() {
     }
   };
   // Map exercise to activity
-  const mapExerciseToActivity = (exerciseName: string, mode: string): string => {
-    const name = exerciseName.toLowerCase();
+  const mapExerciseToActivity = (exerciseNameValue: string, mode: string): string => {
+    const name = exerciseNameValue.toLowerCase();
 
     if (name.includes('run') || name.includes('jog')) return 'running';
     if (name.includes('walk')) return 'walking';
@@ -470,13 +485,14 @@ export default function LogExerciseScreen() {
       const totalTimeSec = completedSets.reduce((sum, s) => sum + (s.actualDuration || 0), 0);
       const totalReps = completedSets.reduce((sum, s) => sum + (s.reps || 0), 0);
       const totalCalories = completedSets.reduce((sum, s) => sum + (s.caloriesBurned || 0), 0);
+      console.log(`Saving workout: ${completedSets.length} sets, ${totalCalories} kcal burned`);
 
       const workoutLog = {
         id: Date.now().toString(),
-        exerciseName: params.exerciseName,
-        muscle: params.muscle,
-        type: params.type,
-        equipment: params.equipment,
+        exerciseName,
+        muscle,
+        type: exerciseType,
+        equipment,
         trackingMode,
         date: new Date().toISOString().split('T')[0],
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -503,13 +519,15 @@ export default function LogExerciseScreen() {
       if (userId) {
         await saveWorkoutToBackend({
           userId,
-          exerciseId: params.exerciseId,
-          exerciseName: params.exerciseName,
+          exerciseId,
+          exerciseName,
           sets: completedSets,
           durationMinutes: Math.max(1, Math.floor(totalTimeSec / 60)),
+          caloriesBurned: totalCalories,   // 👈 add this line
           notes,
         });
       }
+      console.log("totalCalories:", totalCalories, "totalTimeSec:", totalTimeSec);
 
       // ✅ Update TodayContext instantly — calories screen goal adjusts automatically
       updateAfterWorkout(
@@ -544,10 +562,10 @@ export default function LogExerciseScreen() {
 
               <View style={styles.headerCenter}>
                 <Text style={[styles.exerciseTitle, { color: colors.text }]} numberOfLines={1}>
-                  {params.exerciseName}
+                  {exerciseName}
                 </Text>
                 <Text style={[styles.subtitle, { color: colors.primary }]}>
-                  {params.muscle.toUpperCase()} • {trackingMode.replace('-', ' + ').toUpperCase()}
+                  {muscle.toUpperCase()} • {trackingMode.replace('-', ' + ').toUpperCase()}
                 </Text>
               </View>
 

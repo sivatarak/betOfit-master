@@ -75,6 +75,7 @@ export const TodayProvider: React.FC<{
     activeMinutes: number,
     goal: number,
   ): TodayData => {
+    console.log('calculate called with eaten =', eaten, 'burned =', burned, 'goal =', goal);
     const adjustedGoal = goal + burned;
     const netCalories = eaten - burned;
     const remainingCalories = Math.max(adjustedGoal - eaten, 0);
@@ -112,6 +113,8 @@ export const TodayProvider: React.FC<{
       if (snapshot) {
         const parsed = JSON.parse(snapshot);
         // Only use if same day and same goal
+        console.log('📦 loadFromCache snapshot burned =', parsed.todayBurned, 'date match?', parsed.date === TODAY);
+
         if (parsed.date === TODAY && parsed.baseGoal === goal) {
           return parsed;
         }
@@ -244,7 +247,7 @@ export const TodayProvider: React.FC<{
         const waterData = JSON.parse(waterRaw);
         if (waterData.date === TODAY) water = waterData.current || 0;
       }
-
+      console.log('🌐 loadFromBackend computed burned =', burned);
       return calculate(eaten, burned, protein, carbs, fat, water, workoutCount, activeMinutes, goal);
 
     } catch (e) {
@@ -284,35 +287,50 @@ export const TodayProvider: React.FC<{
   // OPTIMISTIC UPDATES
   // ─────────────────────────────────────────
   const updateAfterFoodLog = useCallback((
-  calories: number, protein: number, carbs: number, fat: number,
-) => {
-  setData(prev => calculate(
-    Number(prev.todayEaten) + Number(calories),
-    Number(prev.todayBurned),
-    Number(prev.totalProtein) + Number(protein),
-    Number(prev.totalCarbs) + Number(carbs),
-    Number(prev.totalFat) + Number(fat),
-    Number(prev.waterIntake),
-    Number(prev.workoutCount),
-    Number(prev.activeMinutes),
-    baseCalorieGoal,
-  ));
-}, [baseCalorieGoal, calculate]);
+    calories: number, protein: number, carbs: number, fat: number,
+  ) => {
+    setData(prev => calculate(
+      Number(prev.todayEaten) + Number(calories),
+      Number(prev.todayBurned),
+      Number(prev.totalProtein) + Number(protein),
+      Number(prev.totalCarbs) + Number(carbs),
+      Number(prev.totalFat) + Number(fat),
+      Number(prev.waterIntake),
+      Number(prev.workoutCount),
+      Number(prev.activeMinutes),
+      baseCalorieGoal,
+    ));
+  }, [baseCalorieGoal, calculate]);
 
   const updateAfterWorkout = useCallback((
     caloriesBurned: number, minutes: number,
   ) => {
-    setData(prev => calculate(
-      prev.todayEaten,
-      prev.todayBurned + caloriesBurned,
-      prev.totalProtein,
-      prev.totalCarbs,
-      prev.totalFat,
-      prev.waterIntake,
-      prev.workoutCount + 1,
-      prev.activeMinutes + minutes,
-      baseCalorieGoal,
-    ));
+    console.log('🟢 updateAfterWorkout START, caloriesBurned =', caloriesBurned);
+    setData(prev => {
+      const updated = calculate(
+        prev.todayEaten,
+        prev.todayBurned + caloriesBurned,
+        prev.totalProtein,
+        prev.totalCarbs,
+        prev.totalFat,
+        prev.waterIntake,
+        prev.workoutCount + 1,
+        prev.activeMinutes + minutes,
+        baseCalorieGoal,
+      );
+
+      console.log('🟢 updateAfterWorkout computed updated.todayBurned =', updated.todayBurned);
+
+      AsyncStorage.setItem('TODAY_SNAPSHOT', JSON.stringify({
+        ...updated,
+        date: getToday(),
+        baseGoal: baseCalorieGoal,
+      })).then(() => {
+        console.log('✅ TODAY_SNAPSHOT write COMPLETE, burned =', updated.todayBurned);
+      }).catch(e => console.log('❌ Snapshot update error:', e));
+
+      return updated;
+    });
   }, [baseCalorieGoal, calculate]);
 
   // ─────────────────────────────────────────

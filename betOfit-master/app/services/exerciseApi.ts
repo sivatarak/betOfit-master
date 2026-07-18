@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import auth from '@react-native-firebase/auth';
 import { Alert } from 'react-native';
 
-const BACKEND_BASE_URL   = 'https://fitness-backend-iota.vercel.app/';
+const BACKEND_BASE_URL   = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 // ========================================
 // TYPES
@@ -438,6 +438,7 @@ export const saveWorkoutToBackend = async (workoutData: {
   sets: any[];
   durationMinutes: number;
   notes: string;
+  caloriesBurned: number;
 }): Promise<any> => {
   try {
     const response = await fetch(`${BACKEND_BASE_URL   }/api/workouts`, {
