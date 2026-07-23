@@ -43,7 +43,8 @@
             "enableShrinkResourcesInReleaseBuilds": true
           }
         }
-      ]
+      ],
+      "./withTrimVectorIcons.js"
     ],
     "experiments": {
       "typedRoutes": true,
