@@ -42,12 +42,12 @@ const saveToCache = async (muscle: string, data: any[]) => {
 
 // Pre-load all images once
 const MUSCLE_IMAGES = {
-  chest: require('../../assets/images/chest.png'),
-  back: require('../../assets/images/back.png'),
-  legs: require('../../assets/images/legs.png'),
-  shoulders: require('../../assets/images/shoulders.png'),
-  arms: require('../../assets/images/arms.png'),
-  abs: require('../../assets/images/abs.png'),
+  chest: require('../../assets/images/chest.webp'),
+  back: require('../../assets/images/back.webp'),
+  legs: require('../../assets/images/legs.webp'),
+  shoulders: require('../../assets/images/shoulders.webp'),
+  arms: require('../../assets/images/arms.webp'),
+  abs: require('../../assets/images/abs.webp'),
 };
 // Muscle Groups with PNG images
 const MUSCLE_GROUPS = [
@@ -653,7 +653,7 @@ export default function ExerciseLibraryScreen() {
                   {`${muscleGroups.find(m => m.id === selectedMuscle)?.label} Exercises`}
                 </Text>
 
-                <View style={[styles.viewToggle, { backgroundColor: colors.surfaceContainerLow }]}> 
+                <View style={[styles.viewToggle, { backgroundColor: colors.surfaceContainerLow }]}>
                   <TouchableOpacity
                     style={[
                       styles.toggleButton,
