@@ -78,7 +78,7 @@ export const CustomLoader = ({
     <Animated.View entering={FadeIn.duration(200)} style={styles.content}>
       <Animated.View style={animatedIconStyle}>
         <Image
-          source={require('../assets/images/icon.webp')}
+          source={require('../assets/images/icon.png')}
           style={{ width: iconSize, height: iconSize }}
           resizeMode="contain"
         />

@@ -4,7 +4,7 @@
     "slug": "betofit",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.webp",
+    "icon": "./assets/images/icon.png",
     "scheme": "betofit",
     "userInterfaceStyle": "automatic",
     "android": {
@@ -19,7 +19,7 @@
       "permissions": []
     },
     "splash": {
-      "image": "./assets/images/splash.webp",
+      "image": "./assets/images/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#0D0D0D"
     },
