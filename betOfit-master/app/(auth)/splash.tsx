@@ -76,7 +76,7 @@ export default function SplashScreen() {
             end={{ x: 1, y: 1 }}
           >
             <Image
-              source={require("../../assets/images/icon.png")}
+              source={require("../../assets/images/icon.webp")}
               style={styles.logo}
               resizeMode="contain"
             />
