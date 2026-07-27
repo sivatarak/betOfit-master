@@ -35,7 +35,7 @@ const CARD_WIDTH = width - 64;  // visible card size — adjust this number to t
                                  // (smaller number = more "peek" room, larger = wider card)
 
 // Widget Card Component
-const WidgetCard = ({ type, data, colors }: any) => {
+const WidgetCard = ({ type, data, colors, isActive = false }: any) => {
   const styles = makeStyles(colors);
 
   // SECTION 1: WORKOUT PLAN
@@ -51,11 +51,11 @@ const WidgetCard = ({ type, data, colors }: any) => {
         return (
           <LinearGradient
             colors={[colors.primary, colors.secondary]}
-            style={styles.widgetCard}
+            style={[styles.widgetCard, isActive && styles.activeCard]}
           >
             <View style={styles.widgetHeader}>
               <Ionicons name="barbell" size={28} color="#FFF" />
-              <Text style={styles.widgetTitle}>Today's Workout Plan</Text>
+              <Text style={[styles.widgetTitle, { color: '#FFF' }]}>Today's Workout Plan</Text>
             </View>
             <Text style={styles.widgetSubtitle}>
               Last {todayName} you did:
@@ -80,7 +80,7 @@ const WidgetCard = ({ type, data, colors }: any) => {
               style={styles.widgetButton}
               onPress={() => router.push('/(tabs)/workout')}
             >
-              <Text style={styles.widgetButtonText}>Start Workout</Text>
+              <Text style={[styles.widgetButtonText, { color: '#FFF' }]}>Start Workout</Text>
               <Ionicons name="arrow-forward" size={18} color="#FFF" />
             </TouchableOpacity>
           </LinearGradient>
@@ -92,7 +92,7 @@ const WidgetCard = ({ type, data, colors }: any) => {
       return (
         <LinearGradient
           colors={[colors.background, '#FF8A00']}
-          style={styles.widgetCard}
+          style={[styles.widgetCard, isActive && styles.activeCard]}
         >
           {/* Header */}
           <View style={styles.widgetHeader}>
@@ -101,7 +101,7 @@ const WidgetCard = ({ type, data, colors }: any) => {
             </View>
 
             <View style={{ marginLeft: 18 }}>
-              <Text style={styles.widgetTitle}>
+              <Text style={[styles.widgetTitle, { color: colors.text }]}>
                 {isNewUser ? 'Start Your Journey' : "Today's Workout"}
               </Text>
 
@@ -133,7 +133,7 @@ const WidgetCard = ({ type, data, colors }: any) => {
                 <Ionicons name="barbell" size={28} color="#FF8A00" />
               </View>
 
-              <Text style={styles.widgetButtonText}>Browse Exercises</Text>
+              <Text style={[styles.widgetButtonText, { color: colors.text }]}>Browse Exercises</Text>
             </View>
 
             <Ionicons name="arrow-forward" size={28} color="#FF8A00" />
@@ -146,7 +146,7 @@ const WidgetCard = ({ type, data, colors }: any) => {
     return (
       <LinearGradient
         colors={[colors.background, '#10B981']}
-        style={styles.widgetCard}
+        style={[styles.widgetCard, isActive && styles.activeCard]}
       >
         {/* Header */}
         <View style={styles.widgetHeader}>
@@ -155,7 +155,7 @@ const WidgetCard = ({ type, data, colors }: any) => {
           </View>
 
           <View style={{ marginLeft: 18 }}>
-            <Text style={styles.widgetTitle}>Rest Day</Text>
+            <Text style={[styles.widgetTitle, { color: colors.text }]}>Rest Day</Text>
 
             <View style={styles.lineContainer}>
               <View style={[styles.line, { backgroundColor: '#10B981' }]} />
@@ -203,21 +203,32 @@ const WidgetCard = ({ type, data, colors }: any) => {
 
     return (
       <LinearGradient
-        colors={[suggestion.color, suggestion.color + 'CC']}
-        style={styles.widgetCard}
+        colors={[suggestion.color, '#0F172A']}
+        style={[styles.featureCard, isActive && styles.activeCard, { borderColor: suggestion.color + '44' }]}
       >
-        <View style={styles.widgetHeader}>
-          <Text style={styles.widgetIcon}>{suggestion.icon}</Text>
-          <Text style={styles.widgetTitle}>{suggestion.title}</Text>
+        <View style={styles.featureDecor} />
+        <View style={styles.featureHeader}>
+          <View style={[styles.featureIconWrap, { backgroundColor: suggestion.color + '22' }]}>
+            <Text style={styles.widgetIcon}>{suggestion.icon}</Text>
+          </View>
+          <View style={styles.featureHeaderText}>
+            <Text style={styles.featureEyebrow}>Focus</Text>
+            <Text style={[styles.widgetTitle, { color: '#FFF' }]}>{suggestion.title}</Text>
+          </View>
         </View>
-        <Text style={styles.widgetMessage}>{suggestion.message}</Text>
-        <Text style={styles.widgetSubtitle}>{suggestion.suggestion}</Text>
+        <View style={styles.suggestionBody}>
+          <Text style={styles.suggestionMessage}>{suggestion.message}</Text>
+          <View style={styles.suggestionQuoteBox}>
+            <Ionicons name="sparkles" size={14} color="#FFF" />
+            <Text style={styles.suggestionSubtitle}>{suggestion.suggestion}</Text>
+          </View>
+        </View>
         {suggestion.action && (
           <TouchableOpacity
-            style={styles.widgetButton}
+            style={[styles.featureButton, { backgroundColor: suggestion.color }]}
             onPress={() => router.push(suggestion.actionRoute as any)}
           >
-            <Text style={styles.widgetButtonText}>{suggestion.action}</Text>
+            <Text style={[styles.widgetButtonText, { color: '#FFF' }]}>{suggestion.action}</Text>
             <Ionicons name="arrow-forward" size={18} color="#FFF" />
           </TouchableOpacity>
         )}
@@ -254,7 +265,7 @@ const WidgetCard = ({ type, data, colors }: any) => {
     return (
       <LinearGradient
         colors={[colors.background, '#935cf1']}
-        style={styles.widgetCard}
+        style={[styles.widgetCard, isActive && styles.activeCard]}
       >
         {/* Header */}
         <View style={styles.widgetHeader}>
@@ -263,7 +274,7 @@ const WidgetCard = ({ type, data, colors }: any) => {
           </View>
 
           <View style={{ marginLeft: 18 }}>
-            <Text style={styles.widgetTitle}>{randomTip.title}</Text>
+            <Text style={[styles.widgetTitle, { color: colors.text }]}>{randomTip.title}</Text>
 
             <View style={styles.lineContainer}>
               <View style={styles.line} />
@@ -287,7 +298,7 @@ const WidgetCard = ({ type, data, colors }: any) => {
               <Ionicons name="stats-chart" size={28} color="#FF8A00" />
             </View>
 
-            <Text style={styles.widgetButtonText}>Track Your Stats</Text>
+            <Text style={[styles.widgetButtonText, { color: colors.text }]}>Track Your Stats</Text>
           </View>
 
           <Ionicons name="arrow-forward" size={28} color="#FF8A00" />
@@ -563,9 +574,14 @@ export default function Home() {
                 onScroll={onScroll}
                 onMomentumScrollEnd={onMomentumScrollEnd}
                 scrollEventThrottle={16}
-                renderItem={({ item }) => (
+                renderItem={({ item, index }) => (
                   <View style={styles.widgetSlide}>
-                    <WidgetCard type={item.type} data={item.data} colors={colors} />
+                    <WidgetCard
+                      type={item.type}
+                      data={item.data}
+                      colors={colors}
+                      isActive={currentWidgetIndex === index}
+                    />
                   </View>
                 )}
                 keyExtractor={(item, index) => `widget-${index}`}
@@ -700,47 +716,47 @@ const makeStyles = (colors: any) =>
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      marginBottom: 24,
-      marginTop: Platform.OS === 'ios' ? 20 : 30,
+      marginBottom: 16,
+      marginTop: Platform.OS === 'ios' ? 24 : 28,
     },
     profileSection: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 12,
+      gap: 8,
     },
     avatarContainer: {
       position: 'relative',
-      width: 56,
-      height: 56,
+      width: 42,
+      height: 42,
     },
     avatarGradient: {
-      width: 56,
-      height: 56,
-      borderRadius: 28,
+      width: 42,
+      height: 42,
+      borderRadius: 21,
       justifyContent: 'center',
       alignItems: 'center',
       borderWidth: 2,
       borderColor: '#FFFFFF',
     },
     avatarImage: {
-      width: 56,
-      height: 56,
-      borderRadius: 28,
+      width: 42,
+      height: 42,
+      borderRadius: 21,
       borderWidth: 2,
       borderColor: '#FFFFFF',
     },
     avatarText: {
-      fontSize: 24,
+      fontSize: 18,
       fontWeight: '800',
       color: '#FFFFFF',
     },
     onlineDot: {
       position: 'absolute',
-      bottom: 2,
-      right: 2,
-      width: 12,
-      height: 12,
-      borderRadius: 6,
+      bottom: 1,
+      right: 1,
+      width: 10,
+      height: 10,
+      borderRadius: 5,
       backgroundColor: '#10B981',
       borderWidth: 2,
       borderColor: '#FFFFFF',
@@ -752,7 +768,7 @@ const makeStyles = (colors: any) =>
       marginBottom: 2,
     },
     userName: {
-      fontSize: 20,
+      fontSize: 16,
       fontWeight: '700',
     },
     notificationButton: {
@@ -785,22 +801,84 @@ const makeStyles = (colors: any) =>
       alignItems: 'center',
     },
     widgetCard: {
-      marginVertical: 17,
-      padding: 15,
+      marginVertical: 12,
+      padding: 16,
       width: CARD_WIDTH,
-      minHeight: 295, 
+      height: 320,
       alignSelf: 'center',
       borderRadius: 24,
-      borderWidth: 1.5,
-      borderColor: '#FF8A00',
-      shadowColor: '#FF8A00',
-      shadowOffset: {
-        width: 0,
-        height: 0,
-      },
-      shadowOpacity: 0.4,
-      shadowRadius: 8,
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.18)',
+      shadowColor: '#000000',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.14,
+      shadowRadius: 14,
+      elevation: 5,
+      overflow: 'hidden',
+      justifyContent: 'space-between',
+    },
+    featureCard: {
+      marginVertical: 12,
+      padding: 16,
+      width: CARD_WIDTH,
+      height: 320,
+      alignSelf: 'center',
+      borderRadius: 24,
+      borderWidth: 1,
+      overflow: 'hidden',
+      shadowColor: '#000000',
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.16,
+      shadowRadius: 16,
       elevation: 6,
+      position: 'relative',
+      justifyContent: 'space-between',
+    },
+    activeCard: {
+      transform: [{ scale: 1.01 }],
+      zIndex: 2,
+      shadowOpacity: 0.24,
+      shadowRadius: 20,
+      elevation: 10,
+    },
+    featureDecor: {
+      position: 'absolute',
+      top: -36,
+      right: -28,
+      width: 128,
+      height: 128,
+      borderRadius: 64,
+      backgroundColor: 'rgba(255,255,255,0.14)',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.2)',
+    },
+    featureHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 14,
+      zIndex: 1,
+    },
+    featureIconWrap: {
+      width: 50,
+      height: 50,
+      borderRadius: 16,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: 'rgba(255,255,255,0.2)',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.24)',
+      marginRight: 12,
+    },
+    featureHeaderText: {
+      flex: 1,
+    },
+    featureEyebrow: {
+      fontSize: 11,
+      fontWeight: '700',
+      letterSpacing: 1.2,
+      color: 'rgba(255,255,255,0.9)',
+      textTransform: 'uppercase',
+      marginBottom: 4,
     },
     widgetHeader: {
       flexDirection: 'row',
@@ -827,9 +905,13 @@ const makeStyles = (colors: any) =>
     },
 
     widgetTitle: {
-      fontSize: 22,
+      fontSize: 19,
       fontWeight: '800',
-      color: '#FF8A00',
+      color: colors.text,
+      flexShrink: 1,
+      textShadowColor: 'rgba(0,0,0,0.2)',
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 2,
     },
 
     lineContainer: {
@@ -854,22 +936,19 @@ const makeStyles = (colors: any) =>
     },
 
     widgetMessage: {
-      fontSize: 16,
-      lineHeight: 24,
+      fontSize: 15,
+      lineHeight: 22,
       fontWeight: '500',
-
-      color: '#EAEAEA',
-
+      color: colors.text,
       marginBottom: 10,
     },
 
     widgetSubtitle: {
       fontSize: 13,
       lineHeight: 20,
-
-      color: '#BDBDBD',
-
-      marginBottom: 20,
+      color: colors.textSecondary,
+      marginBottom: 14,
+      zIndex: 1,
     },
 
     buttonLeft: {
@@ -892,10 +971,10 @@ const makeStyles = (colors: any) =>
     },
 
     widgetButtonText: {
-      fontSize: 16,
+      fontSize: 15,
       fontWeight: '700',
-
-      color: '#FF8A00',
+      color: colors.text,
+      letterSpacing: 0.2,
     },
 
     widgetIcon: {
@@ -929,24 +1008,60 @@ const makeStyles = (colors: any) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-
-      borderWidth: 1.5,
-
-
-      borderRadius: 20,
-
+      borderWidth: 1,
+      borderRadius: 16,
       paddingVertical: 12,
       paddingHorizontal: 14,
-
-      backgroundColor: colors.background,
-
-
-      shadowOpacity: 0.5,
+      backgroundColor: 'rgba(255,255,255,0.18)',
+      shadowOpacity: 0.18,
       shadowRadius: 6,
-
-      elevation: 4,
-
-      marginTop: 10,
+      elevation: 3,
+      marginTop: 8,
+      borderColor: 'rgba(255,255,255,0.22)',
+    },
+    featureButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      borderWidth: 1,
+      borderRadius: 16,
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      backgroundColor: 'rgba(255,255,255,0.18)',
+      shadowOpacity: 0.18,
+      shadowRadius: 6,
+      elevation: 3,
+      marginTop: 8,
+      borderColor: 'rgba(255,255,255,0.22)',
+      zIndex: 1,
+    },
+    suggestionMessage: {
+      fontSize: 15,
+      lineHeight: 22,
+      fontWeight: '600',
+      color: '#F8FAFC',
+      marginBottom: 10,
+      zIndex: 1,
+    },
+    suggestionBody: {
+      zIndex: 1,
+    },
+    suggestionQuoteBox: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      backgroundColor: 'rgba(255,255,255,0.12)',
+      borderRadius: 16,
+      padding: 10,
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.18)',
+      marginBottom: 10,
+    },
+    suggestionSubtitle: {
+      fontSize: 13,
+      lineHeight: 20,
+      color: 'rgba(255,255,255,0.9)',
+      marginLeft: 6,
+      flex: 1,
     },
 
     dotContainer: {
