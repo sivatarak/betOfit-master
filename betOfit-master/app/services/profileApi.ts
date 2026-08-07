@@ -107,14 +107,21 @@ export async function getStats(userId: string, period: 'week' | 'month' | 'year'
       }
     );
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Failed to fetch stats');
+    const rawBody = await response.text();
+    const responseData = rawBody ? JSON.parse(rawBody) : null;
+
+    if (response.status === 404) {
+      console.log(`📝 No stats found for ${userId} period=${period}`);
+      return null;
     }
 
-    const data = await response.json();
-    console.log('✅ Stats fetched successfully');
-    return data;
+    if (!response.ok) {
+      const errorMessage = responseData?.error || rawBody || 'Failed to fetch stats';
+      throw new Error(errorMessage);
+    }
+
+    console.log('✅ Stats fetched successfully', responseData);
+    return responseData;
   } catch (error) {
     console.error('❌ Get stats error:', error);
     throw error;

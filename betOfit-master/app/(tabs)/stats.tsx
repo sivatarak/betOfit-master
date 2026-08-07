@@ -98,7 +98,12 @@ export default function StatsScreen() {
     // Calculated values
     const weightLost = initialWeight - currentWeight;
     const weightToGo = currentWeight - targetWeight;
-    const progressPercentage = Math.min(100, Math.max(0, ((initialWeight - currentWeight) / (initialWeight - targetWeight)) * 100));
+    const progressPercentage = (() => {
+        const denominator = initialWeight - targetWeight;
+        if (denominator === 0) return weightToGo > 0 ? 0 : 100;
+        const value = ((initialWeight - currentWeight) / denominator) * 100;
+        return Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0;
+    })();
     const weeksToGoal = weightToGo > 0 ? Math.round(weightToGo / 0.5) : 0;
 
     const loadStatsData = useCallback(async () => {
@@ -119,48 +124,54 @@ export default function StatsScreen() {
             // ✅ Get REAL stats from backend
             const stats = await getStats(userId, selectedPeriod);
 
+            if (!stats) {
+                console.log('ℹ️ No stats available yet for this user. Using defaults.');
+                return;
+            }
+
             console.log('✅ Stats loaded:', {
                 weight: stats.weight_progress,
                 charts: stats.weekly_charts,
-                exercises: stats.top_exercises.length
+                exercises: Array.isArray(stats.top_exercises) ? stats.top_exercises.length : 0,
             });
 
-            if (stats) {
-                // Weight Progress
-                setInitialWeight(stats.weight_progress.start_weight);
-                setCurrentWeight(stats.weight_progress.current_weight);
-                setTargetWeight(stats.weight_progress.target_weight);
+            const weightProgress = stats.weight_progress || {};
+            const charts = stats.weekly_charts || {};
+            const quickStats = stats.quick_stats || {};
+            const streaks = stats.streaks || {};
+            const totalStats = stats.total_stats || {};
 
-                // Weekly Charts
-                setWeeklyCalories(stats.weekly_charts.calories);
-                setWeeklyWorkouts(stats.weekly_charts.workouts);
-                setWeeklyWater(stats.weekly_charts.water);
-                setWeekLabels(stats.weekly_charts.labels);
+            // Weight Progress
+            setInitialWeight(Number(weightProgress.start_weight ?? initialWeight));
+            setCurrentWeight(Number(weightProgress.current_weight ?? currentWeight));
+            setTargetWeight(Number(weightProgress.target_weight ?? targetWeight));
 
-                // Quick Stats
-                setWorkoutDaysThisWeek(stats.quick_stats.workout_days);
-                setRestDaysThisWeek(stats.quick_stats.rest_days);
-                setTotalCalories(stats.quick_stats.total_calories_burned);
-                setTotalWaterThisWeek(stats.quick_stats.total_water_liters);
-                setTotalWater(stats.quick_stats.total_water_liters);
+            // Weekly Charts
+            setWeeklyCalories(Array.isArray(charts.calories) && charts.calories.length === 7 ? charts.calories : [0, 0, 0, 0, 0, 0, 0]);
+            setWeeklyWorkouts(Array.isArray(charts.workouts) && charts.workouts.length === 7 ? charts.workouts : [0, 0, 0, 0, 0, 0, 0]);
+            setWeeklyWater(Array.isArray(charts.water) && charts.water.length === 7 ? charts.water : [0, 0, 0, 0, 0, 0, 0]);
+            setWeekLabels(Array.isArray(charts.labels) && charts.labels.length === 7 ? charts.labels : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']);
 
-                // Top Exercises
-                setTopExercises(stats.top_exercises);
+            // Quick Stats
+            setWorkoutDaysThisWeek(Number(quickStats.workout_days ?? 0));
+            setRestDaysThisWeek(Number(quickStats.rest_days ?? 0));
+            setTotalCalories(Number(quickStats.total_calories_burned ?? 0));
+            setTotalWaterThisWeek(Number(quickStats.total_water_liters ?? 0));
+            setTotalWater(Number(quickStats.total_water_liters ?? 0));
 
-                // Streaks
-                setWorkoutStreak(stats.streaks.workout_streak);
-                setWaterStreak(stats.streaks.water_streak);
-                setCalorieStreak(stats.streaks.food_log_streak);
+            // Top Exercises
+            setTopExercises(Array.isArray(stats.top_exercises) ? stats.top_exercises : []);
 
-                // Total Stats
-                if (stats.total_stats) {
-                    setTotalActiveMinutes(stats.total_stats.total_active_minutes);
-                }
+            // Streaks
+            setWorkoutStreak(Number(streaks.workout_streak ?? 0));
+            setWaterStreak(Number(streaks.water_streak ?? 0));
+            setCalorieStreak(Number(streaks.food_log_streak ?? 0));
 
-                // Calculate trend (optional - based on total stats)
-                setTrendPercentage(12); // You can calculate this if needed
-            }
+            // Total Stats
+            setTotalActiveMinutes(Number(totalStats.total_active_minutes ?? totalActiveMinutes));
 
+            // Calculate trend (optional - based on total stats)
+            setTrendPercentage(12); // You can calculate this if needed
         } catch (error) {
             console.error('❌ Error loading stats:', error);
             Alert.alert('Error', 'Failed to load stats. Please try again.');

@@ -63,6 +63,42 @@ const calculateTDEE = (bmr: number, activityLevel: number) => {
   return Math.round(bmr * activityLevel);
 };
 
+const sanitizeName = (value: string) => value.replace(/[^A-Za-z\s]/g, '');
+
+const sanitizeNumericInput = (
+  value: string,
+  options: { min?: number; max?: number; allowDecimal?: boolean; integer?: boolean } = {}
+) => {
+  const { min = 0, max = Number.MAX_SAFE_INTEGER, allowDecimal = true, integer = false } = options;
+
+  if (value === '') return 0;
+
+  let cleaned = value.replace(/[^0-9.]/g, '');
+
+  if (!allowDecimal) {
+    cleaned = cleaned.replace(/\./g, '');
+  }
+
+  const parts = cleaned.split('.');
+  if (parts.length > 2) {
+    cleaned = `${parts[0]}.${parts[1]}`;
+  }
+
+  if (cleaned === '' || cleaned === '.') return 0;
+
+  let parsed = parseFloat(cleaned);
+  if (Number.isNaN(parsed)) return 0;
+
+  if (integer) {
+    parsed = Math.round(parsed);
+  }
+
+  if (parsed < min) parsed = min;
+  if (parsed > max) parsed = max;
+
+  return parsed;
+};
+
 export default function ProfileScreen() {
   const { colors, theme } = useTheme();
   const { mode } = useLocalSearchParams();
@@ -70,6 +106,7 @@ export default function ProfileScreen() {
   const styles = makeStyles(colors);
   const [profile, setProfile] = useState<UserProfile>(defaultProfile);
   const [loading, setLoading] = useState(true);
+  const [targetWeightInput, setTargetWeightInput] = useState('');
   const [userPhoto, setUserPhoto] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [showBottomSheet, setShowBottomSheet] = useState(false);
@@ -101,6 +138,14 @@ export default function ProfileScreen() {
   useEffect(() => {
     loadCompleteProfile();
   }, []);
+
+  useEffect(() => {
+    if (profile.targetWeight > 0) {
+      setTargetWeightInput(profile.targetWeight.toString());
+    } else {
+      setTargetWeightInput('');
+    }
+  }, [profile.targetWeight]);
 
   const loadCompleteProfile = async () => {
     try {
@@ -380,6 +425,33 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleNameChange = (value: string) => {
+    const cleanedName = sanitizeName(value);
+    setProfile(prev => ({ ...prev, name: cleanedName }));
+    if (mode === "all") {
+      resetInactivityTimer();
+    }
+  };
+
+  const handleNumericChange = (
+    field: 'age' | 'height' | 'weight' | 'targetWeight' | 'timeline',
+    value: string,
+    options: { min?: number; max?: number; allowDecimal?: boolean; integer?: boolean } = {}
+  ) => {
+    const parsedValue = sanitizeNumericInput(value, options);
+
+    if (field === 'targetWeight') {
+      setTargetWeightInput(value === '' ? '' : parsedValue.toString());
+      setProfile(prev => ({ ...prev, targetWeight: value === '' ? 0 : parsedValue }));
+    } else {
+      setProfile(prev => ({ ...prev, [field]: parsedValue }));
+    }
+
+    if (mode === "all") {
+      resetInactivityTimer();
+    }
+  };
+
   const handleSave = async () => {
     console.log("🟡 [handleSave] Started");
     try {
@@ -421,20 +493,30 @@ export default function ProfileScreen() {
 
       // ✅ Validation using merged values
       if (mode === "basic") {
-        if (!mergedProfile.name?.trim()) {
+        const trimmedName = mergedProfile.name?.trim() || '';
+
+        if (!trimmedName) {
           Alert.alert('Missing Info', 'Please enter your name');
           return;
         }
-        if (!mergedProfile.age || mergedProfile.age <= 0) {
-          Alert.alert('Missing Info', 'Please enter your age');
+
+        if (!/^[A-Za-z\s]+$/.test(trimmedName)) {
+          Alert.alert('Invalid Name', 'Name can only contain letters and spaces');
           return;
         }
-        if (!mergedProfile.height || mergedProfile.height <= 0) {
-          Alert.alert('Missing Info', 'Please enter your height');
+
+        if (!mergedProfile.age || mergedProfile.age < 1 || mergedProfile.age > 100) {
+          Alert.alert('Invalid Age', 'Age must be between 1 and 100 years');
           return;
         }
-        if (!mergedProfile.weight || mergedProfile.weight <= 0) {
-          Alert.alert('Missing Info', 'Please enter your weight');
+
+        if (!mergedProfile.height || mergedProfile.height < 50 || mergedProfile.height > 300) {
+          Alert.alert('Invalid Height', 'Height must be between 50 and 300 cm');
+          return;
+        }
+
+        if (!mergedProfile.weight || mergedProfile.weight < 1 || mergedProfile.weight > 300) {
+          Alert.alert('Invalid Weight', 'Weight must be between 1 and 300 kg');
           return;
         }
       }
@@ -494,7 +576,7 @@ export default function ProfileScreen() {
       // ✅ Create full profile data with ALL values
       const fullProfileData = {
         userId: userId,
-        name: mergedProfile.name,
+        name: mergedProfile.name?.trim() || '',
         age: mergedProfile.age,
         weight: mergedProfile.weight,
         height: mergedProfile.height,
@@ -724,9 +806,11 @@ export default function ProfileScreen() {
                         <TextInput
                           style={[styles.input, { backgroundColor: colors.surfaceContainerLow, color: colors.text, borderColor: colors.border }]}
                           value={profile.name}
-                          onChangeText={(val) => handleTextChange('name', val)}
+                          onChangeText={handleNameChange}
                           placeholder="Enter your name"
                           placeholderTextColor={colors.textMuted}
+                          autoCapitalize="words"
+                          maxLength={50}
                         />
                       </View>
 
@@ -736,10 +820,11 @@ export default function ProfileScreen() {
                           <TextInput
                             style={[styles.input, { backgroundColor: colors.surfaceContainerLow, color: colors.text, borderColor: colors.border }]}
                             value={profile.age === 0 ? "" : profile.age.toString()}
-                            onChangeText={(val) => handleTextChange('age', val)}
-                            keyboardType="numeric"
+                            onChangeText={(val) => handleNumericChange('age', val, { min: 1, max: 100, integer: true })}
+                            keyboardType="number-pad"
                             placeholder="Years"
                             placeholderTextColor={colors.textMuted}
+                            maxLength={3}
                           />
                         </View>
 
@@ -748,10 +833,11 @@ export default function ProfileScreen() {
                           <TextInput
                             style={[styles.input, { backgroundColor: colors.surfaceContainerLow, color: colors.text, borderColor: colors.border }]}
                             value={profile.height === 0 ? "" : profile.height.toString()}
-                            onChangeText={(val) => handleTextChange('height', val)}
-                            keyboardType="numeric"
+                            onChangeText={(val) => handleNumericChange('height', val, { min: 50, max: 300, allowDecimal: true })}
+                            keyboardType="decimal-pad"
                             placeholder="cm"
                             placeholderTextColor={colors.textMuted}
+                            maxLength={5}
                           />
                         </View>
                       </View>
@@ -761,10 +847,11 @@ export default function ProfileScreen() {
                         <TextInput
                           style={[styles.input, { backgroundColor: colors.surfaceContainerLow, color: colors.text, borderColor: colors.border }]}
                           value={profile.weight === 0 ? "" : profile.weight.toString()}
-                          onChangeText={(val) => handleTextChange('weight', val ? parseFloat(val) : 0)}
-                          keyboardType="numeric"
+                          onChangeText={(val) => handleNumericChange('weight', val, { min: 1, max: 300, allowDecimal: true })}
+                          keyboardType="decimal-pad"
                           placeholder="kg"
                           placeholderTextColor={colors.textMuted}
+                          maxLength={5}
                         />
                       </View>
 
@@ -891,10 +978,12 @@ export default function ProfileScreen() {
                         <View style={styles.weightInputContainer}>
                           <TextInput
                             style={[styles.weightInput, { backgroundColor: colors.surfaceContainerLow, color: colors.text, borderColor: colors.border }]}
-                            value={profile.targetWeight === 0 ? "" : profile.targetWeight.toString()}
-                            onChangeText={(val) => handleTextChange('targetWeight', val ? parseFloat(val) : 0)}
+                            value={targetWeightInput}
+                            onChangeText={(val) => handleNumericChange('targetWeight', val, { min: 1, max: 300, allowDecimal: true })}
+                            keyboardType="decimal-pad"
                             placeholder="0"
                             placeholderTextColor={colors.textMuted}
+                            maxLength={5}
                           />
                           <Text style={[styles.weightUnit, { color: colors.textSecondary }]}>kg</Text>
                         </View>
@@ -906,10 +995,11 @@ export default function ProfileScreen() {
                           <TextInput
                             style={[styles.timelineInput, { backgroundColor: colors.surfaceContainerLow, color: colors.text, borderColor: colors.border }]}
                             value={profile.timeline === 0 ? "" : profile.timeline.toString()}
-                            onChangeText={(val) => handleTextChange('timeline', val ? parseInt(val) : 0)}
-                            keyboardType="numeric"
+                            onChangeText={(val) => handleNumericChange('timeline', val, { min: 1, max: 104, integer: true })}
+                            keyboardType="number-pad"
                             placeholder="12"
                             placeholderTextColor={colors.textMuted}
+                            maxLength={3}
                           />
                           <Text style={[styles.timelineUnit, { color: colors.textSecondary }]}>weeks</Text>
                         </View>
