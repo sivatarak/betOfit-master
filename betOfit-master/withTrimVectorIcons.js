@@ -19,7 +19,7 @@ const path = require('path');
 
 // Only these font families are kept at full size. Add more names here if you
 // start using another icon family (e.g. 'MaterialIcons') anywhere in the app.
-const FONTS_TO_KEEP = ['Ionicons.ttf'];
+const FONTS_TO_KEEP = ['Ionicons.ttf', 'MaterialIcons.ttf', 'Feather.ttf'];
 
 function withTrimVectorIcons(config) {
   return withDangerousMod(config, [

@@ -34,11 +34,22 @@
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
       "@react-native-community/datetimepicker",
-      "expo-font",
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf",
+            "./node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/MaterialIcons.ttf",
+            "./node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Feather.ttf"
+          ]
+        }
+      ],
       [
         "expo-build-properties",
         {
           "android": {
+            "kotlinVersion": "1.9.24",
+            "gradlePluginVersion": "8.3.2",
             "enableProguardInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true
           }

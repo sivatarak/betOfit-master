@@ -4,7 +4,7 @@ import { useLocalSearchParams } from "expo-router";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, SafeAreaView, Platform, Alert, Dimensions,
-  Image, Modal, ActivityIndicator, Animated, Easing
+  Image, Modal, ActivityIndicator, Animated, Easing, KeyboardAvoidingView
 } from 'react-native';
 import { router } from 'expo-router';
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -67,9 +67,9 @@ const sanitizeName = (value: string) => value.replace(/[^A-Za-z\s]/g, '');
 
 const sanitizeNumericInput = (
   value: string,
-  options: { min?: number; max?: number; allowDecimal?: boolean; integer?: boolean } = {}
+  options: { min?: number; max?: number; allowDecimal?: boolean; integer?: boolean; enforceRange?: boolean } = {}
 ) => {
-  const { min = 0, max = Number.MAX_SAFE_INTEGER, allowDecimal = true, integer = false } = options;
+  const { min = 0, max = Number.MAX_SAFE_INTEGER, allowDecimal = true, integer = false, enforceRange = true } = options;
 
   if (value === '') return 0;
 
@@ -93,8 +93,10 @@ const sanitizeNumericInput = (
     parsed = Math.round(parsed);
   }
 
-  if (parsed < min) parsed = min;
-  if (parsed > max) parsed = max;
+  if (enforceRange) {
+    if (parsed < min) parsed = min;
+    if (parsed > max) parsed = max;
+  }
 
   return parsed;
 };
@@ -117,19 +119,6 @@ export default function ProfileScreen() {
     goals: mode === "goals" || mode === "all",
     workout: mode === "workout" || mode === "all",
   });
-  const [inactivityTimer, setInactivityTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
-  const scrollViewRef = useRef<ScrollView>(null);
-
-  const resetInactivityTimer = () => {
-    if (inactivityTimer) clearTimeout(inactivityTimer);
-
-    const timer = setTimeout(() => {
-      // Scroll to Update Profile button after 2 seconds of no typing
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    }, 2000);
-
-    setInactivityTimer(timer);
-  };
   const [editMode, setEditMode] = useState({
     basic: mode === "basic" || (mode === "all" && !profile.name), // Show edit if no data exists
     goals: mode === "goals" || (mode === "all" && !profile.targetWeight),
@@ -420,23 +409,17 @@ export default function ProfileScreen() {
 
   const handleTextChange = (field: string, value: any) => {
     setProfile(prev => ({ ...prev, [field]: value }));
-    if (mode === "all") {
-      resetInactivityTimer();
-    }
   };
 
   const handleNameChange = (value: string) => {
     const cleanedName = sanitizeName(value);
     setProfile(prev => ({ ...prev, name: cleanedName }));
-    if (mode === "all") {
-      resetInactivityTimer();
-    }
   };
 
   const handleNumericChange = (
     field: 'age' | 'height' | 'weight' | 'targetWeight' | 'timeline',
     value: string,
-    options: { min?: number; max?: number; allowDecimal?: boolean; integer?: boolean } = {}
+    options: { min?: number; max?: number; allowDecimal?: boolean; integer?: boolean; enforceRange?: boolean } = {}
   ) => {
     const parsedValue = sanitizeNumericInput(value, options);
 
@@ -445,10 +428,6 @@ export default function ProfileScreen() {
       setProfile(prev => ({ ...prev, targetWeight: value === '' ? 0 : parsedValue }));
     } else {
       setProfile(prev => ({ ...prev, [field]: parsedValue }));
-    }
-
-    if (mode === "all") {
-      resetInactivityTimer();
     }
   };
 
@@ -715,15 +694,19 @@ export default function ProfileScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={0}
+    >
       {/* Subtle gradient background */}
-     
 
       <SafeAreaView style={styles.safeArea}>
         <ScrollView
-          ref={scrollViewRef}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
         >
           {/* Header */}
           <View style={styles.header}>
@@ -833,7 +816,7 @@ export default function ProfileScreen() {
                           <TextInput
                             style={[styles.input, { backgroundColor: colors.surfaceContainerLow, color: colors.text, borderColor: colors.border }]}
                             value={profile.height === 0 ? "" : profile.height.toString()}
-                            onChangeText={(val) => handleNumericChange('height', val, { min: 50, max: 300, allowDecimal: true })}
+                            onChangeText={(val) => handleNumericChange('height', val, { min: 50, max: 300, allowDecimal: true, enforceRange: false })}
                             keyboardType="decimal-pad"
                             placeholder="cm"
                             placeholderTextColor={colors.textMuted}
@@ -1327,7 +1310,7 @@ export default function ProfileScreen() {
         </View>
       </Modal>
       {loading && <CustomLoader fullScreen />}
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

@@ -15,6 +15,9 @@ import { BackHandler } from 'react-native';
 export const PENDING_NAVIGATION = 'PENDING_NAVIGATION';
 import * as Notifications from 'expo-notifications';
 
+import * as Font from 'expo-font';
+
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
@@ -29,6 +32,9 @@ function RootLayoutNav() {
   const router = useRouter();
   const segments = useSegments();
   const pathname = usePathname();
+
+
+
 
   useEffect(() => {
     const backHandler = BackHandler.addEventListener(
