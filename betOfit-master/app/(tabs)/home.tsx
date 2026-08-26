@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
 import {
   View,
   Text,
@@ -32,7 +33,7 @@ const { width } = Dimensions.get("window");
 // Declared at module scope (not inside the component) so makeStyles can use CARD_WIDTH too.
 const SLIDE_WIDTH = width;      // each swipeable slot = full screen width
 const CARD_WIDTH = width - 64;  // visible card size — adjust this number to taste
-                                 // (smaller number = more "peek" room, larger = wider card)
+// (smaller number = more "peek" room, larger = wider card)
 
 // Widget Card Component
 const WidgetCard = ({ type, data, colors, isActive = false }: any) => {
@@ -695,7 +696,14 @@ export default function Home() {
       </SafeAreaView>
 
       {loading && <CustomLoader fullScreen />}
+      <BannerAd
+        unitId={__DEV__ ? TestIds.BANNER : 'ca-app-pub-5710308532604049/1229186685'}
+        size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
+        requestOptions={{ requestNonPersonalizedAdsOnly: true }}
+      />
     </View>
+
+
   );
 }
 

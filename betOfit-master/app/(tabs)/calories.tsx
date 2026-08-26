@@ -1,6 +1,8 @@
 // app/(tabs)/calories.tsx
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import auth from '@react-native-firebase/auth';
+import { InterstitialAd, AdEventType, TestIds } from 'react-native-google-mobile-ads';
+
 import {
   View,
   Text,
@@ -102,6 +104,8 @@ export default function CaloriesScreen() {
   const [waterIntake, setWaterIntake] = useState(1.5);
   const [selectedMealType, setSelectedMealType] = useState<"breakfast" | "lunch" | "dinner" | "snack">("breakfast");
   const searchInputRef = React.useRef<TextInput>(null);
+  const interstitialUnitId = __DEV__ ? TestIds.INTERSTITIAL : 'ca-app-pub-5710308532604049/8371083607';
+
   // const { dailyCalorieGoal, waterGoal, bmr, tdee, weight, height, age, gender } = useProfile();
   const {
     todayEaten,
@@ -144,6 +148,20 @@ export default function CaloriesScreen() {
       }
     }, [refreshToday])
   );
+
+  const interstitial = useRef(InterstitialAd.createForAdRequest(interstitialUnitId)).current;
+
+  useEffect(() => {
+    interstitial.load();
+    const unsubscribeLoaded = interstitial.addAdEventListener(AdEventType.LOADED, () => { });
+    const unsubscribeClosed = interstitial.addAdEventListener(AdEventType.CLOSED, () => {
+      interstitial.load(); // preload the next one
+    });
+    return () => {
+      unsubscribeLoaded();
+      unsubscribeClosed();
+    };
+  }, []);
 
   function CircularProgress({ remaining, goal, eaten, size = CIRCLE_SIZE, colors }: CircularProgressProps) {
     const safeGoal = goal > 0 ? goal : 1;
@@ -454,7 +472,9 @@ export default function CaloriesScreen() {
         // Don't revert UI, just log error
       });
     }
-
+    if (interstitial.loaded) {
+      interstitial.show();
+    }
     // Close modal and clear
     setShowQuantityModal(false);
     setSelectedFood(null);
