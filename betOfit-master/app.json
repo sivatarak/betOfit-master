@@ -54,7 +54,14 @@
           }
         }
       ],
-      "./withTrimVectorIcons.js"
+      "./withTrimVectorIcons.js",
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-5710308532604049~2728759162",
+          "iosAppId": "ca-app-pub-5710308532604049~2728759162"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
