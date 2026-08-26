@@ -151,16 +151,13 @@ export default function CaloriesScreen() {
 
   const interstitial = useRef(InterstitialAd.createForAdRequest(interstitialUnitId)).current;
 
+  const logCountRef = useRef(0);
+
   useEffect(() => {
-    interstitial.load();
-    const unsubscribeLoaded = interstitial.addAdEventListener(AdEventType.LOADED, () => { });
-    const unsubscribeClosed = interstitial.addAdEventListener(AdEventType.CLOSED, () => {
-      interstitial.load(); // preload the next one
+    const unsubscribe = interstitial.addAdEventListener(AdEventType.CLOSED, () => {
+      interstitial.load();
     });
-    return () => {
-      unsubscribeLoaded();
-      unsubscribeClosed();
-    };
+    return unsubscribe;
   }, []);
 
   function CircularProgress({ remaining, goal, eaten, size = CIRCLE_SIZE, colors }: CircularProgressProps) {
@@ -472,7 +469,8 @@ export default function CaloriesScreen() {
         // Don't revert UI, just log error
       });
     }
-    if (interstitial.loaded) {
+    logCountRef.current += 1;
+    if (logCountRef.current % 3 === 0 && interstitial.loaded) {
       interstitial.show();
     }
     // Close modal and clear
