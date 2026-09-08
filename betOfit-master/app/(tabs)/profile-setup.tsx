@@ -16,8 +16,8 @@ import { useTheme } from "../../context/themecontext";
 import { saveProfile, getProfile } from '../services/profileApi';
 import { CustomLoader } from '../../components/CustomLoader';
 import auth from '@react-native-firebase/auth';
-import storage from '@react-native-firebase/storage';
 import { appEvents, PROFILE_UPDATED } from '../utils/eventEmitter';
+import { uploadPhotoToFirebase } from '../utils/uploadToFirebaseStorage';
 import { useProfile } from '../../context/profileContext';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -283,10 +283,7 @@ export default function ProfileScreen() {
       if (!currentUser) return;
 
       const filename = `profile_${currentUser.uid}_${Date.now()}.jpg`;
-      const reference = storage().ref(`profile_photos/${filename}`);
-
-      await reference.putFile(uri);
-      const downloadURL = await reference.getDownloadURL();
+      const downloadURL = await uploadPhotoToFirebase(uri, filename);
 
       await currentUser.updateProfile({
         photoURL: downloadURL,
