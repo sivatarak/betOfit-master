@@ -152,12 +152,25 @@ export default function CaloriesScreen() {
   const interstitial = useRef(InterstitialAd.createForAdRequest(interstitialUnitId)).current;
 
   const logCountRef = useRef(0);
-
   useEffect(() => {
-    const unsubscribe = interstitial.addAdEventListener(AdEventType.CLOSED, () => {
+    const unsubscribeLoaded = interstitial.addAdEventListener(AdEventType.LOADED, () => {
+      console.log('Interstitial LOADED and ready');
+    });
+    const unsubscribeFailed = interstitial.addAdEventListener(AdEventType.ERROR, (error) => {
+      console.log('Interstitial FAILED to load:', error);
+    });
+    const unsubscribeClosed = interstitial.addAdEventListener(AdEventType.CLOSED, () => {
+      console.log('Interstitial closed, reloading...');
       interstitial.load();
     });
-    return unsubscribe;
+
+    interstitial.load(); // ← ADD THIS LINE: load it the first time
+
+    return () => {
+      unsubscribeLoaded();
+      unsubscribeFailed();
+      unsubscribeClosed();
+    };
   }, []);
 
   function CircularProgress({ remaining, goal, eaten, size = CIRCLE_SIZE, colors }: CircularProgressProps) {
