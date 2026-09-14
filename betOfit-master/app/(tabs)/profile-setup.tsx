@@ -4,12 +4,13 @@ import { useLocalSearchParams } from "expo-router";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, SafeAreaView, Platform, Alert, Dimensions,
-  Image, Modal, ActivityIndicator, Animated, Easing, KeyboardAvoidingView
+  Image, Modal, ActivityIndicator, Animated, Easing, LayoutAnimation, KeyboardAvoidingView
 } from 'react-native';
 import { router } from 'expo-router';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import Svg, { Defs, RadialGradient as SvgRadialGradient, Stop, Circle, Path } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
 import { STORAGE_KEYS } from "../../constants/storageKeys";
 import { useTheme } from "../../context/themecontext";
@@ -22,7 +23,17 @@ import { useProfile } from '../../context/profileContext';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const SWIPE_HINT_STORAGE_KEY = 'PROFILE_SETUP_SWIPE_HINT_SEEN';
 
+// Adds an alpha channel to a hex color, e.g. hexToRgba('#fd7505', 0.15)
+function hexToRgba(hex: string, alpha: number) {
+  const clean = hex.replace('#', '');
+  const bigint = parseInt(clean, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 interface UserProfile {
   name: string;
@@ -113,20 +124,113 @@ export default function ProfileScreen() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [showBottomSheet, setShowBottomSheet] = useState(false);
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const sectionOpacity = useRef(new Animated.Value(1)).current;
+  const sectionTranslateY = useRef(new Animated.Value(0)).current;
+  const swipeStart = useRef({ x: 0, y: 0 });
+  const horizontalSwipeActive = useRef(false);
+  const [scrollEnabled, setScrollEnabled] = useState(true);
+  const [showSwipeTooltip, setShowSwipeTooltip] = useState(false);
   const { refreshProfile } = useProfile();
+
+  // Step navigator — mirrors the "Step X of 3" flow in the design.
+  // If a specific mode was passed (basic/goals/workout) we start there;
+  // "all" (or anything else) starts at basic and lets the user move through all three.
+  const stepOrder: Array<'basic' | 'goals' | 'workout'> = ['basic', 'goals', 'workout'];
+  const [activeStep, setActiveStep] = useState<'basic' | 'goals' | 'workout'>(
+    mode === 'basic' || mode === 'goals' || mode === 'workout' ? (mode as any) : 'basic'
+  );
+  const stepIndex = stepOrder.indexOf(activeStep);
+  const stepLabels: Record<'basic' | 'goals' | 'workout', string> = {
+    basic: 'Basic Info',
+    goals: 'Weight Goals',
+    workout: 'Workout Schedule',
+  };
+
   const [expandedSections, setExpandedSections] = useState({
-    basic: mode === "basic" || mode === "all",
-    goals: mode === "goals" || mode === "all",
-    workout: mode === "workout" || mode === "all",
+    basic: true,
+    goals: true,
+    workout: true,
   });
   const [editMode, setEditMode] = useState({
-    basic: mode === "basic" || (mode === "all" && !profile.name), // Show edit if no data exists
+    basic: mode === "basic" || (mode === "all" && !profile.name),
     goals: mode === "goals" || (mode === "all" && !profile.targetWeight),
     workout: mode === "workout" || (mode === "all" && !profile.workoutDaysPerWeek),
   });
+  const editSnapshots = useRef<Record<string, string>>({});
+
+  const getSectionSnapshot = (section: 'basic' | 'goals' | 'workout') => {
+    if (section === 'basic') {
+      return JSON.stringify({
+        name: profile.name,
+        age: profile.age,
+        height: profile.height,
+        weight: profile.weight,
+        gender: profile.gender,
+      });
+    }
+
+    if (section === 'goals') {
+      return JSON.stringify({
+        targetWeight: profile.targetWeight,
+        targetWeightInput,
+        timeline: profile.timeline,
+        activityLevel: profile.activityLevel,
+      });
+    }
+
+    return JSON.stringify({
+      workoutDaysPerWeek: profile.workoutDaysPerWeek,
+      workoutDays: profile.workoutDays,
+    });
+  };
+
+  useEffect(() => {
+    sectionOpacity.setValue(0);
+    sectionTranslateY.setValue(14);
+
+    Animated.parallel([
+      Animated.timing(sectionOpacity, {
+        toValue: 1,
+        duration: 240,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(sectionTranslateY, {
+        toValue: 0,
+        duration: 280,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [activeStep, sectionOpacity, sectionTranslateY]);
+
   useEffect(() => {
     loadCompleteProfile();
   }, []);
+
+  useEffect(() => {
+    const loadSwipeHint = async () => {
+      const hasSeenHint = await AsyncStorage.getItem(SWIPE_HINT_STORAGE_KEY);
+      setShowSwipeTooltip(hasSeenHint !== 'true');
+    };
+
+    loadSwipeHint();
+  }, []);
+
+  const dismissSwipeTooltip = async () => {
+    setShowSwipeTooltip(false);
+    await AsyncStorage.setItem(SWIPE_HINT_STORAGE_KEY, 'true');
+  };
+
+  useEffect(() => {
+    if (!loading) {
+      stepOrder.forEach((section) => {
+        if (editMode[section] && !editSnapshots.current[section]) {
+          editSnapshots.current[section] = getSectionSnapshot(section);
+        }
+      });
+    }
+  }, [loading]);
 
   useEffect(() => {
     if (profile.targetWeight > 0) {
@@ -142,12 +246,10 @@ export default function ProfileScreen() {
       const userId = currentUser?.uid;
       if (!userId) return;
 
-      // Always fetch fresh from DB
       const dbProfile = await getProfile(userId);
       console.log('🔥 DB Profile:', JSON.stringify(dbProfile, null, 2));
 
       if (dbProfile) {
-        // Update cache with fresh DB data
         await AsyncStorage.setItem(`USER_PROFILE_${userId}`, JSON.stringify(dbProfile));
 
         setProfile({
@@ -164,7 +266,6 @@ export default function ProfileScreen() {
           dailyCalorieGoal: dbProfile.daily_calorie_goal || 0,
         });
       } else {
-        // Fallback to cache if DB fails
         const cachedProfile = await AsyncStorage.getItem(`USER_PROFILE_${userId}`);
         if (cachedProfile) {
           const data = JSON.parse(cachedProfile);
@@ -187,11 +288,12 @@ export default function ProfileScreen() {
       console.error("Error loading profile:", error);
     }
   };
+
   useEffect(() => {
     loadProfile();
     loadUserPhoto();
   }, []);
-  // Add this effect to listen for profile updates
+
   useEffect(() => {
     const handleProfileUpdate = () => {
       loadCompleteProfile();
@@ -203,8 +305,9 @@ export default function ProfileScreen() {
       appEvents.off(PROFILE_UPDATED, handleProfileUpdate);
     };
   }, []);
+
   const showBottomSheetModal = () => {
-    slideAnim.setValue(SCREEN_HEIGHT); // MUST RESET FIRST
+    slideAnim.setValue(SCREEN_HEIGHT);
 
     setShowBottomSheet(true);
 
@@ -212,7 +315,7 @@ export default function ProfileScreen() {
       Animated.timing(slideAnim, {
         toValue: 0,
         duration: 320,
-        easing: Easing.out(Easing.cubic), // smooth finish
+        easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }).start();
     });
@@ -228,6 +331,7 @@ export default function ProfileScreen() {
       setShowBottomSheet(false);
     });
   };
+
   const loadUserPhoto = async () => {
     try {
       const currentUser = auth().currentUser;
@@ -370,15 +474,17 @@ export default function ProfileScreen() {
   };
 
   const toggleEditMode = (section: 'basic' | 'goals' | 'workout') => {
+    if (!editMode[section]) {
+      editSnapshots.current[section] = getSectionSnapshot(section);
+    }
+
     if (mode === "all") {
-      // Close all other sections, open only the clicked one
       setEditMode({
         basic: section === 'basic',
         goals: section === 'goals',
         workout: section === 'workout',
       });
     } else {
-      // Original behavior for onboarding
       setEditMode(prev => ({
         ...prev,
         [section]: !prev[section]
@@ -439,11 +545,9 @@ export default function ProfileScreen() {
         throw new Error('User not authenticated');
       }
 
-      // ✅ Load existing profile COMPLETELY from cache
       const existingData = await AsyncStorage.getItem(`USER_PROFILE_${userId}`);
       const existingProfile = existingData ? JSON.parse(existingData) : {};
 
-      // ✅ Also fetch from database to ensure we have latest data
       let dbProfile = null;
       try {
         dbProfile = await getProfile(userId);
@@ -451,7 +555,6 @@ export default function ProfileScreen() {
         console.log("Could not fetch from DB");
       }
 
-      // ✅ MERGE all sources - prioritize current profile, then existing, then DB
       const mergedProfile = {
         name: profile.name || existingProfile.name || dbProfile?.name || "",
         age: profile.age || existingProfile.age || dbProfile?.age || 0,
@@ -467,7 +570,6 @@ export default function ProfileScreen() {
 
       console.log("🟡 Merged profile:", mergedProfile);
 
-      // ✅ Validation using merged values
       if (mode === "basic") {
         const trimmedName = mergedProfile.name?.trim() || '';
 
@@ -519,7 +621,6 @@ export default function ProfileScreen() {
         }
       }
 
-      // ✅ Calculate using merged values
       const bmr = calculateBMR(mergedProfile.weight, mergedProfile.height, mergedProfile.age, mergedProfile.gender);
       const tdee = calculateTDEE(bmr, mergedProfile.activityLevel);
       const waterGoal = Math.round(mergedProfile.weight * 33);
@@ -537,19 +638,16 @@ export default function ProfileScreen() {
         dailyCalorieGoal = isLosingWeight ? tdee - dailyDeficit : tdee + dailyDeficit;
       }
 
-      // ✅ Track completion status - PRESERVE existing values
       let basicCompleted = existingProfile.basic_completed || dbProfile?.basic_completed || false;
       let goalsCompleted = existingProfile.goals_completed || dbProfile?.goals_completed || false;
       let workoutCompleted = existingProfile.workout_completed || dbProfile?.workout_completed || false;
 
-      // Update only the current section
       if (mode === "basic") basicCompleted = true;
       if (mode === "goals") goalsCompleted = true;
       if (mode === "workout") workoutCompleted = true;
 
       console.log("🟡 Completion flags:", { basicCompleted, goalsCompleted, workoutCompleted });
 
-      // ✅ Create full profile data with ALL values
       const fullProfileData = {
         userId: userId,
         name: mergedProfile.name?.trim() || '',
@@ -575,12 +673,10 @@ export default function ProfileScreen() {
         setupDate: new Date().toISOString(),
       };
 
-      // ✅ Save to AsyncStorage
       await AsyncStorage.setItem(`USER_PROFILE_${userId}`, JSON.stringify(fullProfileData));
       await AsyncStorage.setItem(STORAGE_KEYS.BF_WEIGHT_KG, mergedProfile.weight.toString());
       await AsyncStorage.setItem(STORAGE_KEYS.USER_NAME, mergedProfile.name);
 
-      // ✅ Save water data
       if (waterGoal) {
         const waterData = {
           date: new Date().toISOString().split("T")[0],
@@ -592,7 +688,6 @@ export default function ProfileScreen() {
         await AsyncStorage.setItem(STORAGE_KEYS.WATER_DATA, JSON.stringify(waterData));
       }
 
-      // ✅ Save calories data
       if (dailyCalorieGoal && dailyCalorieGoal > 0) {
         const calData = await AsyncStorage.getItem(STORAGE_KEYS.CALORIES_DATA);
         const parsedCalData = calData ? JSON.parse(calData) : {};
@@ -603,7 +698,6 @@ export default function ProfileScreen() {
         }));
       }
 
-      // ✅ Save to backend
       const dbProfileData = {
         userId: userId,
         name: mergedProfile.name,
@@ -638,24 +732,17 @@ export default function ProfileScreen() {
         console.error('⚠️ Database save failed:', error);
       }
 
-      // ✅ Refresh profile context
       await refreshProfile();
 
-      // ✅ Emit event
       appEvents.emit(PROFILE_UPDATED, {
         basic_completed: basicCompleted,
         goals_completed: goalsCompleted,
         workout_completed: workoutCompleted,
       });
 
-      // ✅ Navigate
-      // ✅ Navigate
       if (mode === "all") {
-        // Stay on same screen, just show success
         Alert.alert('✅ Success', 'Profile updated successfully!');
-        // Reload profile to show updated data
         await loadCompleteProfile();
-        // Close all edit modes
         setEditMode({
           basic: false,
           goals: false,
@@ -674,6 +761,102 @@ export default function ProfileScreen() {
       Alert.alert("Error", "Failed to save profile. Please try again.");
     }
   };
+
+  // Advances the visual stepper. On the last step, triggers the actual save.
+  const goToNextStep = () => {
+    if (stepIndex < stepOrder.length - 1) {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setActiveStep(stepOrder[stepIndex + 1]);
+    }
+    else {
+      handleSave();
+    }
+  };
+
+  const goToPreviousStep = () => {
+    if (stepIndex > 0) {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setActiveStep(stepOrder[stepIndex - 1]);
+    } else {
+      router.back();
+    }
+  };
+
+  const handleSectionEdit = async (section: 'basic' | 'goals' | 'workout') => {
+    if (editMode[section]) {
+      const snapshot = editSnapshots.current[section];
+      const hasChanges = snapshot !== undefined && snapshot !== getSectionSnapshot(section);
+
+      if (hasChanges) {
+        await handleSave();
+      }
+
+      delete editSnapshots.current[section];
+      setEditMode(prev => ({ ...prev, [section]: false }));
+    } else {
+      toggleEditMode(section);
+    }
+  };
+
+  const handleSignOut = () => {
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await AsyncStorage.clear();
+              await auth().signOut();
+              router.replace('/(auth)/google-signin');
+            } catch (error) {
+              console.error('Logout error:', error);
+              Alert.alert('Error', 'Failed to logout');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleSwipeStart = (event: any) => {
+    const { pageX, pageY } = event.nativeEvent;
+    swipeStart.current = { x: pageX, y: pageY };
+    horizontalSwipeActive.current = false;
+    setScrollEnabled(true);
+  };
+
+  const handleSwipeMove = (event: any) => {
+    if (horizontalSwipeActive.current) return;
+
+    const { pageX, pageY } = event.nativeEvent;
+    const horizontalMovement = Math.abs(pageX - swipeStart.current.x);
+    const verticalMovement = Math.abs(pageY - swipeStart.current.y);
+
+    if (horizontalMovement >= 40 && horizontalMovement > verticalMovement * 1.2) {
+      horizontalSwipeActive.current = true;
+      if (showSwipeTooltip) {
+        dismissSwipeTooltip();
+      }
+
+      if (pageX < swipeStart.current.x && stepIndex < stepOrder.length - 1) {
+        goToNextStep();
+      } else if (pageX > swipeStart.current.x && stepIndex > 0) {
+        goToPreviousStep();
+      }
+
+      setScrollEnabled(false);
+    }
+  };
+
+  const handleSwipeEnd = (event: any) => {
+    horizontalSwipeActive.current = false;
+    setScrollEnabled(true);
+  };
+
   const bmr = calculateBMR(profile.weight, profile.height, profile.age, profile.gender);
   const tdee = calculateTDEE(bmr, profile.activityLevel);
   const restDays = WEEKDAYS.filter(day => !profile.workoutDays.includes(day));
@@ -696,559 +879,669 @@ export default function ProfileScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={0}
     >
-      {/* Subtle gradient background */}
-
       <SafeAreaView style={styles.safeArea}>
+        {/* Ambient glow */}
+          <View pointerEvents="none" style={styles.ambientGlowWrap}>
+               <Svg width={360} height={360}>
+                 <Defs>
+                   <SvgRadialGradient id="glow" cx="50%" cy="50%" r="50%">
+                     <Stop offset="0%" stopColor={colors.primary} stopOpacity={theme === 'dark' ? 0.32 : 0.2} />
+                     <Stop offset="55%" stopColor={colors.primary} stopOpacity={theme === 'dark' ? 0.14 : 0.09} />
+                     <Stop offset="100%" stopColor={colors.primary} stopOpacity={0} />
+                   </SvgRadialGradient>
+                 </Defs>
+                 <Circle cx={180} cy={180} r={180} fill="url(#glow)" />
+               </Svg>
+             </View>
+
+        {/* Header */}
+        <View style={styles.newHeader}>
+           
+          <TouchableOpacity onPress={goToPreviousStep} activeOpacity={0.85}>
+            <View style={[styles.backButton, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Ionicons name="arrow-back" size={18} color={colors.text} />
+            </View>
+          </TouchableOpacity>
+          <View style={{ alignItems: 'center' }}>
+            <Text style={[styles.stepEyebrow, { color: colors.primary }]}>
+              STEP {stepIndex + 1} OF {stepOrder.length}
+            </Text>
+            <Text style={[styles.stepTitle, { color: colors.text }]}>
+              {activeStep === 'basic' ? 'BODY SPECS & METRICS' : stepLabels[activeStep].toUpperCase()}
+            </Text>
+          </View>
+          <TouchableOpacity onPress={handleSignOut} activeOpacity={0.85}>
+            <LinearGradient
+              colors={[colors.primary, colors.secondary]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.signOutGradientButton}
+            >
+              <Feather name="log-out" size={17} color="#FFFFFF" />
+              <Text style={styles.signOutButtonText}>Exit</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+
         <ScrollView
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 28, paddingTop: 12 }]}
           showsVerticalScrollIndicator={false}
+          scrollEnabled={scrollEnabled}
+          directionalLockEnabled
+          bounces={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
+          onTouchStart={handleSwipeStart}
+          onTouchMove={handleSwipeMove}
+          onTouchEnd={handleSwipeEnd}
+          onTouchCancel={() => {
+            horizontalSwipeActive.current = false;
+            setScrollEnabled(true);
+          }}
         >
-          {/* Header */}
-          <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
 
-            </TouchableOpacity>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>Profile</Text>
-            <View style={{ width: 40 }} />
+          {/* Step navigator pill */}
+          <View style={styles.stepNavigatorWrap}>
+            <View style={[styles.stepPill, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={styles.stepDotsRow}>
+                {stepOrder.map((step, index) => (
+                  <View
+                    key={step}
+                    style={[
+                      styles.stepDot,
+                      { backgroundColor: index === stepIndex ? colors.primary : colors.border },
+                    ]}
+                  />
+                ))}
+                <Text style={[styles.stepPillLabel, { color: colors.text }]}>
+                  {stepLabels[activeStep]}
+                </Text>
+              </View>
+            </View>
+
+            {showSwipeTooltip && (
+              <View style={[styles.swipeTooltip, { backgroundColor: colors.surface, borderColor: colors.primary }]}>
+                <View style={[styles.swipeTooltipPointer, { backgroundColor: colors.surface, borderColor: colors.primary }]} />
+                <Ionicons name="swap-horizontal-outline" size={15} color={colors.primary} />
+                <Text style={[styles.swipeTooltipText, { color: colors.text }]}>Swipe to switch</Text>
+                <TouchableOpacity onPress={dismissSwipeTooltip} hitSlop={8}>
+                  <Ionicons name="close-circle" size={15} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
 
-          {/* Profile Image Section */}
-          <View style={styles.profileImageSection}>
+          {/* User identity hero */}
+          <View style={styles.identityHero}>
             <TouchableOpacity
-              style={styles.profileImageContainer}
-              // onPress={showBottomSheetModal}
+              style={styles.avatarWrap}
+              onPress={showBottomSheetModal}
               activeOpacity={0.9}
             >
               <LinearGradient
-                colors={[colors.primary, colors.primary + 'cc']}
-                style={styles.profileImageGradient}
+                colors={[colors.primary, colors.secondary]}
+                style={styles.avatarRing}
               >
-                {userPhoto ? (
-                  <Image source={{ uri: userPhoto }} style={styles.profileImage} />
-                ) : (
-                  <Text style={styles.profileInitial}>
-                    {profile.name ? profile.name.charAt(0).toUpperCase() : '👤'}
-                  </Text>
-                )}
-                {/* {uploadingPhoto && (
-                  <View style={styles.uploadOverlay}>
-                    <ActivityIndicator size="large" color="#FFFFFF" />
-                  </View>
-                )} */}
+                <View style={[styles.avatarInner, { backgroundColor: colors.surface }]}>
+                  {userPhoto ? (
+                    <Image source={{ uri: userPhoto }} style={styles.avatarImage} />
+                  ) : (
+                    <Text style={[styles.avatarInitial, { color: colors.text }]}>
+                      {profile.name ? profile.name.charAt(0).toUpperCase() : '👤'}
+                    </Text>
+                  )}
+                  {uploadingPhoto && (
+                    <View style={styles.uploadOverlay}>
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    </View>
+                  )}
+                </View>
               </LinearGradient>
-              {/* <View style={[styles.editIconBadge, { backgroundColor: colors.primary }]}>
-                <Feather name="camera" size={16} color="#FFFFFF" />
-              </View> */}
+              <View style={[styles.avatarEditBadge, { backgroundColor: colors.primary, borderColor: colors.background }]}>
+                <Feather name="edit-2" size={11} color="#FFFFFF" />
+              </View>
             </TouchableOpacity>
-            <Text style={[styles.profileName, { color: colors.text }]}>
-              {profile.name || "Add Your Name"}
+
+            <View style={styles.nameRow}>
+              <Text style={[styles.identityName, { color: colors.text }]}>
+                {profile.name || 'Add Your Name'}
+              </Text>
+              <View style={[styles.verifiedBadge, { backgroundColor: hexToRgba(colors.primary, 0.2) }]}>
+                <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
+              </View>
+            </View>
+            <Text style={[styles.identityEmail, { color: colors.textSecondary }]}>
+              {auth().currentUser?.email || 'user@example.com'}
             </Text>
-            <Text style={[styles.profileEmail, { color: colors.textSecondary }]}>
-              {auth().currentUser?.email || "user@example.com"}
-            </Text>
+
+            <View style={[styles.goalChip, { backgroundColor: hexToRgba(colors.primary, 0.1), borderColor: hexToRgba(colors.primary, 0.25) }]}>
+              <View style={[styles.goalChipDot, { backgroundColor: colors.primary }]} />
+              <Text style={[styles.goalChipText, { color: colors.primary }]}>
+                🎯 Goal: {profile.targetWeight ? `${profile.targetWeight}kg in ${profile.timeline}wks` : 'Set your goal'}
+              </Text>
+            </View>
+
+            <View style={[styles.metabolicStrip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={styles.metabolicItem}>
+                <Ionicons name="flame-outline" size={15} color={colors.primary} />
+                <View>
+                  <Text style={[styles.metabolicLabel, { color: colors.textSecondary }]}>BMR</Text>
+                  <Text style={[styles.metabolicValue, { color: colors.text }]}>{bmr || '—'} <Text style={styles.metabolicUnit}>kcal</Text></Text>
+                </View>
+              </View>
+              <View style={[styles.metabolicDivider, { backgroundColor: colors.border }]} />
+              <View style={styles.metabolicItem}>
+                <Ionicons name="pulse-outline" size={15} color={colors.secondary} />
+                <View>
+                  <Text style={[styles.metabolicLabel, { color: colors.textSecondary }]}>TDEE</Text>
+                  <Text style={[styles.metabolicValue, { color: colors.text }]}>{tdee || '—'} <Text style={styles.metabolicUnit}>kcal/day</Text></Text>
+                </View>
+              </View>
+            </View>
           </View>
 
-          {/* Progress Ring */}
+          <Animated.View
+            style={[
+              styles.sectionFrame,
+              {
+                opacity: sectionOpacity,
+                transform: [{ translateY: sectionTranslateY }],
+              },
+            ]}
+          >
+          {/* ---------------- BASIC INFO STEP ---------------- */}
+          {activeStep === 'basic' && (
+            <View style={{ marginTop: 20 }}>
+              <View style={styles.sectionRow}>
+                <Text style={[styles.sectionEyebrow, { color: colors.textSecondary }]}>PHYSICAL PROFILE</Text>
+                <TouchableOpacity
+                  onPress={() => handleSectionEdit('basic')}
+                >
+                  <Text style={[styles.editSpecsLink, { color: colors.primary }]}>
+                      <Ionicons name={editMode.basic ? 'checkmark' : 'create-outline'} size={13} color={colors.primary} />
+                      {editMode.basic ? ' Done' : ' Edit Specs'}
+                  </Text>
+                </TouchableOpacity>
 
+              </View>
 
-          {/* Basic Information Section */}
-          {(mode === "basic" || mode === "all") && (
-            <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <TouchableOpacity
-                style={styles.cardHeader}
-                onPress={() => toggleSection('basic')}
-                activeOpacity={0.7}
-              >
-                <View style={styles.cardHeaderLeft}>
-                  <LinearGradient
-                    colors={[colors.primary, colors.primary + 'aa']}
-                    style={styles.cardIconGradient}
-                  >
-                    <Ionicons name="person-outline" size={20} color="#FFFFFF" />
-                  </LinearGradient>
-                  <Text style={[styles.cardTitle, { color: colors.text }]}>Basic Information</Text>
+              {editMode.basic ? (
+                <View style={[styles.editPanel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <View style={styles.editPanelHeader}>
+                    <View style={[styles.editPanelIcon, { backgroundColor: hexToRgba(colors.primary, 0.12) }]}>
+                      <Ionicons name="person-outline" size={16} color={colors.primary} />
+                    </View>
+                    <View>
+                      <Text style={[styles.editPanelTitle, { color: colors.text }]}>Your details</Text>
+                      <Text style={[styles.editPanelSubtitle, { color: colors.textSecondary }]}>Keep your profile accurate</Text>
+                    </View>
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Full Name</Text>
+                    <TextInput
+                      style={[styles.input, { backgroundColor: colors.surfaceContainerLow ?? colors.surface, color: colors.text, borderColor: colors.border }]}
+                      value={profile.name}
+                      onChangeText={handleNameChange}
+                      placeholder="Enter your name"
+                      placeholderTextColor={colors.textMuted}
+                      autoCapitalize="words"
+                      maxLength={50}
+                    />
+                  </View>
+
+                  <View style={styles.rowGroup}>
+                    <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                      <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Age</Text>
+                      <TextInput
+                        style={[styles.input, { backgroundColor: colors.surfaceContainerLow ?? colors.surface, color: colors.text, borderColor: colors.border }]}
+                        value={profile.age === 0 ? "" : profile.age.toString()}
+                        onChangeText={(val) => handleNumericChange('age', val, { min: 1, max: 100, integer: true })}
+                        keyboardType="number-pad"
+                        placeholder="Years"
+                        placeholderTextColor={colors.textMuted}
+                        maxLength={3}
+                      />
+                    </View>
+
+                    <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
+                      <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Height (cm)</Text>
+                      <TextInput
+                        style={[styles.input, { backgroundColor: colors.surfaceContainerLow ?? colors.surface, color: colors.text, borderColor: colors.border }]}
+                        value={profile.height === 0 ? "" : profile.height.toString()}
+                        onChangeText={(val) => handleNumericChange('height', val, { min: 50, max: 300, allowDecimal: true, enforceRange: false })}
+                        keyboardType="decimal-pad"
+                        placeholder="cm"
+                        placeholderTextColor={colors.textMuted}
+                        maxLength={5}
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Current Weight (kg)</Text>
+                    <TextInput
+                      style={[styles.input, { backgroundColor: colors.surfaceContainerLow ?? colors.surface, color: colors.text, borderColor: colors.border }]}
+                      value={profile.weight === 0 ? "" : profile.weight.toString()}
+                      onChangeText={(val) => handleNumericChange('weight', val, { min: 1, max: 300, allowDecimal: true })}
+                      keyboardType="decimal-pad"
+                      placeholder="kg"
+                      placeholderTextColor={colors.textMuted}
+                      maxLength={5}
+                    />
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Gender</Text>
+                    <View style={styles.genderContainer}>
+                      <TouchableOpacity
+                        style={[
+                          styles.genderOption,
+                          { backgroundColor: profile.gender === "male" ? colors.primary : (colors.surfaceContainerLow ?? colors.surface) }
+                        ]}
+                        onPress={() => setProfile({ ...profile, gender: "male" })}
+                      >
+                        <Ionicons name="male" size={20} color={profile.gender === "male" ? "#FFFFFF" : colors.text} />
+                        <Text style={[styles.genderOptionText, { color: profile.gender === "male" ? "#FFFFFF" : colors.text }]}>Male</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.genderOption,
+                          { backgroundColor: profile.gender === "female" ? colors.primary : (colors.surfaceContainerLow ?? colors.surface) }
+                        ]}
+                        onPress={() => setProfile({ ...profile, gender: "female" })}
+                      >
+                        <Ionicons name="female" size={20} color={profile.gender === "female" ? "#FFFFFF" : colors.text} />
+                        <Text style={[styles.genderOptionText, { color: profile.gender === "female" ? "#FFFFFF" : colors.text }]}>Female</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                 </View>
-                <Ionicons
-                  name={expandedSections.basic ? "chevron-up" : "chevron-down"}
-                  size={22}
-                  color={colors.textSecondary}
-                />
-              </TouchableOpacity>
-
-              {expandedSections.basic && (
-                <View style={styles.cardContent}>
-                  {editMode.basic ? (
-                    <>
-                      <View style={styles.inputGroup}>
-                        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Full Name</Text>
-                        <TextInput
-                          style={[styles.input, { backgroundColor: colors.surfaceContainerLow, color: colors.text, borderColor: colors.border }]}
-                          value={profile.name}
-                          onChangeText={handleNameChange}
-                          placeholder="Enter your name"
-                          placeholderTextColor={colors.textMuted}
-                          autoCapitalize="words"
-                          maxLength={50}
-                        />
+              ) : (
+                <View style={styles.specsGrid}>
+                  <View style={[styles.specCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View style={styles.specCardTopRow}>
+                      <Text style={[styles.specLabel, { color: colors.textSecondary }]}>AGE</Text>
+                      <View style={[styles.specIconChip, { backgroundColor: hexToRgba(colors.primary, 0.1) }]}>
+                        <Ionicons name="calendar-outline" size={14} color={colors.primary} />
                       </View>
+                    </View>
+                    <Text style={[styles.specValue, { color: colors.text }]}>
+                      {profile.age || '—'} <Text style={styles.specUnit}>yrs</Text>
+                    </Text>
+                    <Text style={[styles.specSubtext, { color: colors.success }]}>Prime Metabolic</Text>
+                  </View>
 
-                      <View style={styles.rowGroup}>
-                        <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-                          <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Age</Text>
-                          <TextInput
-                            style={[styles.input, { backgroundColor: colors.surfaceContainerLow, color: colors.text, borderColor: colors.border }]}
-                            value={profile.age === 0 ? "" : profile.age.toString()}
-                            onChangeText={(val) => handleNumericChange('age', val, { min: 1, max: 100, integer: true })}
-                            keyboardType="number-pad"
-                            placeholder="Years"
-                            placeholderTextColor={colors.textMuted}
-                            maxLength={3}
-                          />
-                        </View>
-
-                        <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
-                          <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Height (cm)</Text>
-                          <TextInput
-                            style={[styles.input, { backgroundColor: colors.surfaceContainerLow, color: colors.text, borderColor: colors.border }]}
-                            value={profile.height === 0 ? "" : profile.height.toString()}
-                            onChangeText={(val) => handleNumericChange('height', val, { min: 50, max: 300, allowDecimal: true, enforceRange: false })}
-                            keyboardType="decimal-pad"
-                            placeholder="cm"
-                            placeholderTextColor={colors.textMuted}
-                            maxLength={5}
-                          />
-                        </View>
+                  <View style={[styles.specCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View style={styles.specCardTopRow}>
+                      <Text style={[styles.specLabel, { color: colors.textSecondary }]}>GENDER</Text>
+                      <View style={[styles.specIconChip, { backgroundColor: hexToRgba(colors.primary, 0.1) }]}>
+                        <Ionicons name="person-outline" size={14} color={colors.primary} />
                       </View>
+                    </View>
+                    <Text style={[styles.specValue, { color: colors.text }]}>
+                      {profile.gender === "male" ? "Male" : "Female"}
+                    </Text>
+                    <Text style={[styles.specSubtext, { color: colors.textMuted }]}>Biological Sex</Text>
+                  </View>
 
-                      <View style={styles.inputGroup}>
-                        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Current Weight (kg)</Text>
+                  <View style={[styles.specCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View style={styles.specCardTopRow}>
+                      <Text style={[styles.specLabel, { color: colors.textSecondary }]}>HEIGHT</Text>
+                      <View style={[styles.specIconChip, { backgroundColor: hexToRgba(colors.primary, 0.1) }]}>
+                        <Ionicons name="resize-outline" size={14} color={colors.primary} />
+                      </View>
+                    </View>
+                    <Text style={[styles.specValue, { color: colors.text }]}>
+                      {profile.height || '—'} <Text style={styles.specUnit}>cm</Text>
+                    </Text>
+                    <Text style={[styles.specSubtext, { color: colors.primary }]}>
+                      {profile.height ? `${Math.floor(profile.height / 30.48)}' ${Math.round((profile.height / 2.54) % 12)}"` : '—'}
+                    </Text>
+                  </View>
+
+                  <View style={[styles.specCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View style={styles.specCardTopRow}>
+                      <Text style={[styles.specLabel, { color: colors.textSecondary }]}>WEIGHT</Text>
+                      <View style={[styles.specIconChip, { backgroundColor: hexToRgba(colors.primary, 0.1) }]}>
+                        <Ionicons name="fitness-outline" size={14} color={colors.primary} />
+                      </View>
+                    </View>
+                    <Text style={[styles.specValue, { color: colors.text }]}>
+                      {profile.weight || '—'} <Text style={styles.specUnit}>kg</Text>
+                    </Text>
+                    <Text style={[styles.specSubtext, { color: colors.textMuted }]}>
+                      {profile.weight ? `${Math.round(profile.weight * 2.2046)} lbs` : '—'}
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* ---------------- WEIGHT GOALS STEP ---------------- */}
+          {activeStep === 'goals' && (
+            <View style={{ marginTop: 20 }}>
+              <View style={styles.sectionRow}>
+                <Text style={[styles.sectionEyebrow, { color: colors.textSecondary }]}>WEIGHT GOALS</Text>
+                <TouchableOpacity
+                  onPress={() => handleSectionEdit('goals')}
+                >
+                  <Text style={[styles.editSpecsLink, { color: colors.primary }]}>
+                    <Ionicons name={editMode.goals ? 'checkmark' : 'create-outline'} size={13} color={colors.primary} />
+                    {editMode.goals ? ' Done' : ' Edit Goals'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {editMode.goals ? (
+                <View style={[styles.editPanel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <View style={styles.editPanelHeader}>
+                    <View style={[styles.editPanelIcon, { backgroundColor: hexToRgba(colors.primary, 0.12) }]}>
+                      <Ionicons name="flag-outline" size={16} color={colors.primary} />
+                    </View>
+                    <View>
+                      <Text style={[styles.editPanelTitle, { color: colors.text }]}>Set your target</Text>
+                      <Text style={[styles.editPanelSubtitle, { color: colors.textSecondary }]}>Shape a plan that fits you</Text>
+                    </View>
+                  </View>
+                  <View style={styles.goalsInputRow}>
+                    <View style={[styles.inputGroup, styles.goalsInputGroup]}>
+                      <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Target Weight</Text>
+                      <View style={styles.weightInputContainer}>
                         <TextInput
-                          style={[styles.input, { backgroundColor: colors.surfaceContainerLow, color: colors.text, borderColor: colors.border }]}
-                          value={profile.weight === 0 ? "" : profile.weight.toString()}
-                          onChangeText={(val) => handleNumericChange('weight', val, { min: 1, max: 300, allowDecimal: true })}
+                          style={[styles.weightInput, styles.goalsInput, { backgroundColor: colors.surfaceContainerLow ?? colors.surface, color: colors.text, borderColor: colors.border }]}
+                          value={targetWeightInput}
+                          onChangeText={(val) => handleNumericChange('targetWeight', val, { min: 1, max: 300, allowDecimal: true })}
                           keyboardType="decimal-pad"
-                          placeholder="kg"
+                          placeholder="0"
                           placeholderTextColor={colors.textMuted}
                           maxLength={5}
                         />
+                        <Text style={[styles.weightUnit, { color: colors.textSecondary }]}>kg</Text>
                       </View>
-
-                      <View style={styles.inputGroup}>
-                        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Gender</Text>
-                        <View style={styles.genderContainer}>
-                          <TouchableOpacity
-                            style={[
-                              styles.genderOption,
-                              profile.gender === "male" && styles.genderOptionActive,
-                              { backgroundColor: profile.gender === "male" ? colors.primary : colors.surfaceContainerLow }
-                            ]}
-                            onPress={() => setProfile({ ...profile, gender: "male" })}
-                          >
-                            <Ionicons name="male" size={20} color={profile.gender === "male" ? "#FFFFFF" : colors.text} />
-                            <Text style={[styles.genderOptionText, { color: profile.gender === "male" ? "#FFFFFF" : colors.text }]}>Male</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[
-                              styles.genderOption,
-                              profile.gender === "female" && styles.genderOptionActive,
-                              { backgroundColor: profile.gender === "female" ? colors.primary : colors.surfaceContainerLow }
-                            ]}
-                            onPress={() => setProfile({ ...profile, gender: "female" })}
-                          >
-                            <Ionicons name="female" size={20} color={profile.gender === "female" ? "#FFFFFF" : colors.text} />
-                            <Text style={[styles.genderOptionText, { color: profile.gender === "female" ? "#FFFFFF" : colors.text }]}>Female</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-
-                      {mode !== "all" && (
-                        <TouchableOpacity
-                          style={[styles.saveButton, { backgroundColor: colors.primary }]}
-                          onPress={() => handleSave()}
-                        >
-                          <Text style={styles.saveButtonText}>Save Changes</Text>
-                        </TouchableOpacity>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <View style={styles.infoGrid}>
-                        <View style={[styles.infoCard, { backgroundColor: colors.surfaceContainerLow }]}>
-                          <Ionicons name="person-outline" size={20} color={colors.primary} />
-                          <Text style={[styles.infoCardLabel, { color: colors.textSecondary }]}>Name</Text>
-                          <Text style={[styles.infoCardValue, { color: colors.text }]}>{profile.name || "Not set"}</Text>
-                        </View>
-                        <View style={[styles.infoCard, { backgroundColor: colors.surfaceContainerLow }]}>
-                          <Ionicons name="calendar-outline" size={20} color={colors.primary} />
-                          <Text style={[styles.infoCardLabel, { color: colors.textSecondary }]}>Age</Text>
-                          <Text style={[styles.infoCardValue, { color: colors.text }]}>{profile.age || "Not set"} yrs</Text>
-                        </View>
-                        <View style={[styles.infoCard, { backgroundColor: colors.surfaceContainerLow }]}>
-                          <Ionicons name="resize-outline" size={20} color={colors.primary} />
-                          <Text style={[styles.infoCardLabel, { color: colors.textSecondary }]}>Height</Text>
-                          <Text style={[styles.infoCardValue, { color: colors.text }]}>{profile.height || "Not set"} cm</Text>
-                        </View>
-                        <View style={[styles.infoCard, { backgroundColor: colors.surfaceContainerLow }]}>
-                          <Ionicons name="fitness-outline" size={20} color={colors.primary} />
-                          <Text style={[styles.infoCardLabel, { color: colors.textSecondary }]}>Weight</Text>
-                          <Text style={[styles.infoCardValue, { color: colors.text }]}>{profile.weight || "Not set"} kg</Text>
-                        </View>
-                      </View>
-
-                      <TouchableOpacity
-                        style={[styles.editButton, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.border }]}
-                        onPress={() => toggleEditMode('basic')}
-                      >
-                        <Feather name="edit-2" size={16} color={colors.primary} />
-                        <Text style={[styles.editButtonText, { color: colors.primary }]}>Edit Information</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* Weight Goals Section */}
-          {(mode === "goals" || mode === "all") && (
-            <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <TouchableOpacity
-                style={styles.cardHeader}
-                onPress={() => toggleSection('goals')}
-                activeOpacity={0.7}
-              >
-                <View style={styles.cardHeaderLeft}>
-                  <LinearGradient
-                    colors={[colors.primary, colors.primary + 'aa']}
-                    style={styles.cardIconGradient}
-                  >
-                    <Ionicons name="trending-down-outline" size={20} color="#FFFFFF" />
-                  </LinearGradient>
-                  <Text style={[styles.cardTitle, { color: colors.text }]}>Weight Goals</Text>
-                </View>
-                <Ionicons
-                  name={expandedSections.goals ? "chevron-up" : "chevron-down"}
-                  size={22}
-                  color={colors.textSecondary}
-                />
-              </TouchableOpacity>
-
-              {expandedSections.goals && (
-                <View style={styles.cardContent}>
-                  {/* Metabolic Stats */}
-                  <View style={styles.metricRow}>
-                    <View style={[styles.metricCard, { backgroundColor: colors.primary + '10' }]}>
-                      <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>BMR</Text>
-                      <Text style={[styles.metricValue, { color: colors.primary }]}>{bmr || 0}</Text>
-                      <Text style={[styles.metricUnit, { color: colors.textSecondary }]}>kcal/day</Text>
                     </View>
-                    <View style={[styles.metricCard, { backgroundColor: colors.primary + '10' }]}>
-                      <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>TDEE</Text>
-                      <Text style={[styles.metricValue, { color: colors.primary }]}>{tdee || 0}</Text>
-                      <Text style={[styles.metricUnit, { color: colors.textSecondary }]}>kcal/day</Text>
+
+                    <View style={[styles.inputGroup, styles.goalsInputGroup]}>
+                      <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Timeline</Text>
+                      <View style={styles.timelineContainer}>
+                        <TextInput
+                          style={[styles.timelineInput, styles.goalsInput, { backgroundColor: colors.surfaceContainerLow ?? colors.surface, color: colors.text, borderColor: colors.border }]}
+                          value={profile.timeline === 0 ? "" : profile.timeline.toString()}
+                          onChangeText={(val) => handleNumericChange('timeline', val, { min: 1, max: 104, integer: true })}
+                          keyboardType="number-pad"
+                          placeholder="12"
+                          placeholderTextColor={colors.textMuted}
+                          maxLength={3}
+                        />
+                        <Text style={[styles.timelineUnit, { color: colors.textSecondary }]}>weeks</Text>
+                      </View>
                     </View>
                   </View>
 
-                  {editMode.goals ? (
-                    <>
-                      <View style={styles.inputGroup}>
-                        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Target Weight</Text>
-                        <View style={styles.weightInputContainer}>
-                          <TextInput
-                            style={[styles.weightInput, { backgroundColor: colors.surfaceContainerLow, color: colors.text, borderColor: colors.border }]}
-                            value={targetWeightInput}
-                            onChangeText={(val) => handleNumericChange('targetWeight', val, { min: 1, max: 300, allowDecimal: true })}
-                            keyboardType="decimal-pad"
-                            placeholder="0"
-                            placeholderTextColor={colors.textMuted}
-                            maxLength={5}
-                          />
-                          <Text style={[styles.weightUnit, { color: colors.textSecondary }]}>kg</Text>
-                        </View>
-                      </View>
-
-                      <View style={styles.inputGroup}>
-                        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Timeline</Text>
-                        <View style={styles.timelineContainer}>
-                          <TextInput
-                            style={[styles.timelineInput, { backgroundColor: colors.surfaceContainerLow, color: colors.text, borderColor: colors.border }]}
-                            value={profile.timeline === 0 ? "" : profile.timeline.toString()}
-                            onChangeText={(val) => handleNumericChange('timeline', val, { min: 1, max: 104, integer: true })}
-                            keyboardType="number-pad"
-                            placeholder="12"
-                            placeholderTextColor={colors.textMuted}
-                            maxLength={3}
-                          />
-                          <Text style={[styles.timelineUnit, { color: colors.textSecondary }]}>weeks</Text>
-                        </View>
-                      </View>
-
-                      <View style={styles.inputGroup}>
-                        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Activity Level</Text>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.activityScroll}>
-                          {[
-                            { value: 1.2, label: 'Sedentary', icon: 'bed' },
-                            { value: 1.375, label: 'Light', icon: 'walk' },
-                            { value: 1.55, label: 'Moderate', icon: 'bicycle' },
-                            { value: 1.725, label: 'Active', icon: 'run' },
-                            { value: 1.9, label: 'Very Active', icon: 'flash' }
-                          ].map((level) => (
-                            <TouchableOpacity
-                              key={level.value}
-                              style={[
-                                styles.activityOption,
-                                profile.activityLevel === level.value && styles.activityOptionActive,
-                                { backgroundColor: profile.activityLevel === level.value ? colors.primary : colors.surfaceContainerLow }
-                              ]}
-                              onPress={() => setProfile({ ...profile, activityLevel: level.value })}
-                            >
-                              <MaterialIcons name={level.icon as any} size={24} color={profile.activityLevel === level.value ? "#FFFFFF" : colors.text} />
-                              <Text style={[styles.activityOptionText, { color: profile.activityLevel === level.value ? "#FFFFFF" : colors.text }]}>
-                                {level.label}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </ScrollView>
-                      </View>
-                      {mode !== "all" && (
+                  <View style={[styles.inputGroup, styles.goalsActivityGroup]}>
+                    <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Activity Level</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.activityScroll}>
+                      {[
+                        { value: 1.2, label: 'Sedentary', icon: 'bed' },
+                        { value: 1.375, label: 'Light', icon: 'walk' },
+                        { value: 1.55, label: 'Moderate', icon: 'bicycle' },
+                        { value: 1.725, label: 'Active', icon: 'run' },
+                        { value: 1.9, label: 'Very Active', icon: 'flash' }
+                      ].map((level) => (
                         <TouchableOpacity
-                          style={[styles.saveButton, { backgroundColor: colors.primary }]}
-                          onPress={() => handleSave()}
+                          key={level.value}
+                          style={[
+                            styles.activityOption,
+                            { backgroundColor: profile.activityLevel === level.value ? colors.primary : (colors.surfaceContainerLow ?? colors.surface) }
+                          ]}
+                          onPress={() => setProfile({ ...profile, activityLevel: level.value })}
                         >
-                          <Text style={styles.saveButtonText}>Save Changes</Text>
-                        </TouchableOpacity>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <View style={styles.infoGrid}>
-                        <View style={[styles.infoCard, { backgroundColor: colors.surfaceContainerLow }]}>
-                          <Ionicons name="scale-outline" size={20} color={colors.primary} />
-                          <Text style={[styles.infoCardLabel, { color: colors.textSecondary }]}>Current</Text>
-                          <Text style={[styles.infoCardValue, { color: colors.text }]}>{profile.weight || "Not set"} kg</Text>
-                        </View>
-                        <View style={[styles.infoCard, { backgroundColor: colors.surfaceContainerLow }]}>
-                          <Ionicons name="flag-outline" size={20} color={colors.primary} />
-                          <Text style={[styles.infoCardLabel, { color: colors.textSecondary }]}>Target</Text>
-                          <Text style={[styles.infoCardValue, { color: colors.text }]}>{profile.targetWeight || "Not set"} kg</Text>
-                        </View>
-                        <View style={[styles.infoCard, { backgroundColor: colors.surfaceContainerLow }]}>
-                          <Ionicons name="time-outline" size={20} color={colors.primary} />
-                          <Text style={[styles.infoCardLabel, { color: colors.textSecondary }]}>Timeline</Text>
-                          <Text style={[styles.infoCardValue, { color: colors.text }]}>{profile.timeline || "Not set"} weeks</Text>
-                        </View>
-                        <View style={[styles.infoCard, { backgroundColor: colors.surfaceContainerLow }]}>
-                          <Ionicons name="flame-outline" size={20} color={colors.primary} />
-                          <Text style={[styles.infoCardLabel, { color: colors.textSecondary }]}>Daily Goal</Text>
-                          <Text style={[styles.infoCardValue, { color: colors.primary, fontWeight: '800' }]}>
-                            {profile.dailyCalorieGoal || "Not set"} kcal
+                          <MaterialIcons name={level.icon as any} size={24} color={profile.activityLevel === level.value ? "#FFFFFF" : colors.text} />
+                          <Text style={[styles.activityOptionText, { color: profile.activityLevel === level.value ? "#FFFFFF" : colors.text }]}>
+                            {level.label}
                           </Text>
-                        </View>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.specsGrid}>
+                  <View style={[styles.specCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View style={styles.specCardTopRow}>
+                      <Text style={[styles.specLabel, { color: colors.textSecondary }]}>CURRENT</Text>
+                      <View style={[styles.specIconChip, { backgroundColor: hexToRgba(colors.primary, 0.1) }]}>
+                        <Ionicons name="scale-outline" size={14} color={colors.primary} />
                       </View>
+                    </View>
+                    <Text style={[styles.specValue, { color: colors.text }]}>
+                      {profile.weight || '—'} <Text style={styles.specUnit}>kg</Text>
+                    </Text>
+                  </View>
 
-                      <TouchableOpacity
-                        style={[styles.editButton, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.border }]}
-                        onPress={() => toggleEditMode('goals')}
-                      >
-                        <Feather name="edit-2" size={16} color={colors.primary} />
-                        <Text style={[styles.editButtonText, { color: colors.primary }]}>Edit Goals</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
+                  <View style={[styles.specCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View style={styles.specCardTopRow}>
+                      <Text style={[styles.specLabel, { color: colors.textSecondary }]}>TARGET</Text>
+                      <View style={[styles.specIconChip, { backgroundColor: hexToRgba(colors.primary, 0.1) }]}>
+                        <Ionicons name="flag-outline" size={14} color={colors.primary} />
+                      </View>
+                    </View>
+                    <Text style={[styles.specValue, { color: colors.text }]}>
+                      {profile.targetWeight || '—'} <Text style={styles.specUnit}>kg</Text>
+                    </Text>
+                  </View>
+
+                  <View style={[styles.specCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View style={styles.specCardTopRow}>
+                      <Text style={[styles.specLabel, { color: colors.textSecondary }]}>TIMELINE</Text>
+                      <View style={[styles.specIconChip, { backgroundColor: hexToRgba(colors.primary, 0.1) }]}>
+                        <Ionicons name="time-outline" size={14} color={colors.primary} />
+                      </View>
+                    </View>
+                    <Text style={[styles.specValue, { color: colors.text }]}>
+                      {profile.timeline || '—'} <Text style={styles.specUnit}>wks</Text>
+                    </Text>
+                  </View>
+
+                  <View style={[styles.specCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View style={styles.specCardTopRow}>
+                      <Text style={[styles.specLabel, { color: colors.textSecondary }]}>DAILY GOAL</Text>
+                      <View style={[styles.specIconChip, { backgroundColor: hexToRgba(colors.primary, 0.1) }]}>
+                        <Ionicons name="flame-outline" size={14} color={colors.primary} />
+                      </View>
+                    </View>
+                    <Text style={[styles.specValue, { color: colors.primary }]}>
+                      {profile.dailyCalorieGoal || '—'} <Text style={styles.specUnit}>kcal</Text>
+                    </Text>
+                  </View>
                 </View>
               )}
             </View>
           )}
 
-          {/* Workout Schedule Section */}
-          {(mode === "workout" || mode === "all") && (
-            <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          {/* ---------------- WORKOUT SCHEDULE STEP ---------------- */}
+          {activeStep === 'workout' && (
+            <View style={{ marginTop: 20 }}>
+              <View style={styles.sectionRow}>
+                <Text style={[styles.sectionEyebrow, { color: colors.textSecondary }]}>WORKOUT SCHEDULE</Text>
+               <TouchableOpacity
+                  onPress={() => handleSectionEdit('workout')}
+                >
+                  <Text style={[styles.editSpecsLink, { color: colors.primary }]}>
+                    <Ionicons name={editMode.workout ? 'checkmark' : 'create-outline'} size={13} color={colors.primary} />
+                    {editMode.workout ? ' Done' : ' Edit Schedule'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {editMode.workout ? (
+                <View style={[styles.editPanel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <View style={styles.editPanelHeader}>
+                    <View style={[styles.editPanelIcon, { backgroundColor: hexToRgba(colors.primary, 0.12) }]}>
+                      <Ionicons name="barbell-outline" size={16} color={colors.primary} />
+                    </View>
+                    <View>
+                      <Text style={[styles.editPanelTitle, { color: colors.text }]}>Build your week</Text>
+                      <Text style={[styles.editPanelSubtitle, { color: colors.textSecondary }]}>Choose your active days</Text>
+                    </View>
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Days per week</Text>
+                    <View style={styles.daysCounter}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          if (profile.workoutDaysPerWeek > 1) {
+                            setProfile({
+                              ...profile,
+                              workoutDaysPerWeek: profile.workoutDaysPerWeek - 1,
+                              workoutDays: profile.workoutDays.slice(0, profile.workoutDaysPerWeek - 1)
+                            });
+                          }
+                        }}
+                        style={[styles.counterButton, { backgroundColor: colors.surfaceContainerLow ?? colors.surface, borderColor: colors.border }]}
+                      >
+                        <Ionicons name="remove" size={24} color={colors.primary} />
+                      </TouchableOpacity>
+                      <Text style={[styles.counterValue, { color: colors.text }]}>{profile.workoutDaysPerWeek}</Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          if (profile.workoutDaysPerWeek < 7) {
+                            setProfile({ ...profile, workoutDaysPerWeek: profile.workoutDaysPerWeek + 1 });
+                          }
+                        }}
+                        style={[styles.counterButton, { backgroundColor: colors.surfaceContainerLow ?? colors.surface, borderColor: colors.border }]}
+                      >
+                        <Ionicons name="add" size={24} color={colors.primary} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Select {profile.workoutDaysPerWeek} days</Text>
+                    <View style={styles.daysGrid}>
+                      {WEEKDAYS.map((day) => {
+                        const isSelected = profile.workoutDays.includes(day);
+                        return (
+                          <TouchableOpacity
+                            key={day}
+                            style={[
+                              styles.dayButton,
+                              {
+                                backgroundColor: isSelected ? colors.primary : (colors.surfaceContainerLow ?? colors.surface),
+                                borderColor: isSelected ? colors.primary : colors.border,
+                              }
+                            ]}
+                            onPress={() => toggleWorkoutDay(day)}
+                          >
+                            <Text style={[
+                              styles.dayButtonText,
+                              { color: isSelected ? '#FFFFFF' : colors.text }
+                            ]}>
+                              {day.substring(0, 3)}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                </View>
+              ) : (
+                <>
+                  <View style={styles.specsGrid}>
+                    <View style={[styles.specCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                      <View style={styles.specCardTopRow}>
+                        <Text style={[styles.specLabel, { color: colors.textSecondary }]}>REST DAYS</Text>
+                        <View style={[styles.specIconChip, { backgroundColor: hexToRgba(colors.primary, 0.1) }]}>
+                          <Ionicons name="bed-outline" size={14} color={colors.primary} />
+                        </View>
+                      </View>
+                      <Text style={[styles.specValue, { color: colors.text }]}>
+                        {7 - (profile.workoutDays.length || 0)}
+                      </Text>
+                    </View>
+
+                    <View style={[styles.specCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                      <View style={styles.specCardTopRow}>
+                        <Text style={[styles.specLabel, { color: colors.textSecondary }]}>ACTIVE DAYS</Text>
+                        <View style={[styles.specIconChip, { backgroundColor: hexToRgba(colors.primary, 0.1) }]}>
+                          <Ionicons name="fitness-outline" size={14} color={colors.primary} />
+                        </View>
+                      </View>
+                      <Text style={[styles.specValue, { color: colors.text }]}>
+                        {profile.workoutDays.length || 0}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.workoutDaysPreview}>
+                    <Text style={[styles.previewLabel, { color: colors.textSecondary }]}>Your Schedule</Text>
+                    <View style={styles.previewDays}>
+                      {profile.workoutDays.map(day => (
+                        <View key={day} style={[styles.previewDay, { backgroundColor: hexToRgba(colors.primary, 0.15) }]}>
+                          <Text style={[styles.previewDayText, { color: colors.primary }]}>{day.substring(0, 3)}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                </>
+              )}
+            </View>
+          )}
+
+          </Animated.View>
+
+          {/* Next / Finish CTA — shared across all three steps */}
+          <View style={styles.nextCta}>
+            <LinearGradient
+              colors={[colors.primary, colors.secondary]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.nextCtaGradient}
+            >
               <TouchableOpacity
-                style={styles.cardHeader}
-                onPress={() => toggleSection('workout')}
+                style={styles.nextCtaArrowButton}
+                onPress={goToPreviousStep}
+                disabled={stepIndex === 0}
                 activeOpacity={0.7}
               >
-                <View style={styles.cardHeaderLeft}>
-                  <LinearGradient
-                    colors={[colors.primary, colors.primary + 'aa']}
-                    style={styles.cardIconGradient}
-                  >
-                    <Ionicons name="barbell-outline" size={20} color="#FFFFFF" />
-                  </LinearGradient>
-                  <Text style={[styles.cardTitle, { color: colors.text }]}>Workout Schedule</Text>
-                </View>
                 <Ionicons
-                  name={expandedSections.workout ? "chevron-up" : "chevron-down"}
-                  size={22}
-                  color={colors.textSecondary}
+                  name="arrow-back"
+                  size={16}
+                  color={stepIndex === 0 ? 'rgba(255,255,255,0.4)' : '#FFFFFF'}
                 />
               </TouchableOpacity>
-
-              {expandedSections.workout && (
-                <View style={styles.cardContent}>
-                  {editMode.workout ? (
-                    <>
-                      <View style={styles.inputGroup}>
-                        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Days per week</Text>
-                        <View style={styles.daysCounter}>
-                          <TouchableOpacity
-                            onPress={() => {
-                              if (profile.workoutDaysPerWeek > 1) {
-                                setProfile({
-                                  ...profile,
-                                  workoutDaysPerWeek: profile.workoutDaysPerWeek - 1,
-                                  workoutDays: profile.workoutDays.slice(0, profile.workoutDaysPerWeek - 1)
-                                });
-                              }
-                            }}
-                            style={[styles.counterButton, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.border }]}
-                          >
-                            <Ionicons name="remove" size={24} color={colors.primary} />
-                          </TouchableOpacity>
-                          <Text style={[styles.counterValue, { color: colors.text }]}>{profile.workoutDaysPerWeek}</Text>
-                          <TouchableOpacity
-                            onPress={() => {
-                              if (profile.workoutDaysPerWeek < 7) {
-                                setProfile({ ...profile, workoutDaysPerWeek: profile.workoutDaysPerWeek + 1 });
-                              }
-                            }}
-                            style={[styles.counterButton, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.border }]}
-                          >
-                            <Ionicons name="add" size={24} color={colors.primary} />
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-
-                      <View style={styles.inputGroup}>
-                        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Select {profile.workoutDaysPerWeek} days</Text>
-                        <View style={styles.daysGrid}>
-                          {WEEKDAYS.map((day) => {
-                            const isSelected = profile.workoutDays.includes(day);
-                            return (
-                              <TouchableOpacity
-                                key={day}
-                                style={[
-                                  styles.dayButton,
-                                  isSelected && styles.dayButtonActive,
-                                  {
-                                    backgroundColor: isSelected ? colors.primary : colors.surfaceContainerLow,
-                                    borderColor: isSelected ? colors.primary : colors.border,
-                                  }
-                                ]}
-                                onPress={() => toggleWorkoutDay(day)}
-                              >
-                                <Text style={[
-                                  styles.dayButtonText,
-                                  { color: isSelected ? '#FFFFFF' : colors.text }
-                                ]}>
-                                  {day.substring(0, 3)}
-                                </Text>
-                              </TouchableOpacity>
-                            );
-                          })}
-                        </View>
-                      </View>
-
-                      {mode !== "all" && (
-                        <TouchableOpacity
-                          style={[styles.saveButton, { backgroundColor: colors.primary }]}
-                          onPress={() => handleSave()}
-                        >
-                          <Text style={styles.saveButtonText}>Save Changes</Text>
-                        </TouchableOpacity>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <View style={styles.workoutStats}>
-                        <View style={[styles.workoutStatCard, { backgroundColor: colors.primary + '10' }]}>
-                          <Ionicons name="bed-outline" size={24} color={colors.primary} />
-                          <Text style={[styles.workoutStatValue, { color: colors.text }]}>
-                            {7 - (profile.workoutDays.length || 0)}
-                          </Text>
-                          <Text style={[styles.workoutStatLabel, { color: colors.textSecondary }]}>Rest Days</Text>
-                        </View>
-                        <View style={[styles.workoutStatCard, { backgroundColor: colors.primary + '10' }]}>
-                          <Ionicons name="fitness-outline" size={24} color={colors.primary} />
-                          <Text style={[styles.workoutStatValue, { color: colors.text }]}>{profile.workoutDays.length || 0}</Text>
-                          <Text style={[styles.workoutStatLabel, { color: colors.textSecondary }]}>Active Days</Text>
-                        </View>
-                      </View>
-
-                      <View style={styles.workoutDaysPreview}>
-                        <Text style={[styles.previewLabel, { color: colors.textSecondary }]}>Your Schedule</Text>
-                        <View style={styles.previewDays}>
-                          {profile.workoutDays.map(day => (
-                            <View key={day} style={[styles.previewDay, { backgroundColor: colors.primary + '20' }]}>
-                              <Text style={[styles.previewDayText, { color: colors.primary }]}>{day.substring(0, 3)}</Text>
-                            </View>
-                          ))}
-                        </View>
-                      </View>
-
-                      <TouchableOpacity
-                        style={[styles.editButton, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.border }]}
-                        onPress={() => toggleEditMode('workout')}
-
-                      >
-                        <Feather name="edit-2" size={16} color={colors.primary} />
-                        <Text style={[styles.editButtonText, { color: colors.primary }]}>Edit Schedule</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* Action Buttons */}
-          <View style={styles.actionButtons}>
-            <TouchableOpacity
-              style={styles.updateButton}
-              onPress={handleSave}
-            >
-              <LinearGradient
-                colors={[colors.primary, colors.primary + 'dd']}
-                style={styles.updateButtonGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
+              <Text style={styles.nextCtaText}>
+                {stepIndex < stepOrder.length - 1
+                  ? `NEXT: ${stepLabels[stepOrder[stepIndex + 1]].toUpperCase()}`
+                  : 'FINISH'}
+              </Text>
+              <TouchableOpacity
+                style={styles.nextCtaRight}
+                onPress={goToNextStep}
+                activeOpacity={0.7}
               >
-                <Feather name="check-circle" size={20} color="#FFFFFF" />
-                <Text style={styles.updateButtonText}>Update Profile</Text>
-              </LinearGradient>
-            </TouchableOpacity>
+                <View style={styles.nextCtaDots}>
+                  {stepOrder.map((s, i) => (
+                    <View
+                      key={s}
+                      style={[
+                        styles.nextCtaDot,
+                        { backgroundColor: i === stepIndex ? '#FFFFFF' : 'rgba(255,255,255,0.4)' },
+                      ]}
+                    />
+                  ))}
+                </View>
+                <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+              </TouchableOpacity>
+            </LinearGradient>
+          </View>
 
-            <TouchableOpacity
-              style={styles.signOutButton}
-              onPress={async () => {
-                Alert.alert(
-                  'Logout',
-                  'Are you sure you want to logout?',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Logout',
-                      style: 'destructive',
-                      onPress: async () => {
-                        try {
-                          await AsyncStorage.clear();
-                          await auth().signOut();
-                          router.replace('/(auth)/google-signin');
-                        } catch (error) {
-                          console.error('Logout error:', error);
-                          Alert.alert('Error', 'Failed to logout');
-                        }
-                      }
-                    }
-                  ]
-                );
-              }}
-            >
-              <Feather name="log-out" size={20} color={colors.textSecondary} />
-              <Text style={[styles.signOutText, { color: colors.textSecondary }]}>Sign Out</Text>
+          <View style={styles.resetSyncRow}>
+            <TouchableOpacity style={styles.resetButton} onPress={loadCompleteProfile}>
+              <Feather name="refresh-cw" size={13} color={colors.textSecondary} />
+              <Text style={[styles.resetText, { color: colors.textSecondary }]}>Reset</Text>
             </TouchableOpacity>
+            <Text style={[styles.syncedAgoText, { color: colors.textMuted }]}>Synced 2 mins ago</Text>
           </View>
 
           <View style={{ height: 40 }} />
@@ -1256,7 +1549,6 @@ export default function ProfileScreen() {
       </SafeAreaView>
 
       {/* Bottom Sheet Popup */}
-      {/* Bottom Sheet Popup - Place this OUTSIDE your main View */}
       <Modal
         visible={showBottomSheet}
         transparent
@@ -1267,15 +1559,12 @@ export default function ProfileScreen() {
         onRequestClose={hideBottomSheet}
       >
         <View style={styles.bottomSheetOverlay}>
-
-          {/* Background click */}
           <TouchableOpacity
             style={styles.overlayTouchable}
             activeOpacity={1}
             onPress={hideBottomSheet}
           />
 
-          {/* Bottom sheet */}
           <Animated.View
             style={[
               styles.bottomSheet,
@@ -1302,7 +1591,6 @@ export default function ProfileScreen() {
             <TouchableOpacity style={styles.bottomSheetCancel} onPress={hideBottomSheet}>
               <Text style={{ color: colors.textSecondary }}>Cancel</Text>
             </TouchableOpacity>
-
           </Animated.View>
         </View>
       </Modal>
@@ -1314,181 +1602,226 @@ export default function ProfileScreen() {
 const makeStyles = (colors: any) => StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20, paddingTop: Platform.OS === "ios" ? 50 : 40, paddingBottom: 40 },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 40 },
   overlayTouchable: {
     ...StyleSheet.absoluteFillObject,
   },
-  header: {
+   ambientGlowWrap: {
+      position: 'absolute',
+      top: 10,
+      left: '50%',
+      marginLeft: -180,
+    },
+
+  topGlow: {
+    position: 'absolute',
+    top: -20,
+    left: '50%',
+    marginLeft: -160,
+    width: 320,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: hexToRgba(colors.primary, 0.15),
+  },
+  newHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 10,
+  },
+  circleIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   backButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-  },
-
-  profileImageSection: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  profileImageContainer: {
-    position: 'relative',
-    marginBottom: 12,
-  },
-  profileImageGradient: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  profileImage: {
-    width: 116,
-    height: 116,
-    borderRadius: 58,
-  },
-  profileInitial: {
-    fontSize: 48,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  uploadOverlay: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    borderRadius: 60,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  editIconBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 36,
+  signOutGradientButton: {
+    minWidth: 64,
     height: 36,
     borderRadius: 18,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    gap: 6,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
   },
-  profileName: {
-    fontSize: 24,
-    fontWeight: '800',
-    marginTop: 8,
-  },
-  profileEmail: {
-    fontSize: 14,
-    marginTop: 4,
-  },
+  signOutButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
+  stepEyebrow: { fontSize: 10, fontWeight: '800', letterSpacing: 1.2, marginBottom: 2 },
+  stepTitle: { fontSize: 13, fontWeight: '800', letterSpacing: 0.5 },
 
-  progressRingContainer: {
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  progressRingWrapper: {
-    width: 120,
-    height: 120,
-    position: 'relative',
-  },
-  progressRingBg: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 60,
-    borderWidth: 8,
-    backgroundColor: 'transparent',
-  },
-  progressRingFill: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    height: 8,
-    borderRadius: 4,
-  },
-  progressRingInner: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  progressRingPercent: {
-    fontSize: 24,
-    fontWeight: '800',
-  },
-  progressRingLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-
-  card: {
-    borderRadius: 24,
-    marginBottom: 20,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  cardHeader: {
+  stepPill: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 20,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
-  cardHeaderLeft: {
+  stepDotsRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  stepDot: { width: 8, height: 8, borderRadius: 4 },
+  stepPillLabel: { fontSize: 13, fontWeight: '700', marginLeft: 6 },
+  stepNavigatorWrap: { position: 'relative', zIndex: 5 },
+  swipeTooltip: {
+    position: 'absolute',
+    top: 39,
+    right: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.14,
+    shadowRadius: 7,
+    elevation: 4,
   },
-  cardIconGradient: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    justifyContent: 'center',
+  swipeTooltipPointer: {
+    position: 'absolute',
+    top: -5,
+    right: 22,
+    width: 9,
+    height: 9,
+    borderLeftWidth: 1,
+    borderTopWidth: 1,
+    transform: [{ rotate: '45deg' }],
+  },
+  swipeTooltipText: { fontSize: 10, fontWeight: '800' },
+  identityHero: { alignItems: 'center', paddingTop: 18, paddingBottom: 6 },
+  avatarWrap: { position: 'relative', marginBottom: 10 },
+  avatarRing: { width: 80, height: 80, borderRadius: 40, padding: 2.5, alignItems: 'center', justifyContent: 'center' },
+  avatarInner: { width: '100%', height: '100%', borderRadius: 40, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatarImage: { width: '100%', height: '100%' },
+  avatarInitial: { fontSize: 30, fontWeight: '800' },
+  uploadOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
   },
-  cardContent: {
-    padding: 20,
-    paddingTop: 0,
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  identityName: { fontSize: 18, fontWeight: '800' },
+  verifiedBadge: { width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  identityEmail: { fontSize: 12, fontWeight: '500', marginTop: 2 },
+  goalChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginTop: 10,
   },
+  goalChipDot: { width: 6, height: 6, borderRadius: 3 },
+  goalChipText: { fontSize: 12, fontWeight: '600' },
+  metabolicStrip: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 9,
+    marginTop: 10,
+  },
+  metabolicItem: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  metabolicLabel: { fontSize: 9, fontWeight: '800', letterSpacing: 0.7 },
+  metabolicValue: { fontSize: 13, fontWeight: '800', marginTop: 1 },
+  metabolicUnit: { fontSize: 9, fontWeight: '500' },
+  metabolicDivider: { width: 1, height: 24 },
+
+  sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, paddingHorizontal: 2 },
+  sectionEyebrow: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
+  editSpecsLink: { fontSize: 12, fontWeight: '600' },
+  editPanel: {
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 12,
+    marginTop: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  editPanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingBottom: 10,
+    marginBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(128,128,128,0.14)',
+  },
+  editPanelIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editPanelTitle: { fontSize: 13, fontWeight: '800' },
+  editPanelSubtitle: { fontSize: 11, fontWeight: '500', marginTop: 2 },
+
+  specsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 4 },
+  specCard: { width: '47%', borderWidth: 1, borderRadius: 16, padding: 14 },
+  specCardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  specLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.6 },
+  specIconChip: { width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  specValue: { fontSize: 22, fontWeight: '900' },
+  specUnit: { fontSize: 12, fontWeight: '400' },
+  specSubtext: { fontSize: 10, fontWeight: '600', marginTop: 4 },
 
   inputGroup: {
-    marginBottom: 20,
+    marginBottom: 14,
   },
   inputLabel: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   input: {
-    padding: 16,
-    borderRadius: 16,
-    fontSize: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    fontSize: 15,
     fontWeight: '500',
     borderWidth: 1,
   },
   rowGroup: {
     flexDirection: 'row',
-    marginBottom: 20,
+    marginBottom: 14,
   },
 
   genderContainer: {
@@ -1501,46 +1834,39 @@ const makeStyles = (colors: any) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    padding: 14,
-    borderRadius: 16,
-  },
-  genderOptionActive: {
-    borderWidth: 0,
+    padding: 12,
+    borderRadius: 12,
   },
   genderOptionText: {
     fontSize: 16,
     fontWeight: '600',
   },
 
-  infoGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 16,
-  },
-  infoCard: {
-    flex: 1,
-    minWidth: '45%',
-    padding: 16,
-    borderRadius: 16,
-    alignItems: 'center',
-  },
-  infoCardLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  infoCardValue: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-
   metricRow: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 24,
+    marginBottom: 20,
+  },
+  goalsMetricRow: {
+    marginBottom: 14,
+  },
+  goalsInputRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 14,
+  },
+  goalsInputGroup: {
+    flex: 1,
+    minWidth: 0,
+    marginBottom: 0,
+  },
+  goalsInput: {
+    fontSize: 18,
+    paddingLeft: 10,
+    paddingRight: 48,
+  },
+  goalsActivityGroup: {
+    marginBottom: 4,
   },
   metricCard: {
     flex: 1,
@@ -1568,19 +1894,19 @@ const makeStyles = (colors: any) => StyleSheet.create({
     position: 'relative',
   },
   weightInput: {
-    padding: 16,
-    borderRadius: 16,
-    fontSize: 24,
+    padding: 12,
+    borderRadius: 12,
+    fontSize: 21,
     fontWeight: '800',
     textAlign: 'center',
     borderWidth: 1,
   },
   weightUnit: {
     position: 'absolute',
-    right: 20,
+    right: 12,
     top: '50%',
     transform: [{ translateY: -12 }],
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
   },
 
@@ -1588,19 +1914,19 @@ const makeStyles = (colors: any) => StyleSheet.create({
     position: 'relative',
   },
   timelineInput: {
-    padding: 16,
-    borderRadius: 16,
-    fontSize: 20,
+    padding: 12,
+    borderRadius: 12,
+    fontSize: 18,
     fontWeight: '700',
     textAlign: 'center',
     borderWidth: 1,
   },
   timelineUnit: {
     position: 'absolute',
-    right: 20,
+    right: 10,
     top: '50%',
     transform: [{ translateY: -12 }],
-    fontSize: 14,
+    fontSize: 11,
     fontWeight: '600',
   },
 
@@ -1615,9 +1941,6 @@ const makeStyles = (colors: any) => StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 8,
-  },
-  activityOptionActive: {
-    borderWidth: 0,
   },
   activityOptionText: {
     fontSize: 14,
@@ -1658,38 +1981,14 @@ const makeStyles = (colors: any) => StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
   },
-  dayButtonActive: {
-    borderWidth: 0,
-  },
   dayButtonText: {
     fontSize: 14,
     fontWeight: '700',
   },
 
-  workoutStats: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
-  },
-  workoutStatCard: {
-    flex: 1,
-    padding: 16,
-    borderRadius: 20,
-    alignItems: 'center',
-  },
-  workoutStatValue: {
-    fontSize: 28,
-    fontWeight: '800',
-    marginTop: 8,
-  },
-  workoutStatLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    marginTop: 4,
-  },
-
   workoutDaysPreview: {
-    marginBottom: 20,
+    marginTop: 4,
+    marginBottom: 4,
   },
   previewLabel: {
     fontSize: 12,
@@ -1712,34 +2011,28 @@ const makeStyles = (colors: any) => StyleSheet.create({
     fontWeight: '600',
   },
 
-  editButton: {
+  nextCta: { marginTop: 20, borderRadius: 18, overflow: 'hidden' },
+  sectionFrame: { width: '96%', alignSelf: 'center' },
+  nextCtaArrowButton: { width: 28, alignItems: 'center', justifyContent: 'center' },
+  nextCtaGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    padding: 14,
-    borderRadius: 16,
-    borderWidth: 1,
+    justifyContent: 'space-between',
+    paddingVertical: 15,
+    paddingHorizontal: 18,
   },
-  editButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
+  nextCtaText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800', letterSpacing: 0.5 },
+  nextCtaRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  nextCtaDots: { flexDirection: 'row', gap: 4 },
+  nextCtaDot: { width: 5, height: 5, borderRadius: 2.5 },
 
-  saveButton: {
-    padding: 16,
-    borderRadius: 16,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  saveButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
+  resetSyncRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 4, marginTop: 10 },
+  resetButton: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  resetText: { fontSize: 12, fontWeight: '500' },
+  syncedAgoText: { fontSize: 11 },
 
   actionButtons: {
-    marginTop: 24,
+    marginTop: 28,
     gap: 12,
   },
   updateButton: {
@@ -1773,9 +2066,6 @@ const makeStyles = (colors: any) => StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Bottom Sheet Styles
-  // In your styles, replace the bottomSheetOverlay and related styles:
-
   bottomSheetOverlay: {
     position: 'absolute',
     top: 0,
@@ -1796,7 +2086,7 @@ const makeStyles = (colors: any) => StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 10,
-    zIndex: 10000, // Add this
+    zIndex: 10000,
   },
   bottomSheetHandle: {
     width: 40,
@@ -1819,32 +2109,9 @@ const makeStyles = (colors: any) => StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
   },
-  bottomSheetOptionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  bottomSheetOptionTextContainer: {
-    flex: 1,
-  },
-  bottomSheetOptionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  bottomSheetOptionSubtitle: {
-    fontSize: 13,
-  },
   bottomSheetCancel: {
     marginTop: 16,
     paddingVertical: 14,
     alignItems: 'center',
-  },
-  bottomSheetCancelText: {
-    fontSize: 16,
-    fontWeight: '600',
   },
 });
