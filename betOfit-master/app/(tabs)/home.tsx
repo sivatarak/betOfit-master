@@ -1,320 +1,155 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
+import { BannerAd, BannerAdSize, TestIds } from "react-native-google-mobile-ads";
+import Svg, { Defs, RadialGradient as SvgRadialGradient, Stop, Circle, Path } from 'react-native-svg';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Animated,
+  Easing,
   Dimensions,
   StatusBar,
   SafeAreaView,
   Platform,
-  Alert,
   Image,
   FlatList,
 } from "react-native";
-import { getDashboard } from '../services/profileApi';
+import { getDashboard } from "../services/profileApi";
 import { router, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
-import auth from '@react-native-firebase/auth';
+import { Ionicons } from "@expo/vector-icons";
+import auth from "@react-native-firebase/auth";
 import { useTheme } from "../../context/themecontext";
-import { CustomLoader } from '../../components/CustomLoader';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useProfile } from '../../context/profileContext';
-import { useToday } from '../../context/todayContext';
+import { CustomLoader } from "../../components/CustomLoader";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useProfile } from "../../context/profileContext";
+import { useToday } from "../../context/todayContext";
 import { generateSmartSuggestion, SuggestionInput } from "../utils/smartsuggestionengine";
 
 const { width } = Dimensions.get("window");
+const SLIDE_WIDTH = width;
+const CARD_WIDTH = width - 32;
+const WATER_GOAL_ML = 2500;
 
-// Widget carousel sizing — Option 1: full-width slides, card centered inside each slide.
-// Declared at module scope (not inside the component) so makeStyles can use CARD_WIDTH too.
-const SLIDE_WIDTH = width;      // each swipeable slot = full screen width
-const CARD_WIDTH = width - 64;  // visible card size — adjust this number to taste
-// (smaller number = more "peek" room, larger = wider card)
+// A rough, non-fabricated macro split (30% protein / 40% carbs / 30% fat of
+// the daily calorie goal) used until real per-macro tracking exists.
+function getMacroTargets(goalKcal: number) {
+  return {
+    protein: Math.round((goalKcal * 0.3) / 4),
+    carbs: Math.round((goalKcal * 0.4) / 4),
+    fats: Math.round((goalKcal * 0.3) / 9),
+  };
+}
+function getMacroConsumed(eatenKcal: number) {
+  return {
+    protein: Math.round((eatenKcal * 0.3) / 4),
+    carbs: Math.round((eatenKcal * 0.4) / 4),
+    fats: Math.round((eatenKcal * 0.3) / 9),
+  };
+}
 
-// Widget Card Component
-const WidgetCard = ({ type, data, colors, isActive = false }: any) => {
+// ---------------------------------------------------------------------------
+// Single "Focus" card used by the top carousel (workout / smart suggestion /
+// daily tip). One shared layout: eyebrow + dot indicator, title, message,
+// divider, action link + meta — matching the uploaded design.
+// ---------------------------------------------------------------------------
+const FocusCard = ({
+  eyebrow,
+  icon,
+  title,
+  message,
+  actionLabel,
+  onPress,
+  meta,
+  accentColor,
+  colors,
+  activeIndex,
+  total,
+  rotation,
+}: any) => {
   const styles = makeStyles(colors);
-
-  // SECTION 1: WORKOUT PLAN
-  if (type === 'workout') {
-    const isWorkoutDay = data?.today?.is_workout_day;
-    const isNewUser = data?.user?.is_new_user;
-    const lastWeek = data?.last_week_same_day;
-    const todayName = data?.today?.day_name;
-
-    if (isWorkoutDay) {
-      if (lastWeek) {
-        // Established user - show last week's workout
-        return (
-          <LinearGradient
-            colors={[colors.primary, colors.secondary]}
-            style={[styles.widgetCard, isActive && styles.activeCard]}
-          >
-            <View style={styles.widgetHeader}>
-              <Ionicons name="barbell" size={28} color="#FFF" />
-              <Text style={[styles.widgetTitle, { color: '#FFF' }]}>Today's Workout Plan</Text>
-            </View>
-            <Text style={styles.widgetSubtitle}>
-              Last {todayName} you did:
-            </Text>
-            <View style={styles.exercisesList}>
-              {lastWeek.exercises.slice(0, 3).map((ex: any, i: number) => (
-                <View key={i} style={styles.exerciseItem}>
-                  <Ionicons name="checkmark-circle" size={16} color="#FFF" />
-                  <Text style={styles.exerciseText}>{ex.name}</Text>
-                </View>
-              ))}
-            </View>
-            <View style={styles.widgetStats}>
-              <Text style={styles.widgetStatText}>
-                ⏱️ {lastWeek.total_duration} min
-              </Text>
-              <Text style={styles.widgetStatText}>
-                🔥 ~{lastWeek.total_calories_burned} kcal
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={styles.widgetButton}
-              onPress={() => router.push('/(tabs)/workout')}
-            >
-              <Text style={[styles.widgetButtonText, { color: '#FFF' }]}>Start Workout</Text>
-              <Ionicons name="arrow-forward" size={18} color="#FFF" />
-            </TouchableOpacity>
-          </LinearGradient>
-        );
-      }
-
-      // Workout day, but no last-week history to show — covers BOTH brand
-      // new users and existing users with no logged data for this weekday.
-      return (
+  return (
+    <View style={styles.focusCardWrap}>
+      <Animated.View style={[styles.focusCardBorder, { transform: [{ rotate: rotation }] }]}>
         <LinearGradient
-          colors={[colors.background, '#FF8A00']}
-          style={[styles.widgetCard, isActive && styles.activeCard]}
-        >
-          {/* Header */}
-          <View style={styles.widgetHeader}>
-            <View style={styles.iconContainer}>
-              <Ionicons name="rocket" size={42} color="#FF8A00" />
-            </View>
-
-            <View style={{ marginLeft: 18 }}>
-              <Text style={[styles.widgetTitle, { color: colors.text }]}>
-                {isNewUser ? 'Start Your Journey' : "Today's Workout"}
-              </Text>
-
-              <View style={styles.lineContainer}>
-                <View style={styles.line} />
-                <View style={styles.dot} />
-              </View>
-            </View>
-          </View>
-
-          {/* Main Text */}
-          <Text style={[styles.widgetMessage, { color: colors.text }]}>
-            {isNewUser
-              ? 'Today is a perfect day to begin your fitness transformation.'
-              : `${todayName} is a scheduled workout day — no history logged for it yet.`}
-          </Text>
-
-          <Text style={[styles.widgetSubtitle, { color: colors.text }]}>
-            Try a full body workout to get started!
-          </Text>
-
-          {/* Button */}
-          <TouchableOpacity
-            style={[styles.widgetButton, { backgroundColor: colors.card, borderColor: colors.border }]}
-            onPress={() => router.push('/(tabs)/workout')}
-          >
-            <View style={styles.buttonLeft}>
-              <View style={styles.smallIconContainer}>
-                <Ionicons name="barbell" size={28} color="#FF8A00" />
-              </View>
-
-              <Text style={[styles.widgetButtonText, { color: colors.text }]}>Browse Exercises</Text>
-            </View>
-
-            <Ionicons name="arrow-forward" size={28} color="#FF8A00" />
-          </TouchableOpacity>
-        </LinearGradient>
-      );
-    }
-
-    // Rest day (isWorkoutDay is false)
-    return (
+          colors={["transparent", accentColor + "33", accentColor, accentColor, accentColor + "33", "transparent"]}
+          locations={[0, 0.4, 0.47, 0.53, 0.6, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.focusCardGradient}
+        />
+      </Animated.View>
       <LinearGradient
-        colors={[colors.background, '#10B981']}
-        style={[styles.widgetCard, isActive && styles.activeCard]}
+      colors={[colors.card, colors.card, colors.card]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.focusCard, { borderColor: accentColor + "35" }]}
       >
-        {/* Header */}
-        <View style={styles.widgetHeader}>
-          <View style={styles.iconContainer}>
-            <Ionicons name="bed" size={42} color="#10B981" />
-          </View>
-
-          <View style={{ marginLeft: 18 }}>
-            <Text style={[styles.widgetTitle, { color: colors.text }]}>Rest Day</Text>
-
-            <View style={styles.lineContainer}>
-              <View style={[styles.line, { backgroundColor: '#10B981' }]} />
-              <View style={[styles.dot, { backgroundColor: '#10B981' }]} />
-            </View>
-          </View>
+      <View style={styles.focusHeaderRow}>
+        <View style={styles.focusEyebrowRow}>
+          <Text style={{ fontSize: 13 }}>{icon}</Text>
+          <Text style={[styles.focusEyebrow, { color: accentColor }]}>{eyebrow}</Text>
         </View>
-
-        {/* Main Text */}
-        <Text style={[styles.widgetMessage, { color: colors.text }]}>
-          Your muscles need proper recovery to grow stronger and perform better.
-        </Text>
-
-        <Text style={[styles.widgetSubtitle, { color: colors.text }]}>
-          💧 Stay hydrated{"\n"}
-          🧘 Light stretching recommended{"\n"}
-          😴 Get 7–8 hours of sleep
-        </Text>
-
-        {/* Button */}
-        <TouchableOpacity
-          style={[styles.widgetButton, { backgroundColor: colors.card, borderColor: colors.border }]}
-          onPress={() => router.push('/(tabs)/stats')}
-        >
-          <View style={styles.buttonLeft}>
-            <View style={[styles.smallIconContainer, { borderColor: '#10B981' }]}>
-              <Ionicons name="stats-chart" size={28} color="#10B981" />
-            </View>
-
-            <Text style={[styles.widgetButtonText, { color: '#10B981' }]}>
-              View Progress
-            </Text>
+        {total > 1 && (
+          <View style={styles.dotIndicatorRow}>
+            {Array.from({ length: total }).map((_, i) => (
+              <View
+                key={i}
+                style={[
+                  styles.dotIndicator,
+                  {
+                    backgroundColor: i === activeIndex ? accentColor : colors.border,
+                    width: i === activeIndex ? 16 : 6,
+                  },
+                ]}
+              />
+            ))}
           </View>
-
-          <Ionicons name="arrow-forward" size={28} color="#10B981" />
-        </TouchableOpacity>
-      </LinearGradient>
-    );
-  }
-
-  // SECTION 2: SMART SUGGESTION
-  if (type === 'suggestion') {
-    const suggestion = data;
-    if (!suggestion) return null;
-
-    return (
-      <LinearGradient
-        colors={[suggestion.color, '#0F172A']}
-        style={[styles.featureCard, isActive && styles.activeCard, { borderColor: suggestion.color + '44' }]}
-      >
-        <View style={styles.featureDecor} />
-        <View style={styles.featureHeader}>
-          <View style={[styles.featureIconWrap, { backgroundColor: suggestion.color + '22' }]}>
-            <Text style={styles.widgetIcon}>{suggestion.icon}</Text>
-          </View>
-          <View style={styles.featureHeaderText}>
-            <Text style={styles.featureEyebrow}>Focus</Text>
-            <Text style={[styles.widgetTitle, { color: '#FFF' }]}>{suggestion.title}</Text>
-          </View>
-        </View>
-        <View style={styles.suggestionBody}>
-          <Text style={styles.suggestionMessage}>{suggestion.message}</Text>
-          <View style={styles.suggestionQuoteBox}>
-            <Ionicons name="sparkles" size={14} color="#FFF" />
-            <Text style={styles.suggestionSubtitle}>{suggestion.suggestion}</Text>
-          </View>
-        </View>
-        {suggestion.action && (
-          <TouchableOpacity
-            style={[styles.featureButton, { backgroundColor: suggestion.color }]}
-            onPress={() => router.push(suggestion.actionRoute as any)}
-          >
-            <Text style={[styles.widgetButtonText, { color: '#FFF' }]}>{suggestion.action}</Text>
-            <Ionicons name="arrow-forward" size={18} color="#FFF" />
-          </TouchableOpacity>
         )}
-      </LinearGradient>
-    );
-  }
+      </View>
 
-  // SECTION 3: DAILY TIP
-  if (type === 'tip') {
-    const tips = [
-      {
-        icon: "💧",
-        title: "Hydration Reminder",
-        message: "Drink 2L of water before lunch for better energy levels throughout the day."
-      },
-      {
-        icon: "🍖",
-        title: "Protein Power",
-        message: "High protein breakfast = better muscle gains and less hunger during the day."
-      },
-      {
-        icon: "😴",
-        title: "Recovery Matters",
-        message: "7-8 hours of quality sleep speeds up muscle recovery by 30%."
-      },
-      {
-        icon: "🔥",
-        title: "Consistency Wins",
-        message: "Small daily progress beats occasional perfection. Stay consistent!"
-      }
-    ];
+      <Text style={[styles.focusTitle, { color: colors.text }]}>{title}</Text>
+      <Text style={[styles.focusMessage, { color: colors.textSecondary }]} numberOfLines={3}>
+        {message}
+      </Text>
 
-    const randomTip = tips[Math.floor(Math.random() * tips.length)];
-    return (
-      <LinearGradient
-        colors={[colors.background, '#935cf1']}
-        style={[styles.widgetCard, isActive && styles.activeCard]}
-      >
-        {/* Header */}
-        <View style={styles.widgetHeader}>
-          <View style={styles.iconContainer}>
-            <Text style={{ fontSize: 38 }}>{randomTip.icon}</Text>
-          </View>
+      <View style={styles.focusDivider} />
 
-          <View style={{ marginLeft: 18 }}>
-            <Text style={[styles.widgetTitle, { color: colors.text }]}>{randomTip.title}</Text>
-
-            <View style={styles.lineContainer}>
-              <View style={styles.line} />
-              <View style={styles.dot} />
-            </View>
-          </View>
-        </View>
-
-        {/* Message */}
-        <Text style={[styles.widgetMessage, { color: colors.text }]}>
-          {randomTip.message}
-        </Text>
-
-        {/* Button */}
-        <TouchableOpacity
-          style={[styles.widgetButton, { backgroundColor: colors.card, borderColor: colors.border }]}
-          onPress={() => router.push('/(tabs)/stats')}
-        >
-          <View style={styles.buttonLeft}>
-            <View style={styles.smallIconContainer}>
-              <Ionicons name="stats-chart" size={28} color="#FF8A00" />
-            </View>
-
-            <Text style={[styles.widgetButtonText, { color: colors.text }]}>Track Your Stats</Text>
-          </View>
-
-          <Ionicons name="arrow-forward" size={28} color="#FF8A00" />
+      <View style={styles.focusFooterRow}>
+        <TouchableOpacity onPress={onPress} style={styles.focusActionRow} disabled={!onPress}>
+          <Text style={[styles.focusActionText, { color: accentColor }]}>{actionLabel}</Text>
+          <Ionicons name="arrow-forward" size={14} color={accentColor} />
         </TouchableOpacity>
+        {!!meta && <Text style={styles.focusMeta}>{meta}</Text>}
+      </View>
       </LinearGradient>
-    );
-  }
-
-  return null;
+    </View>
+  );
 };
 
 export default function Home() {
   const { colors, theme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { name, workoutDays } = useProfile();
+  const quickActionSpin = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(quickActionSpin, {
+        toValue: 1,
+        duration: 1800,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [quickActionSpin]);
+
+  const quickActionRotate = quickActionSpin.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
 
   const [userName, setUserName] = useState("");
   const [greeting, setGreeting] = useState("Good morning");
@@ -323,7 +158,9 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [userPhoto, setUserPhoto] = useState<string | null>(null);
   const [smartSuggestion, setSmartSuggestion] = useState<any>(null);
-  // Widget carousel state
+  const [waterMl, setWaterMl] = useState(0);
+  const [streakDays, setStreakDays] = useState(0);
+
   const [currentWidgetIndex, setCurrentWidgetIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
   const autoRotateTimer = useRef<any>(null);
@@ -336,34 +173,35 @@ export default function Home() {
     refreshToday,
   } = useToday();
 
+  const todayName = useMemo(() => new Date().toLocaleDateString("en-US", { weekday: "long" }), []);
+  const isWorkoutDay = workoutDays.includes(todayName);
+  const dateKey = useMemo(() => new Date().toISOString().split("T")[0], []);
+
   const widgetData = useMemo(() => {
-    const widgets = [];
-
-    const todayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
-    const isWorkoutDay = workoutDays.includes(todayName);
-
-    const workoutWidgetData = {
-      today: {
-        is_workout_day: isWorkoutDay,
-        day_name: todayName,
-        workout: { completed: todayBurned > 0 },
+    const widgets: any[] = [];
+    widgets.push({
+      type: "workout",
+      data: {
+        today: { is_workout_day: isWorkoutDay, day_name: todayName },
+        user: { is_new_user: isNewUser },
+        last_week_same_day: lastWeekWorkout,
       },
-      user: {
-        is_new_user: isNewUser,
-      },
-      last_week_same_day: lastWeekWorkout,
-    };
-
-    widgets.push({ type: 'workout', data: workoutWidgetData });
-
-    if (smartSuggestion) {
-      widgets.push({ type: 'suggestion', data: smartSuggestion });
-    }
-
-    widgets.push({ type: 'tip', data: null });
-
+    });
+    if (smartSuggestion) widgets.push({ type: "suggestion", data: smartSuggestion });
+    widgets.push({ type: "tip", data: null });
     return widgets;
-  }, [lastWeekWorkout, isNewUser, todayBurned, smartSuggestion, workoutDays]);
+  }, [lastWeekWorkout, isNewUser, isWorkoutDay, todayName, smartSuggestion]);
+
+  const tips = useMemo(
+    () => [
+      { icon: "💧", title: "Hydration Reminder", message: "Drink 2L of water before lunch for better energy levels throughout the day." },
+      { icon: "🍖", title: "Protein Power", message: "High protein breakfast = better muscle gains and less hunger during the day." },
+      { icon: "😴", title: "Recovery Matters", message: "7-8 hours of quality sleep speeds up muscle recovery by 30%." },
+      { icon: "🔥", title: "Consistency Wins", message: "Small daily progress beats occasional perfection. Stay consistent!" },
+    ],
+    []
+  );
+  const dailyTip = useMemo(() => tips[new Date().getDate() % tips.length], [tips]);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -374,62 +212,75 @@ export default function Home() {
 
   const loadWorkoutWidget = useCallback(async () => {
     try {
-      const historyStr = await AsyncStorage.getItem('WORKOUT_HISTORY');
+      const historyStr = await AsyncStorage.getItem("WORKOUT_HISTORY");
 
-      // Check if new user
       if (!historyStr || JSON.parse(historyStr).length === 0) {
         setIsNewUser(true);
         setLastWeekWorkout(null);
+        setStreakDays(0);
         return;
       }
 
       const history = JSON.parse(historyStr);
       setIsNewUser(false);
 
-      // Get same day last week
       const lastWeek = new Date();
       lastWeek.setDate(lastWeek.getDate() - 7);
-      const lastWeekDate = lastWeek.toISOString().split('T')[0];
+      const lastWeekDate = lastWeek.toISOString().split("T")[0];
+      const lastWeekWorkouts = history.filter((w: any) => w.date === lastWeekDate);
 
-      const lastWeekWorkouts = history.filter(
-        (w: any) => w.date === lastWeekDate
+      setLastWeekWorkout(
+        lastWeekWorkouts.length === 0
+          ? null
+          : {
+              exercises: lastWeekWorkouts.map((w: any) => ({ name: w.exerciseName })),
+              total_duration: lastWeekWorkouts.reduce((s: number, w: any) => s + (w.duration || 0), 0),
+              total_calories_burned: lastWeekWorkouts.reduce((s: number, w: any) => s + (w.caloriesBurned || 0), 0),
+            }
       );
 
-      if (lastWeekWorkouts.length === 0) {
-        setLastWeekWorkout(null);
-        return;
+      // Consecutive-day streak, counted back from today, based on logged
+      // workout dates in history. Real streak logic — not a placeholder.
+      const loggedDates = new Set(history.map((w: any) => w.date));
+      let streak = 0;
+      const cursor = new Date();
+      if (!loggedDates.has(cursor.toISOString().split("T")[0])) {
+        cursor.setDate(cursor.getDate() - 1);
       }
-
-      setLastWeekWorkout({
-        exercises: lastWeekWorkouts.map((w: any) => ({
-          name: w.exerciseName
-        })),
-        total_duration: lastWeekWorkouts.reduce(
-          (s: number, w: any) => s + (w.duration || 0), 0
-        ),
-        total_calories_burned: lastWeekWorkouts.reduce(
-          (s: number, w: any) => s + (w.caloriesBurned || 0), 0
-        ),
-      });
-
+      while (loggedDates.has(cursor.toISOString().split("T")[0])) {
+        streak += 1;
+        cursor.setDate(cursor.getDate() - 1);
+      }
+      setStreakDays(streak);
     } catch (e) {
-      console.log('Workout widget error:', e);
+      console.log("Workout widget error:", e);
     }
   }, []);
 
-  useEffect(() => {
-    const todayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
-    const suggestion = generateSmartSuggestion({
-      todayName,
-      workoutDays,
-      todayEaten,
-      adjustedGoal,
-      todayBurned,
-    });
-    setSmartSuggestion(suggestion);
-  }, [todayEaten, adjustedGoal, todayBurned, workoutDays]);
+  const loadWater = useCallback(async () => {
+    try {
+      const stored = await AsyncStorage.getItem(`WATER_INTAKE_${dateKey}`);
+      setWaterMl(stored ? parseInt(stored, 10) : 0);
+    } catch (e) {
+      console.log("Water widget error:", e);
+    }
+  }, [dateKey]);
 
-  // Auto-rotate widgets
+  const addWater = useCallback(async () => {
+    const next = waterMl + 250;
+    setWaterMl(next);
+    try {
+      await AsyncStorage.setItem(`WATER_INTAKE_${dateKey}`, String(next));
+    } catch (e) {
+      console.log("Water save error:", e);
+    }
+  }, [waterMl, dateKey]);
+
+  useEffect(() => {
+    const suggestion = generateSmartSuggestion({ todayName, workoutDays, todayEaten, adjustedGoal, todayBurned });
+    setSmartSuggestion(suggestion);
+  }, [todayEaten, adjustedGoal, todayBurned, workoutDays, todayName]);
+
   useEffect(() => {
     const startAutoRotate = () => {
       autoRotateTimer.current = setInterval(() => {
@@ -440,30 +291,21 @@ export default function Home() {
           flatListRef.current?.scrollToIndex({ index: nextIndex, animated: true });
           return nextIndex;
         });
-      }, 30000); // 30 seconds
+      }, 30000);
     };
-
     startAutoRotate();
-
     return () => {
-      if (autoRotateTimer.current) {
-        clearInterval(autoRotateTimer.current);
-      }
+      if (autoRotateTimer.current) clearInterval(autoRotateTimer.current);
     };
   }, [widgetData.length]);
 
-  // Handle manual scroll — only updates the tracked index.
   const onScroll = (event: any) => {
     const index = Math.round(event.nativeEvent.contentOffset.x / SLIDE_WIDTH);
     setCurrentWidgetIndex(index);
   };
 
-  // Timer only resets once a manual swipe actually finishes, instead of on
-  // every scroll frame.
   const onMomentumScrollEnd = () => {
-    if (autoRotateTimer.current) {
-      clearInterval(autoRotateTimer.current);
-    }
+    if (autoRotateTimer.current) clearInterval(autoRotateTimer.current);
     autoRotateTimer.current = setInterval(() => {
       setCurrentWidgetIndex((prev) => {
         const len = widgetData.length;
@@ -483,20 +325,19 @@ export default function Home() {
         setLoading(false);
         return;
       }
-
       const photoURL = currentUser?.photoURL;
-      if (photoURL) setUserPhoto(photoURL.split('=')[0]);
-      setUserName(currentUser?.displayName || name || 'User');
+      if (photoURL) setUserPhoto(photoURL.split("=")[0]);
+      setUserName(currentUser?.displayName || name || "User");
       setGreeting(getGreeting());
 
       await loadWorkoutWidget();
-
+      await loadWater();
     } catch (error) {
-      console.log('Error:', error);
+      console.log("Error:", error);
     } finally {
       setLoading(false);
     }
-  }, [loadWorkoutWidget, name]);
+  }, [loadWorkoutWidget, loadWater, name]);
 
   useEffect(() => {
     refreshData();
@@ -510,677 +351,527 @@ export default function Home() {
   );
 
   const dailyProgress = progressPercent;
+  const kcalRemaining = Math.max(Math.round(adjustedGoal - netCalories), 0);
+  const macroTargets = getMacroTargets(adjustedGoal);
+  const macroConsumed = getMacroConsumed(todayEaten);
+
+  const renderFocusSlide = (item: any, index: number) => {
+    if (item.type === "workout") {
+      const isWD = item.data.today.is_workout_day;
+      const newUser = item.data.user.is_new_user;
+      const lastWeek = item.data.last_week_same_day;
+
+      if (isWD && lastWeek) {
+        return (
+          <FocusCard
+            colors={colors}
+            rotation={quickActionRotate}
+            eyebrow="WORKOUT FOCUS"
+            icon="⚡"
+            accentColor={colors.primary}
+            title="Today's Workout Plan"
+            message={`Last ${item.data.today.day_name} you did ${lastWeek.exercises.length} exercise${lastWeek.exercises.length === 1 ? "" : "s"} · ${lastWeek.total_duration} min · ~${lastWeek.total_calories_burned} kcal burned.`}
+            actionLabel="Start Workout"
+            onPress={() => router.push("/(tabs)/workout")}
+            meta={`${lastWeek.total_duration} MIN\nSESSION`}
+            activeIndex={index}
+            total={widgetData.length}
+          />
+        );
+      }
+      if (isWD) {
+        return (
+          <FocusCard
+            colors={colors}
+            rotation={quickActionRotate}
+            eyebrow="DAY 1 FOCUS"
+            icon="⚡"
+            accentColor={colors.primary}
+            title={newUser ? "Start Your Journey" : "Today's Workout"}
+            message={
+              newUser
+                ? "The perfect day to ignite your routine. 7-8 hours of deep restorative sleep speeds recovery by 30%."
+                : `${item.data.today.day_name} is a scheduled workout day — no history logged for it yet.`
+            }
+            actionLabel="Browse Guided Exercises"
+            onPress={() => router.push("/(tabs)/workout")}
+            meta={"3 MIN\nREAD"}
+            activeIndex={index}
+            total={widgetData.length}
+          />
+        );
+      }
+      return (
+        <FocusCard
+          colors={colors}
+          rotation={quickActionRotate}
+          eyebrow="REST DAY"
+          icon="😴"
+          accentColor={colors.success}
+          title="Recovery Mode"
+          message="Your muscles need proper recovery to grow stronger. Stay hydrated, stretch lightly, and get 7-8 hours of sleep."
+          actionLabel="View Progress"
+          onPress={() => router.push("/(tabs)/stats")}
+          meta={"REST\nDAY"}
+          activeIndex={index}
+          total={widgetData.length}
+        />
+      );
+    }
+
+    if (item.type === "suggestion" && item.data) {
+      const s = item.data;
+      return (
+        <FocusCard
+          colors={colors}
+          rotation={quickActionRotate}
+          eyebrow="SMART FOCUS"
+          icon={s.icon || "✨"}
+          accentColor={s.color || colors.secondary}
+          title={s.title}
+          message={`${s.message} ${s.suggestion || ""}`.trim()}
+          actionLabel={s.action || "View Details"}
+          onPress={s.actionRoute ? () => router.push(s.actionRoute as any) : undefined}
+          meta={"TAILORED\nFOR YOU"}
+          activeIndex={index}
+          total={widgetData.length}
+        />
+      );
+    }
+
+    return (
+      <FocusCard
+        colors={colors}
+        rotation={quickActionRotate}
+        eyebrow="DAILY TIP"
+        icon={dailyTip.icon}
+        accentColor={colors.accent}
+        title={dailyTip.title}
+        message={dailyTip.message}
+        actionLabel="Track Your Stats"
+        onPress={() => router.push("/(tabs)/stats")}
+        meta={"3 MIN\nREAD"}
+        activeIndex={index}
+        total={widgetData.length}
+      />
+    );
+  };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={styles.container}>
       <StatusBar barStyle={theme === "dark" ? "light-content" : "dark-content"} />
 
       <SafeAreaView style={styles.safeArea}>
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           {/* HEADER */}
           <View style={styles.header}>
             <View style={styles.profileSection}>
               <View style={styles.avatarContainer}>
                 {userPhoto ? (
-                  <Image
-                    source={{ uri: userPhoto }}
-                    style={styles.avatarImage}
-                    onError={() => setUserPhoto(null)}
-                  />
+                  <Image source={{ uri: userPhoto }} style={styles.avatarImage} onError={() => setUserPhoto(null)} />
                 ) : (
-                  <LinearGradient
-                    colors={[colors.secondary, colors.primary]}
-                    style={styles.avatarGradient}
-                  >
-                    <Text style={styles.avatarText}>
-                      {userName.charAt(0).toUpperCase()}
-                    </Text>
+                  <LinearGradient colors={[colors.primary, colors.accent]} style={styles.avatarGradient}>
+                    <Text style={styles.avatarText}>{userName.charAt(0).toUpperCase()}</Text>
                   </LinearGradient>
                 )}
                 <View style={styles.onlineDot} />
               </View>
               <View>
-                <Text style={[styles.welcomeLabel, { color: colors.textSecondary }]}>
-                  {greeting}
-                </Text>
+                <Text style={styles.welcomeLabel}>{greeting}</Text>
                 <Text style={[styles.userName, { color: colors.text }]}>{userName}</Text>
               </View>
             </View>
-            {/* <TouchableOpacity
-              style={[styles.notificationButton, { backgroundColor: colors.card }]}
-              onPress={() => Alert.alert('Notifications', 'No new notifications')}
+
+            <View style={styles.headerRight}>
+              <View style={styles.streakPill}>
+                <Text style={styles.streakPillNumber}>{streakDays}</Text>
+                <Text style={styles.streakPillLabel}>Days</Text>
+              </View>
+              <TouchableOpacity style={styles.bellButton} onPress={() => router.push("/(tabs)/profile-setup")}>
+                <Ionicons name="notifications-outline" size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* FOCUS CAROUSEL (workout / smart suggestion / daily tip) */}
+          <View style={styles.widgetSlideWrapper}>
+            <FlatList
+              ref={flatListRef}
+              data={widgetData}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              decelerationRate="fast"
+              getItemLayout={(_, index) => ({ length: SLIDE_WIDTH, offset: SLIDE_WIDTH * index, index })}
+              onScroll={onScroll}
+              onMomentumScrollEnd={onMomentumScrollEnd}
+              scrollEventThrottle={16}
+              renderItem={({ item, index }) => (
+                <View style={styles.widgetSlide}>{renderFocusSlide(item, index)}</View>
+              )}
+              keyExtractor={(_, index) => `focus-${index}`}
+            />
+          </View>
+
+
+          {/* TODAY'S BALANCE */}
+          <View style={styles.balanceCardWrap}>
+            <View pointerEvents="none" style={styles.ambientGlowWrap}>
+              <Svg width={360} height={360}>
+                <Defs>
+                  <SvgRadialGradient id="balanceGlow" cx="50%" cy="50%" r="50%">
+                    <Stop offset="0%" stopColor={colors.primary} stopOpacity={theme === "dark" ? 0.32 : 0.2} />
+                    <Stop offset="55%" stopColor={colors.primary} stopOpacity={theme === "dark" ? 0.14 : 0.09} />
+                    <Stop offset="100%" stopColor={colors.primary} stopOpacity={0} />
+                  </SvgRadialGradient>
+                </Defs>
+                <Circle cx={180} cy={180} r={180} fill="url(#balanceGlow)" />
+              </Svg>
+            </View>
+
+            <LinearGradient
+              colors={
+                theme === "dark"
+                  ? ["rgba(30,30,30,0.78)", "rgba(13,13,14,0.62)", "rgba(13,13,14,0.78)"]
+                  : ["rgba(255,255,255,0.72)", "rgba(255,249,245,0.58)", "rgba(255,255,255,0.72)"]
+              }
+              start={{ x: 0, y: 1 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.balanceCard}
             >
-              <Ionicons name="notifications-outline" size={24} color={colors.text} />
-            </TouchableOpacity> */}
-          </View>
-
-          {/* AUTO-ROTATING WIDGET CAROUSEL */}
-          <View style={styles.widgetContainer}>
-            <View style={styles.widgetSlideWrapper}>
-              <FlatList
-                ref={flatListRef}
-                data={widgetData}
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                decelerationRate="fast"
-                getItemLayout={(data, index) => ({
-                  length: SLIDE_WIDTH,
-                  offset: SLIDE_WIDTH * index,
-                  index,
-                })}
-                onScroll={onScroll}
-                onMomentumScrollEnd={onMomentumScrollEnd}
-                scrollEventThrottle={16}
-                renderItem={({ item, index }) => (
-                  <View style={styles.widgetSlide}>
-                    <WidgetCard
-                      type={item.type}
-                      data={item.data}
-                      colors={colors}
-                      isActive={currentWidgetIndex === index}
-                    />
-                  </View>
-                )}
-                keyExtractor={(item, index) => `widget-${index}`}
+              <BlurView
+                pointerEvents="none"
+                intensity={theme === "dark" ? 28 : 45}
+                tint={theme === "dark" ? "dark" : "light"}
+                style={StyleSheet.absoluteFill}
               />
-            </View>
-
-            {/* Dot Indicators */}
-            <View style={styles.dotContainer}>
-              {widgetData.map((_, index) => (
-                <View
-                  key={index}
-                  style={[
-                    styles.dot,
-                    {
-                      backgroundColor: currentWidgetIndex === index
-                        ? colors.primary
-                        : colors.textMuted,
-                      width: currentWidgetIndex === index ? 20 : 8,
-                    },
-                  ]}
-                />
-              ))}
-            </View>
-          </View>
-
-          {/* TODAY'S BALANCE CARD */}
-          <View style={[styles.balanceCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={styles.balanceHeader}>
-              <Ionicons name="stats-chart" size={24} color={colors.primary} />
-              <Text style={[styles.balanceTitle, { color: colors.text }]}>Today's Balance</Text>
-            </View>
-
-            <View style={styles.balanceRow}>
-              <View style={styles.balanceItem}>
-                <Text style={[styles.balanceLabel, { color: colors.textSecondary }]}>Eaten</Text>
-                <Text style={[styles.balanceValue, { color: colors.text }]}>{todayEaten} kcal</Text>
+           
+            <View style={styles.balanceHeaderRow}>
+              
+              <View style={styles.balanceHeaderLeft}>
+                <Ionicons name="stats-chart" size={18} color={colors.primary} />
+                <Text style={[styles.balanceTitle, { color: colors.text }]}>Today's Balance</Text>
               </View>
-              <View style={styles.balanceItem}>
-                <Text style={[styles.balanceLabel, { color: colors.textSecondary }]}>Goal</Text>
-                <Text style={[styles.balanceValue, { color: colors.text }]}>{adjustedGoal} kcal</Text>
-              </View>
-              <View style={styles.balanceItem}>
-                <Text style={[styles.balanceLabel, { color: colors.textSecondary }]}>Burned</Text>
-                <Text style={[styles.balanceValue, { color: colors.text }]}>{todayBurned} kcal</Text>
+              <View style={styles.goalPill}>
+                <Text style={styles.goalPillText}>{Math.round(dailyProgress)}% of daily goal</Text>
               </View>
             </View>
 
-            <View style={styles.netCaloriesContainer}>
-              <Text style={[styles.netCaloriesLabel, { color: colors.textSecondary }]}>Net</Text>
-              <Text style={[styles.netCaloriesValue, { color: colors.primary }]}>
+            <View style={styles.kcalRow}>
+              <Text style={styles.kcalValue}>{kcalRemaining.toLocaleString()}</Text>
+              <Text style={styles.kcalUnit}>KCAL LEFT</Text>
+            </View>
+
+            <View style={styles.statRow}>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{todayEaten}</Text>
+                <Text style={styles.statLabel}>EATEN</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={[styles.statValue, { color: colors.primary }]}>{adjustedGoal}</Text>
+                <Text style={styles.statLabel}>GOAL</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{todayBurned}</Text>
+                <Text style={styles.statLabel}>BURNED</Text>
+              </View>
+            </View>
+
+            <View style={styles.netRow}>
+              <Text style={styles.netLabel}>Net intake</Text>
+              <Text style={styles.netValue}>
                 {netCalories} / {adjustedGoal} kcal
               </Text>
             </View>
-
-            {/* Progress Bar */}
-            <View style={[styles.progressBarBg, { backgroundColor: colors.border }]}>
-              <View
-                style={[
-                  styles.progressBarFill,
-                  {
-                    backgroundColor: colors.primary,
-                    width: `${Math.min(dailyProgress, 100)}%`,
-                  },
-                ]}
-              />
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${Math.min(dailyProgress, 100)}%` }]} />
             </View>
-            <Text style={[styles.progressText, { color: colors.textSecondary }]}>
-              {Math.round(dailyProgress)}% of daily goal
-            </Text>
+
+            <View style={styles.macroRow}>
+              <View style={styles.macroPill}>
+                <View style={styles.macroHeaderRow}>
+                  <View style={[styles.macroDot, { backgroundColor: colors.primary }]} />
+                  <Text style={styles.macroLabel}>Protein</Text>
+                </View>
+                <Text style={styles.macroValue}>
+                  {macroConsumed.protein}/{macroTargets.protein}g
+                </Text>
+              </View>
+              <View style={styles.macroPill}>
+                <View style={styles.macroHeaderRow}>
+                  <View style={[styles.macroDot, { backgroundColor: colors.secondary }]} />
+                  <Text style={styles.macroLabel}>Carbs</Text>
+                </View>
+                <Text style={styles.macroValue}>
+                  {macroConsumed.carbs}/{macroTargets.carbs}g
+                </Text>
+              </View>
+              <View style={styles.macroPill}>
+                <View style={styles.macroHeaderRow}>
+                  <View style={[styles.macroDot, { backgroundColor: colors.accent }]} />
+                  <Text style={styles.macroLabel}>Fats</Text>
+                </View>
+                <Text style={styles.macroValue}>
+                  {macroConsumed.fats}/{macroTargets.fats}g
+                </Text>
+              </View>
+            </View>
+            </LinearGradient>
           </View>
 
           {/* QUICK ACTIONS */}
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Quick Actions</Text>
+          <View style={styles.sectionHeaderRow}>
+            <View>
+              <Text style={styles.sectionTitle}>QUICK ACTIONS</Text>
+              <View style={styles.sectionUnderline} />
+            </View>
+            <TouchableOpacity onPress={() => router.push("/(tabs)/history")}>
+              <Text style={styles.sectionLink}>Log activity</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.quickActionsGrid}>
-            <TouchableOpacity
-              style={[styles.quickAction, { backgroundColor: `${colors.primary}15` }]}
-              onPress={() => router.push('/(tabs)/calories')}
-            >
-              <View style={[styles.quickActionIcon, { backgroundColor: colors.card }]}>
-                <Ionicons name="restaurant-outline" size={24} color={colors.primary} />
-              </View>
-              <Text style={[styles.quickActionLabel, { color: colors.text }]}>Log Food</Text>
+            <TouchableOpacity style={styles.quickAction} onPress={() => router.push("/(tabs)/calories")}>
+                <View style={[styles.quickActionIcon, { backgroundColor: colors.primary }]}>
+                  <Ionicons name="restaurant" size={20} color={colors.background} />
+                </View>
+                <Text style={[styles.quickActionLabel, { color: colors.text }]}>Log Food</Text>
+                <Text style={styles.quickActionSub}>+ Meals</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.quickAction, { backgroundColor: `${colors.accent}15` }]}
-              onPress={() => router.push('/(tabs)/water')}
-            >
-              <View style={[styles.quickActionIcon, { backgroundColor: colors.card }]}>
-                <Ionicons name="water-outline" size={24} color={colors.accent} />
-              </View>
-              <Text style={[styles.quickActionLabel, { color: colors.text }]}>Add Water</Text>
+            <TouchableOpacity style={styles.quickAction} onPress={addWater}>
+                <View style={[styles.quickActionIcon, { backgroundColor: colors.secondary }]}>
+                  <Ionicons name="water" size={20} color={colors.background} />
+                </View>
+                <Text style={[styles.quickActionLabel, { color: colors.text }]}>Add Water</Text>
+                <Text style={styles.quickActionSub}>+250 ml</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.quickAction, { backgroundColor: `${colors.secondary}15` }]}
-              onPress={() => router.push('/(tabs)/workout')}
-            >
-              <View style={[styles.quickActionIcon, { backgroundColor: colors.card }]}>
-                <Ionicons name="barbell-outline" size={24} color={colors.secondary} />
-              </View>
-              <Text style={[styles.quickActionLabel, { color: colors.text }]}>Workout</Text>
+            <TouchableOpacity style={styles.quickAction} onPress={() => router.push("/(tabs)/workout")}>
+                <View style={[styles.quickActionIcon, { backgroundColor: colors.primary }]}>
+                  <Ionicons name="barbell" size={20} color={colors.background} />
+                </View>
+                <Text style={[styles.quickActionLabel, { color: colors.text }]}>Workout</Text>
+                <Text style={styles.quickActionSub}>Start now</Text>
             </TouchableOpacity>
           </View>
 
-          <View style={{ height: 100 }} />
         </ScrollView>
       </SafeAreaView>
 
       {loading && <CustomLoader fullScreen />}
       <BannerAd
-        unitId={__DEV__ ? TestIds.BANNER : 'ca-app-pub-5710308532604049/1229186685'}
+        unitId={__DEV__ ? TestIds.BANNER : "ca-app-pub-5710308532604049/1229186685"}
         size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
         requestOptions={{ requestNonPersonalizedAdsOnly: true }}
       />
     </View>
-
-
   );
 }
 
 const makeStyles = (colors: any) =>
   StyleSheet.create({
-    container: {
-      flex: 1,
-    },
-    safeArea: {
-      flex: 1,
-    },
+    container: { flex: 1, backgroundColor: colors.background },
+    safeArea: { flex: 1 },
     scrollContent: {
-      padding: 16,
-      paddingTop: Platform.OS === 'ios' ? 60 : 20,
-      paddingBottom: 100,
+      paddingHorizontal: 16,
+      paddingTop: Platform.OS === "ios" ? 76 : 36,
+      paddingBottom: 24,
     },
+
+    // Header
     header: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 16,
-      marginTop: Platform.OS === 'ios' ? 24 : 28,
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 18,
     },
-    profileSection: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-    },
-    avatarContainer: {
-      position: 'relative',
-      width: 42,
-      height: 42,
-    },
+    profileSection: { flexDirection: "row", alignItems: "center", gap: 10 },
+    avatarContainer: { position: "relative", width: 42, height: 42 },
     avatarGradient: {
       width: 42,
       height: 42,
       borderRadius: 21,
-      justifyContent: 'center',
-      alignItems: 'center',
-      borderWidth: 2,
-      borderColor: '#FFFFFF',
+      justifyContent: "center",
+      alignItems: "center",
     },
-    avatarImage: {
-      width: 42,
-      height: 42,
-      borderRadius: 21,
-      borderWidth: 2,
-      borderColor: '#FFFFFF',
-    },
-    avatarText: {
-      fontSize: 18,
-      fontWeight: '800',
-      color: '#FFFFFF',
-    },
+    avatarImage: { width: 42, height: 42, borderRadius: 21 },
+    avatarText: { fontSize: 16, fontWeight: "800", color: colors.background },
     onlineDot: {
-      position: 'absolute',
-      bottom: 1,
-      right: 1,
+      position: "absolute",
+      bottom: 0,
+      right: 0,
       width: 10,
       height: 10,
       borderRadius: 5,
-      backgroundColor: '#10B981',
+      backgroundColor: colors.success,
       borderWidth: 2,
-      borderColor: '#FFFFFF',
+      borderColor: colors.background,
     },
     welcomeLabel: {
-      fontSize: 12,
-      fontWeight: '600',
-      letterSpacing: 0.5,
+      fontSize: 10.5,
+      fontWeight: "700",
+      letterSpacing: 0.8,
+      color: colors.textMuted,
+      textTransform: "uppercase",
       marginBottom: 2,
     },
-    userName: {
-      fontSize: 16,
-      fontWeight: '700',
+    userName: { fontSize: 16, fontWeight: "800" },
+    headerRight: { flexDirection: "row", alignItems: "center", gap: 10 },
+    streakPill: {
+      paddingHorizontal: 14,
+      paddingVertical: 6,
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: colors.primary + "55",
+      backgroundColor: colors.card,
+      alignItems: "center",
     },
-    notificationButton: {
-      width: 48,
-      height: 48,
-      borderRadius: 16,
-      justifyContent: 'center',
-      alignItems: 'center',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.05,
-      shadowRadius: 8,
-      elevation: 2,
+    streakPillNumber: { fontSize: 14, fontWeight: "900", color: colors.text, lineHeight: 16 },
+    streakPillLabel: { fontSize: 9, fontWeight: "700", color: colors.textSecondary, textTransform: "uppercase" },
+    bellButton: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor: colors.card,
+      alignItems: "center",
+      justifyContent: "center",
     },
-    // Widget Carousel
-    widgetContainer: {
-      marginBottom: 24,
-    },
-    // Wrapper that escapes the ScrollView's horizontal padding (padding: 16)
-    // so each slide is the TRUE full device width — required for Option 1's
-    // "hide neighbor via overflow" trick to work.
-    widgetSlideWrapper: {
-      width: SLIDE_WIDTH,
-      marginLeft: -16,
-      overflow: 'hidden',
-    },
-    // Each FlatList item is a full-width slot; the card is centered inside it.
-    widgetSlide: {
-      width: SLIDE_WIDTH,
-      alignItems: 'center',
-    },
-    widgetCard: {
-      marginVertical: 12,
-      padding: 16,
+
+    // Focus carousel
+    widgetSlideWrapper: { width: SLIDE_WIDTH, marginLeft: -16, marginBottom: 18 },
+    widgetSlide: { width: SLIDE_WIDTH, paddingHorizontal: 16 },
+    focusCardWrap: {
       width: CARD_WIDTH,
-      height: 320,
-      alignSelf: 'center',
-      borderRadius: 24,
-      borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.18)',
-      shadowColor: '#000000',
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.14,
-      shadowRadius: 14,
-      elevation: 5,
-      overflow: 'hidden',
-      justifyContent: 'space-between',
-    },
-    featureCard: {
-      marginVertical: 12,
-      padding: 16,
-      width: CARD_WIDTH,
-      height: 320,
-      alignSelf: 'center',
-      borderRadius: 24,
-      borderWidth: 1,
-      overflow: 'hidden',
-      shadowColor: '#000000',
-      shadowOffset: { width: 0, height: 10 },
-      shadowOpacity: 0.16,
-      shadowRadius: 16,
-      elevation: 6,
-      position: 'relative',
-      justifyContent: 'space-between',
-    },
-    activeCard: {
-      transform: [{ scale: 1.01 }],
-      zIndex: 2,
-      shadowOpacity: 0.24,
-      shadowRadius: 20,
-      elevation: 10,
-    },
-    featureDecor: {
-      position: 'absolute',
-      top: -36,
-      right: -28,
-      width: 128,
-      height: 128,
-      borderRadius: 64,
-      backgroundColor: 'rgba(255,255,255,0.14)',
-      borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.2)',
-    },
-    featureHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 14,
-      zIndex: 1,
-    },
-    featureIconWrap: {
-      width: 50,
-      height: 50,
-      borderRadius: 16,
-      justifyContent: 'center',
-      alignItems: 'center',
-      backgroundColor: 'rgba(255,255,255,0.2)',
-      borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.24)',
-      marginRight: 12,
-    },
-    featureHeaderText: {
-      flex: 1,
-    },
-    featureEyebrow: {
-      fontSize: 11,
-      fontWeight: '700',
-      letterSpacing: 1.2,
-      color: 'rgba(255,255,255,0.9)',
-      textTransform: 'uppercase',
-      marginBottom: 4,
-    },
-    widgetHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 28,
-    },
-
-    iconContainer: {
-      width: 60,
-      height: 60,
-      borderRadius: 30,
-
-      justifyContent: 'center',
-      alignItems: 'center',
-
-      borderWidth: 1.5,
-      borderColor: '#FF8A00',
-
-      shadowColor: '#FF8A00',
-      shadowOpacity: 0.8,
-      shadowRadius: 10,
-
-      elevation: 10,
-    },
-
-    widgetTitle: {
-      fontSize: 19,
-      fontWeight: '800',
-      color: colors.text,
-      flexShrink: 1,
-      textShadowColor: 'rgba(0,0,0,0.2)',
-      textShadowOffset: { width: 0, height: 1 },
-      textShadowRadius: 2,
-    },
-
-    lineContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginTop: 12,
-    },
-
-    line: {
-      width: 90,
-      height: 8,
-      borderRadius: 10,
-      backgroundColor: '#FF8A00',
-    },
-
-    dot: {
-      width: 12,
-      height: 12,
-      borderRadius: 6,
-      backgroundColor: '#FF8A00',
-      marginLeft: 12,
-    },
-
-    widgetMessage: {
-      fontSize: 15,
-      lineHeight: 22,
-      fontWeight: '500',
-      color: colors.text,
-      marginBottom: 10,
-    },
-
-    widgetSubtitle: {
-      fontSize: 13,
-      lineHeight: 20,
-      color: colors.textSecondary,
-      marginBottom: 14,
-      zIndex: 1,
-    },
-
-    buttonLeft: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-
-    smallIconContainer: {
-      width: 45,
-      height: 45,
+      minHeight: 168,
       borderRadius: 22,
+      padding: 1,
+      overflow: "hidden",
+    },
+    focusCardBorder: {
+      ...StyleSheet.absoluteFillObject,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    focusCardGradient: { width: 520, height: 520 },
+    focusCard: {
+      width: "100%",
+      borderRadius: 21,
+      borderWidth: 0,
+      padding: 18,
+      minHeight: 168,
+    },
+    focusHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+    focusEyebrowRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+    focusEyebrow: { fontSize: 11, fontWeight: "900", letterSpacing: 0.6, textTransform: "uppercase" },
+    dotIndicatorRow: { flexDirection: "row", gap: 5 },
+    dotIndicator: { height: 6, borderRadius: 3 },
+    focusTitle: { fontSize: 18, fontWeight: "800", marginBottom: 6 },
+    focusMessage: { fontSize: 13, lineHeight: 19, marginBottom: 14 },
+    focusDivider: { height: 1, backgroundColor: colors.border, marginBottom: 12 },
+    focusFooterRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" },
+    focusActionRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+    focusActionText: { fontSize: 13, fontWeight: "800" },
+    focusMeta: { fontSize: 10, fontWeight: "700", color: colors.textMuted, textAlign: "right", textTransform: "uppercase", lineHeight: 13 },
 
-      justifyContent: 'center',
-      alignItems: 'center',
-
-      borderWidth: 1.5,
-      borderColor: '#FF8A00',
-
-      marginRight: 10,
-    },
-
-    widgetButtonText: {
-      fontSize: 15,
-      fontWeight: '700',
-      color: colors.text,
-      letterSpacing: 0.2,
-    },
-
-    widgetIcon: {
-      fontSize: 28,
-    },
-    exercisesList: {
-      gap: 8,
-      marginBottom: 12,
-    },
-    exerciseItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-    },
-    exerciseText: {
-      fontSize: 14,
-      fontWeight: '600',
-      color: '#FFF',
-    },
-    widgetStats: {
-      flexDirection: 'row',
-      gap: 16,
-      marginBottom: 16,
-    },
-    widgetStatText: {
-      fontSize: 13,
-      fontWeight: '600',
-      color: 'rgba(255,255,255,0.9)',
-    },
-    widgetButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      borderWidth: 1,
-      borderRadius: 16,
-      paddingVertical: 12,
-      paddingHorizontal: 14,
-      backgroundColor: 'rgba(255,255,255,0.18)',
-      shadowOpacity: 0.18,
-      shadowRadius: 6,
-      elevation: 3,
-      marginTop: 8,
-      borderColor: 'rgba(255,255,255,0.22)',
-    },
-    featureButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      borderWidth: 1,
-      borderRadius: 16,
-      paddingVertical: 12,
-      paddingHorizontal: 14,
-      backgroundColor: 'rgba(255,255,255,0.18)',
-      shadowOpacity: 0.18,
-      shadowRadius: 6,
-      elevation: 3,
-      marginTop: 8,
-      borderColor: 'rgba(255,255,255,0.22)',
-      zIndex: 1,
-    },
-    suggestionMessage: {
-      fontSize: 15,
-      lineHeight: 22,
-      fontWeight: '600',
-      color: '#F8FAFC',
-      marginBottom: 10,
-      zIndex: 1,
-    },
-    suggestionBody: {
-      zIndex: 1,
-    },
-    suggestionQuoteBox: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      backgroundColor: 'rgba(255,255,255,0.12)',
-      borderRadius: 16,
-      padding: 10,
-      borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.18)',
-      marginBottom: 10,
-    },
-    suggestionSubtitle: {
-      fontSize: 13,
-      lineHeight: 20,
-      color: 'rgba(255,255,255,0.9)',
-      marginLeft: 6,
-      flex: 1,
-    },
-
-    dotContainer: {
-      flexDirection: 'row',
-      justifyContent: 'center',
-      gap: 8,
-      marginTop: 16,
-    },
-
-    //  Card
-    balanceCard: {
-      borderRadius: 20,
-      padding: 20,
-      marginBottom: 24,
-      borderWidth: 1,
-    },
-    balanceHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
-      marginBottom: 16,
-    },
-    balanceTitle: {
-      fontSize: 18,
-      fontWeight: '700',
-    },
-    balanceRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      marginBottom: 16,
-    },
-    balanceItem: {
-      alignItems: 'center',
-    },
-    balanceLabel: {
-      fontSize: 12,
-      marginBottom: 4,
-    },
-    balanceValue: {
-      fontSize: 16,
-      fontWeight: '700',
-    },
-    netCaloriesContainer: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 12,
-    },
-    netCaloriesLabel: {
-      fontSize: 14,
-      fontWeight: '600',
-    },
-    netCaloriesValue: {
-      fontSize: 18,
-      fontWeight: '800',
-    },
-    progressBarBg: {
-      height: 8,
-      borderRadius: 4,
-      overflow: 'hidden',
-      marginBottom: 8,
-    },
-    progressBarFill: {
-      height: '100%',
-      borderRadius: 4,
-    },
-    progressText: {
-      fontSize: 12,
-      textAlign: 'center',
-    },
-    // Quick Actions
-    sectionHeader: {
-      marginBottom: 16,
-    },
-    sectionTitle: {
-      fontSize: 18,
-      fontWeight: '700',
-    },
-    quickActionsGrid: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 12,
+    // Balance card
+    balanceCardWrap: {
+      position: "relative",
       marginBottom: 20,
     },
+    ambientGlowWrap: {
+      position: "absolute",
+      top: -96,
+      left: "50%",
+      marginLeft: -180,
+      width: 360,
+      height: 360,
+      zIndex: 0,
+    },
+    balanceCard: {
+      borderRadius: 24,
+      padding: 20,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: "hidden",
+      zIndex: 1,
+    },
+    balanceHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 },
+    balanceHeaderLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
+    balanceTitle: { fontSize: 16, fontWeight: "800" },
+    goalPill: {
+      maxWidth: 110,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 12,
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    goalPillText: { fontSize: 10, fontWeight: "700", color: colors.primary, textAlign: "right" },
+
+    kcalRow: { flexDirection: "row", alignItems: "baseline", gap: 8, marginBottom: 18 },
+    kcalValue: { fontSize: 38, fontWeight: "900", color: colors.text },
+    kcalUnit: { fontSize: 12, fontWeight: "700", color: colors.textMuted, letterSpacing: 0.5 },
+
+    statRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 18 },
+    statItem: { alignItems: "center", flex: 1 },
+    statValue: { fontSize: 18, fontWeight: "800", color: colors.text, marginBottom: 4 },
+    statLabel: { fontSize: 10, fontWeight: "700", color: colors.textMuted, letterSpacing: 0.5 },
+
+    netRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },
+    netLabel: { fontSize: 12, color: colors.textMuted },
+    netValue: { fontSize: 12, color: colors.textMuted, fontWeight: "600" },
+    progressTrack: {
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: colors.border,
+      overflow: "hidden",
+      marginBottom: 18,
+    },
+    progressFill: { height: "100%", borderRadius: 3, backgroundColor: colors.primary },
+
+    macroRow: { flexDirection: "row", gap: 10 },
+    macroPill: {
+      flex: 1,
+      backgroundColor: colors.card,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 10,
+    },
+    macroHeaderRow: { flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 6 },
+    macroDot: { width: 6, height: 6, borderRadius: 3 },
+    macroLabel: { fontSize: 10.5, color: colors.textSecondary, fontWeight: "600" },
+    macroValue: { fontSize: 13, fontWeight: "800", color: colors.text },
+
+    // Quick actions
+    sectionHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 },
+    sectionTitle: { fontSize: 12.5, fontWeight: "900", color: colors.text, letterSpacing: 0.8 },
+    sectionUnderline: { width: 18, height: 2, borderRadius: 1, backgroundColor: colors.primary, marginTop: 5 },
+    sectionLink: { fontSize: 12, fontWeight: "600", color: colors.textMuted },
+
+    quickActionsGrid: { flexDirection: "row", gap: 10, marginBottom: 12 },
     quickAction: {
-      width: (width - 52) / 2,
-      padding: 16,
-      borderRadius: 16,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
+      flex: 1,
+      backgroundColor: colors.card,
+      borderRadius: 20,
+      paddingVertical: 16,
+      paddingHorizontal: 10,
+      alignItems: "center",
+      gap: 6,
+      overflow: "hidden",
+      borderWidth: 1,
+      borderColor: colors.border,
     },
     quickActionIcon: {
       width: 40,
       height: 40,
-      borderRadius: 12,
-      justifyContent: 'center',
-      alignItems: 'center',
+      borderRadius: 20,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 4,
     },
-    quickActionLabel: {
-      fontSize: 14,
-      fontWeight: '600',
-    },
-    // Bottom Navigation
-    navItem: {
-      alignItems: 'center',
-      gap: 4,
-    },
-    navText: {
-      fontSize: 10,
-      fontWeight: '700',
-      letterSpacing: 0.5,
-    },
+    quickActionLabel: { fontSize: 12.5, fontWeight: "800" },
+    quickActionSub: { fontSize: 10, fontWeight: "600", color: colors.textMuted },
   });
