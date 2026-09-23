@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const NOTIFICATION_IDS_KEY = 'WATER_NOTIFICATION_IDS';
 const LAST_DRINK_KEY       = 'WATER_LAST_DRINK_TIME';
 const CHANNEL_ID           = 'water-reminders';
+const FIRST_OPEN_KEY       = 'WATER_NOTIFICATIONS_INITIALIZED';
 
 // ─── Android channel setup ────────────────────────────────
 export async function setupNotificationChannel() {
@@ -26,6 +27,20 @@ export async function requestNotificationPermission(): Promise<boolean> {
   if (existing === 'granted') return true;
   const { status } = await Notifications.requestPermissionsAsync();
   return status === 'granted';
+}
+
+// Initialize notification support once without repeatedly prompting the user.
+export async function onFirstAppOpen() {
+  try {
+    const initialized = await AsyncStorage.getItem(FIRST_OPEN_KEY);
+    if (initialized === 'true') return;
+
+    await setupNotificationChannel();
+    await requestNotificationPermission();
+    await AsyncStorage.setItem(FIRST_OPEN_KEY, 'true');
+  } catch (e) {
+    console.error('onFirstAppOpen error:', e);
+  }
 }
 
 // ─── Cancel all ───────────────────────────────────────────

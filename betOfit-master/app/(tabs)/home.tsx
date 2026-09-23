@@ -266,15 +266,9 @@ export default function Home() {
     }
   }, [dateKey]);
 
-  const addWater = useCallback(async () => {
-    const next = waterMl + 250;
-    setWaterMl(next);
-    try {
-      await AsyncStorage.setItem(`WATER_INTAKE_${dateKey}`, String(next));
-    } catch (e) {
-      console.log("Water save error:", e);
-    }
-  }, [waterMl, dateKey]);
+  const addWater = useCallback(() => {
+    router.push("/(tabs)/water");
+  }, []);
 
   useEffect(() => {
     const suggestion = generateSmartSuggestion({ todayName, workoutDays, todayEaten, adjustedGoal, todayBurned });

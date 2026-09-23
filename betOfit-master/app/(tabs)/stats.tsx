@@ -18,7 +18,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { Svg, Circle, Path, Line, Rect, G, Text as SvgText } from "react-native-svg";
+import { Svg, Circle, Path, Line, Rect, G, Text as SvgText, Defs, RadialGradient as SvgRadialGradient, Stop } from "react-native-svg";
 import { BlurView } from "expo-blur";
 import { useTheme } from "../../context/themecontext";
 import { CustomLoader } from '../../components/CustomLoader';
@@ -53,9 +53,38 @@ interface ExerciseStat {
 
 type PeriodType = 'week' | 'month' | 'year';
 
+function FlowingGlow({ color }: { color: string }) {
+    return (
+        <View pointerEvents="none" style={styles.flowingGlow}>
+            <Svg width="100%" height={90} viewBox="0 0 360 90">
+                <Path
+                    d="M-20 64 C55 8 118 92 194 42 S315 18 380 56"
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    opacity={0.28}
+                />
+                <Path
+                    d="M-18 78 C64 32 128 108 214 58 S318 42 380 70"
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={1}
+                    strokeLinecap="round"
+                    opacity={0.18}
+                />
+            </Svg>
+        </View>
+    );
+}
+
 export default function StatsScreen() {
     const { colors, theme } = useTheme();
     const isDark = theme === 'dark';
+    const cardSurface = isDark ? 'rgba(30,30,40,0.86)' : 'rgba(255,248,240,0.94)';
+    const cardGradientColors: [string, string, string] = isDark
+        ? ['rgba(253,117,5,0.2)', 'rgba(255,195,10,0.08)', 'rgba(30,30,40,0.94)']
+        : ['rgba(253,117,5,0.2)', 'rgba(255,195,10,0.08)', 'rgba(255,255,255,0.92)'];
 
     const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('week');
     const [userName, setUserName] = useState('Alex');
@@ -94,10 +123,34 @@ export default function StatsScreen() {
     const [trendPercentage, setTrendPercentage] = useState(12);
 
     const [loading, setLoading] = useState(true);
+    const [expandedSection, setExpandedSection] = useState<string | null>(null);
+
+    const toggleSection = (section: string) => {
+        setExpandedSection((current) => (current === section ? null : section));
+    };
+
+    const AccordionHeader = ({ section, title, icon, color = colors.primary }: { section: string; title: string; icon: keyof typeof Ionicons.glyphMap; color?: string }) => (
+        <TouchableOpacity
+            style={styles.accordionHeader}
+            onPress={() => toggleSection(section)}
+            activeOpacity={0.75}
+        >
+            <View style={styles.accordionTitleRow}>
+                <Ionicons name={icon} size={18} color={color} />
+                <Text style={[styles.accordionTitle, { color: colors.text }]}>{title}</Text>
+            </View>
+            <Ionicons
+                name={expandedSection === section ? 'caret-up-outline' : 'caret-down-outline'}
+                size={18}
+                color={expandedSection === section ? colors.primary : colors.textSecondary}
+            />
+        </TouchableOpacity>
+    );
 
     // Calculated values
     const weightLost = initialWeight - currentWeight;
     const weightToGo = currentWeight - targetWeight;
+    const periodLabel = selectedPeriod === 'week' ? 'Weekly' : selectedPeriod === 'month' ? 'Monthly' : 'Yearly';
     const progressPercentage = (() => {
         const denominator = initialWeight - targetWeight;
         if (denominator === 0) return weightToGo > 0 ? 0 : 100;
@@ -271,8 +324,19 @@ export default function StatsScreen() {
     // }
 
     return (
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
-         
+        <View style={[styles.container, { backgroundColor: isDark ? colors.background : '#FFF9F3' }]}> 
+            <View pointerEvents="none" style={styles.ambientGlowWrap}>
+                <Svg width={360} height={360}>
+                    <Defs>
+                        <SvgRadialGradient id="statsAmbientGlow" cx="50%" cy="50%" r="50%">
+                            <Stop offset="0%" stopColor={colors.primary} stopOpacity={isDark ? 0.22 : 0.08} />
+                            <Stop offset="58%" stopColor={colors.primary} stopOpacity={isDark ? 0.07 : 0.025} />
+                            <Stop offset="100%" stopColor={colors.primary} stopOpacity={0} />
+                        </SvgRadialGradient>
+                    </Defs>
+                    <Circle cx={180} cy={180} r={180} fill="url(#statsAmbientGlow)" />
+                </Svg>
+            </View>
 
             <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
 
@@ -291,9 +355,10 @@ export default function StatsScreen() {
                 <ScrollView
                     contentContainerStyle={styles.scrollContent}
                     showsVerticalScrollIndicator={false}
+                    scrollEnabled={expandedSection !== null}
                 >
                     {/* Time Period Selector */}
-                    <View style={[styles.periodSelector, { backgroundColor: colors.primaryContainerLow, borderColor: colors.border }]}>
+                    <View style={[styles.periodSelector, { backgroundColor: isDark ? 'rgba(253,117,5,0.12)' : 'rgba(253,117,5,0.1)', borderColor: colors.primary + '35' }]}> 
                         <TouchableOpacity
                             style={[styles.periodButton, selectedPeriod === 'week' && [styles.periodButtonActive, { backgroundColor: colors.primary, shadowColor: colors.primary }]]}
                             onPress={() => setSelectedPeriod('week')}
@@ -315,26 +380,33 @@ export default function StatsScreen() {
                     </View>
 
                     {/* Weight Progress Card - MOST IMPORTANT */}
-                    <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.weightCard, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(30,30,40,0.8)' : 'rgba(255,255,255,0.8)' }]}>
+                    <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.weightCard, { borderColor: colors.primary + '55', backgroundColor: cardSurface }]}> 
                         <LinearGradient
-                            colors={[colors.primary + '20', colors.primary + '05']}
+                            colors={[colors.primary + '28', colors.secondary + '14', colors.primary + '04']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
                             style={styles.weightCardGradient}
                         />
-                        <View style={styles.weightCardHeader}>
-                            <View>
-                                <Text style={[styles.weightCardTitle, { color: colors.text }]}>Weight Progress</Text>
-                                <Text style={[styles.weightCardSubtitle, { color: colors.textSecondary }]}>Target: {targetWeight} kg</Text>
+                        <FlowingGlow color={colors.primary} />
+                        <View style={styles.accordionHeader}>
+                            <View style={styles.accordionTitleRow}>
+                                <Ionicons name="trending-down" size={18} color={colors.primary} />
+                                <Text style={[styles.accordionTitle, { color: colors.text }]}>Weight Progress</Text>
                             </View>
-                            <Ionicons name="trending-down" size={28} color={colors.primary} />
                         </View>
-
-                        <View style={styles.weightRow}>
-                            <Text style={[styles.currentWeight, { color: colors.primary }]}>{currentWeight} kg</Text>
-                            <Text style={[styles.goalWeight, { color: colors.textSecondary }]}>→ {targetWeight} kg</Text>
+                        <View style={styles.weightSummaryRow}>
+                            <View>
+                                <Text style={[styles.currentWeight, { color: colors.primary }]}>{currentWeight} kg</Text>
+                                <Text style={[styles.weightCardSubtitle, { color: colors.textSecondary }]}>Goal weight: {targetWeight} kg</Text>
+                            </View>
+                            <View style={[styles.weightVisual, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '55' }]}>
+                                <Ionicons name="fitness-outline" size={20} color={colors.primary} />
+                                <Text style={[styles.weightVisualValue, { color: colors.primary }]}>{Math.round(progressPercentage)}%</Text>
+                            </View>
                         </View>
 
                         {/* Progress Bar */}
-                        <View style={[styles.progressBarContainer, { backgroundColor: colors.primaryContainerHigh }]}>
+                        <View style={[styles.progressBarContainer, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(253,117,5,0.14)' }]}> 
                             <LinearGradient
                                 colors={[colors.primary, colors.primary + 'cc']}
                                 start={{ x: 0, y: 0 }}
@@ -353,72 +425,89 @@ export default function StatsScreen() {
                                 <Text style={[styles.weightStatValue, { color: colors.text }]}>{weightToGo > 0 ? weightToGo : 0} kg</Text>
                             </View>
                             <View style={styles.weightStat}>
-                                <Text style={[styles.weightStatLabel, { color: colors.textSecondary }]}>Est. Completion</Text>
+                                <Text style={[styles.weightStatLabel, { color: colors.textSecondary }]}>Goal ETA</Text>
                                 <Text style={[styles.weightStatValue, { color: colors.text }]}>{weeksToGoal > 0 ? weeksToGoal : 0} weeks</Text>
                             </View>
                         </View>
                     </BlurView>
 
+                    {/* Compact section grid */}
+                    <View style={styles.sectionGrid}>
                     {/* Quick Stats Grid (2x2) */}
-                    <View style={styles.quickStatsGrid}>
-                        <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.quickStatCard, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(30,30,40,0.8)' : 'rgba(255,255,255,0.8)' }]}>
+                    <View style={[styles.snapshotSection, { backgroundColor: cardSurface, borderColor: colors.primary + '30' }]}> 
+                        <LinearGradient pointerEvents="none" colors={cardGradientColors} style={styles.cardGradient} />
+                        <FlowingGlow color={colors.primary} />
+                        <AccordionHeader section="quickStats" title={`${periodLabel} Snapshot`} icon="pulse-outline" />
+                        {expandedSection === 'quickStats' && <View style={styles.quickStatsGrid}>
+                        <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.quickStatCard, { borderColor: colors.border, backgroundColor: cardSurface }]}> 
+                            <LinearGradient pointerEvents="none" colors={cardGradientColors} style={styles.cardGradient} />
                             <Ionicons name="calendar-outline" size={28} color={colors.primary} />
                             <Text style={[styles.quickStatValue, { color: colors.text }]}>{workoutDaysThisWeek}</Text>
                             <Text style={[styles.quickStatLabel, { color: colors.textSecondary }]}>Workout Days</Text>
                         </BlurView>
 
-                        <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.quickStatCard, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(30,30,40,0.8)' : 'rgba(255,255,255,0.8)' }]}>
+                        <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.quickStatCard, { borderColor: colors.border, backgroundColor: cardSurface }]}> 
+                            <LinearGradient pointerEvents="none" colors={cardGradientColors} style={styles.cardGradient} />
                             <Ionicons name="bed-outline" size={28} color={colors.textSecondary} />
                             <Text style={[styles.quickStatValue, { color: colors.text }]}>{restDaysThisWeek}</Text>
                             <Text style={[styles.quickStatLabel, { color: colors.textSecondary }]}>Rest Days</Text>
                         </BlurView>
 
-                        <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.quickStatCard, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(30,30,40,0.8)' : 'rgba(255,255,255,0.8)' }]}>
+                        <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.quickStatCard, { borderColor: colors.border, backgroundColor: cardSurface }]}> 
+                            <LinearGradient pointerEvents="none" colors={cardGradientColors} style={styles.cardGradient} />
                             <Ionicons name="flame-outline" size={28} color={colors.primary} />
                             <Text style={[styles.quickStatValue, { color: colors.text }]}>{totalCalories.toLocaleString()}</Text>
-                            <Text style={[styles.quickStatLabel, { color: colors.textSecondary }]}>Calories Burned</Text>
+                            <Text style={[styles.quickStatLabel, { color: colors.textSecondary }]}>Burned</Text>
                         </BlurView>
 
-                        <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.quickStatCard, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(30,30,40,0.8)' : 'rgba(255,255,255,0.8)' }]}>
+                        <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.quickStatCard, { borderColor: colors.border, backgroundColor: cardSurface }]}> 
+                            <LinearGradient pointerEvents="none" colors={cardGradientColors} style={styles.cardGradient} />
                             <Ionicons name="water-outline" size={28} color="#3B82F6" />
                             <Text style={[styles.quickStatValue, { color: colors.text }]}>{totalWaterThisWeek.toFixed(1)}L</Text>
-                            <Text style={[styles.quickStatLabel, { color: colors.textSecondary }]}>Water Drunk</Text>
+                            <Text style={[styles.quickStatLabel, { color: colors.textSecondary }]}>Water</Text>
                         </BlurView>
+                        </View>}
                     </View>
 
                     {/* Calories Chart */}
-                    <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.chartCard, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(30,30,40,0.8)' : 'rgba(255,255,255,0.8)' }]}>
-                        <View style={styles.chartHeader}>
-                            <Text style={[styles.chartTitle, { color: colors.text }]}>🍽️ Calories Eaten</Text>
-                            <Text style={[styles.chartSubtitle, { color: colors.textSecondary }]}>Daily intake trend</Text>
-                        </View>
-                        <LineChart data={weeklyCalories} color={colors.primary} maxValue={3000} />
+                    <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.chartCard, styles.gridSection, expandedSection === 'calories' ? styles.gridSectionExpanded : styles.gridSectionCollapsed, { borderColor: colors.border, backgroundColor: cardSurface }]}> 
+                        <LinearGradient pointerEvents="none" colors={cardGradientColors} style={styles.cardGradient} />
+                        <FlowingGlow color={colors.primary} />
+                        <AccordionHeader section="calories" title="Calories" icon="restaurant-outline" />
+                        {expandedSection === 'calories' && <>
+                        <BarChart data={weeklyCalories} color={colors.primary} maxValue={3000} height={100} />
                         <Text style={[styles.chartAvg, { color: colors.textSecondary }]}>Avg: {Math.round(weeklyCalories.reduce((a, b) => a + b, 0) / 7)} kcal/day</Text>
+                        </>}
                     </BlurView>
 
                     {/* Workout Minutes Chart */}
-                    <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.chartCard, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(30,30,40,0.8)' : 'rgba(255,255,255,0.8)' }]}>
-                        <View style={styles.chartHeader}>
-                            <Text style={[styles.chartTitle, { color: colors.text }]}>💪 Workout Minutes</Text>
-                            <Text style={[styles.chartSubtitle, { color: colors.textSecondary }]}>Daily activity</Text>
-                        </View>
+                    <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.chartCard, styles.gridSection, expandedSection === 'workouts' ? styles.gridSectionExpanded : styles.gridSectionCollapsed, { borderColor: colors.border, backgroundColor: cardSurface }]}> 
+                        <LinearGradient pointerEvents="none" colors={cardGradientColors} style={styles.cardGradient} />
+                        <FlowingGlow color="#10B981" />
+                        <AccordionHeader section="workouts" title="Workout" icon="barbell-outline" color="#10B981" />
+                        {expandedSection === 'workouts' && <>
                         <BarChart data={weeklyWorkouts} color="#10B981" maxValue={120} height={100} />
                         <Text style={[styles.chartAvg, { color: colors.textSecondary }]}>Total: {weeklyWorkouts.reduce((a, b) => a + b, 0)} min this week</Text>
+                        </>}
                     </BlurView>
 
                     {/* Water Intake Chart */}
-                    <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.chartCard, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(30,30,40,0.8)' : 'rgba(255,255,255,0.8)' }]}>
-                        <View style={styles.chartHeader}>
-                            <Text style={[styles.chartTitle, { color: colors.text }]}>💧 Water Intake</Text>
-                            <Text style={[styles.chartSubtitle, { color: colors.textSecondary }]}>Daily hydration</Text>
-                        </View>
+                    <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.chartCard, styles.gridSection, expandedSection === 'water' ? styles.gridSectionExpanded : styles.gridSectionCollapsed, { borderColor: colors.border, backgroundColor: cardSurface }]}> 
+                        <LinearGradient pointerEvents="none" colors={cardGradientColors} style={styles.cardGradient} />
+                        <FlowingGlow color="#3B82F6" />
+                        <AccordionHeader section="water" title="Hydration" icon="water-outline" color="#3B82F6" />
+                        {expandedSection === 'water' && <>
                         <BarChart data={weeklyWater} color="#3B82F6" maxValue={4} height={100} />
                         <Text style={[styles.chartAvg, { color: colors.textSecondary }]}>Avg: {(weeklyWater.reduce((a, b) => a + b, 0) / 7).toFixed(1)} L/day</Text>
+                        </>}
                     </BlurView>
 
                     {/* Top Exercises */}
-                    <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.exercisesCard, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(30,30,40,0.8)' : 'rgba(255,255,255,0.8)' }]}>
-                        <Text style={[styles.sectionTitle, { color: colors.text }]}>🏆 Top Exercises This Week</Text>
+                    <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.exercisesCard, styles.gridSection, expandedSection === 'exercises' ? styles.gridSectionExpanded : styles.gridSectionCollapsed, { borderColor: colors.border, backgroundColor: cardSurface }]}> 
+                        <LinearGradient pointerEvents="none" colors={cardGradientColors} style={styles.cardGradient} />
+                        <FlowingGlow color={colors.primary} />
+                        <AccordionHeader section="exercises" title="Top Exercises" icon="trophy-outline" />
+                        {expandedSection === 'exercises' && <>
                         {topExercises.length > 0 ? (
                             topExercises.map((exercise, index) => (
                                 <View key={index} style={[styles.exerciseItem, { borderBottomColor: colors.border }]}>
@@ -430,11 +519,15 @@ export default function StatsScreen() {
                         ) : (
                             <Text style={[styles.noDataText, { color: colors.textSecondary }]}>No workouts logged this week</Text>
                         )}
+                        </>}
                     </BlurView>
 
                     {/* Streaks & Achievements */}
-                    <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.streaksCard, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(30,30,40,0.8)' : 'rgba(255,255,255,0.8)' }]}>
-                        <Text style={[styles.sectionTitle, { color: colors.text }]}>🔥 Current Streaks</Text>
+                    <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.streaksCard, styles.gridSection, expandedSection === 'streaks' ? styles.gridSectionExpanded : styles.gridSectionCollapsed, { borderColor: colors.border, backgroundColor: cardSurface }]}> 
+                        <LinearGradient pointerEvents="none" colors={cardGradientColors} style={styles.cardGradient} />
+                        <FlowingGlow color={colors.primary} />
+                        <AccordionHeader section="streaks" title="Streaks" icon="flame-outline" />
+                        {expandedSection === 'streaks' && <>
 
                         <View style={[styles.streakItem, { borderBottomColor: colors.border }]}>
                             <View style={[styles.streakIcon, { backgroundColor: colors.primary + '15' }]}>
@@ -465,7 +558,9 @@ export default function StatsScreen() {
                                 <Text style={[styles.streakValue, { color: colors.text }]}>{calorieStreak} days</Text>
                             </View>
                         </View>
+                        </>}
                     </BlurView>
+                    </View>
 
                     {/* Trend Badge */}
                     <View style={styles.trendContainer}>
@@ -484,7 +579,7 @@ export default function StatsScreen() {
                         </LinearGradient>
                     </View>
 
-                    <View style={{ height: 100 }} />
+                    <View style={{ height: 24 }} />
                 </ScrollView>
             </SafeAreaView>
 
@@ -510,7 +605,17 @@ const styles = StyleSheet.create({
     },
     scrollContent: {
         padding: 16,
-        paddingBottom: 100,
+        paddingTop: 10,
+        paddingBottom: 24,
+    },
+
+    ambientGlowWrap: {
+        position: 'absolute',
+        top: 45,
+        left: '50%',
+        marginLeft: -180,
+        width: 360,
+        height: 360,
     },
 
     // Header
@@ -519,9 +624,12 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255, 107, 74, 0.1)',
+        paddingVertical: 10,
+        marginHorizontal: 8,
+        marginBottom: 8,
+        borderRadius: 18,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.08)',
     },
     headerIcon: {
         width: 48,
@@ -530,22 +638,23 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     headerTitle: {
-        fontSize: 20,
-        fontWeight: '800',
+        fontSize: 22,
+        fontWeight: '900',
+        letterSpacing: -0.4,
     },
 
     // Period Selector
     periodSelector: {
         flexDirection: 'row',
-        borderRadius: 12,
-        padding: 4,
-        marginBottom: 20,
+        borderRadius: 16,
+        padding: 5,
+        marginBottom: 16,
         borderWidth: 1,
     },
     periodButton: {
         flex: 1,
-        paddingVertical: 10,
-        borderRadius: 8,
+        paddingVertical: 11,
+        borderRadius: 12,
         alignItems: 'center',
     },
     periodButtonActive: {
@@ -558,12 +667,67 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '600',
     },
+    sectionGroup: {
+        marginBottom: 12,
+    },
+    snapshotSection: {
+        width: '100%',
+        marginBottom: 12,
+        borderRadius: 20,
+        borderWidth: 1,
+        overflow: 'hidden',
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 5 },
+        shadowOpacity: 0.12,
+        shadowRadius: 12,
+        elevation: 3,
+    },
+    sectionGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+    },
+    gridSection: {
+        width: '48.5%',
+        borderRadius: 20,
+        borderWidth: 1,
+        overflow: 'hidden',
+        marginBottom: 10,
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 5 },
+        shadowOpacity: 0.12,
+        shadowRadius: 12,
+        elevation: 3,
+    },
+    gridSectionExpanded: {
+        width: '100%',
+    },
+    gridSectionCollapsed: {
+        padding: 0,
+    },
+    accordionHeader: {
+        minHeight: 46,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 2,
+    },
+    accordionTitleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 9,
+    },
+    accordionTitle: {
+        fontSize: 15,
+        fontWeight: '800',
+    },
 
     // Weight Card
     weightCard: {
-        borderRadius: 24,
-        padding: 20,
-        marginBottom: 20,
+        borderRadius: 22,
+        padding: 14,
+        marginBottom: 12,
         borderWidth: 1,
         overflow: 'hidden',
         position: 'relative',
@@ -575,39 +739,54 @@ const styles = StyleSheet.create({
         right: 0,
         bottom: 0,
     },
-    weightCardHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 16,
+    cardGradient: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 0,
     },
-    weightCardTitle: {
-        fontSize: 18,
-        fontWeight: '700',
+    flowingGlow: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: 90,
+        zIndex: 0,
     },
     weightCardSubtitle: {
-        fontSize: 12,
-        marginTop: 2,
+        fontSize: 11,
+        marginTop: 3,
     },
-    weightRow: {
+    weightSummaryRow: {
         flexDirection: 'row',
-        alignItems: 'baseline',
-        gap: 8,
-        marginBottom: 16,
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 10,
     },
     currentWeight: {
-        fontSize: 32,
-        fontWeight: '800',
+        fontSize: 30,
+        fontWeight: '900',
     },
-    goalWeight: {
-        fontSize: 18,
-        fontWeight: '600',
+    weightVisual: {
+        width: 58,
+        height: 58,
+        borderRadius: 29,
+        borderWidth: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 1,
+    },
+    weightVisualValue: {
+        fontSize: 10,
+        fontWeight: '800',
     },
     progressBarContainer: {
         height: 8,
         borderRadius: 4,
         overflow: 'hidden',
-        marginBottom: 20,
+        marginBottom: 12,
     },
     progressBar: {
         height: '100%',
@@ -621,13 +800,13 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     weightStatLabel: {
-        fontSize: 11,
+        fontSize: 9,
         fontWeight: '600',
         letterSpacing: 0.5,
         marginBottom: 4,
     },
     weightStatValue: {
-        fontSize: 16,
+        fontSize: 13,
         fontWeight: '700',
     },
 
@@ -635,20 +814,26 @@ const styles = StyleSheet.create({
     quickStatsGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: 12,
-        marginBottom: 20,
+        gap: 10,
+        marginBottom: 16,
     },
     quickStatCard: {
         width: (width - 44) / 2,
-        padding: 16,
-        borderRadius: 20,
+        padding: 15,
+        borderRadius: 22,
         alignItems: 'center',
         borderWidth: 1,
+        overflow: 'hidden',
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 2,
     },
     quickStatValue: {
-        fontSize: 24,
-        fontWeight: '800',
-        marginTop: 8,
+        fontSize: 23,
+        fontWeight: '900',
+        marginTop: 7,
     },
     quickStatLabel: {
         fontSize: 12,
@@ -658,13 +843,18 @@ const styles = StyleSheet.create({
 
     // Chart Card
     chartCard: {
-        borderRadius: 20,
+        borderRadius: 24,
         padding: 16,
-        marginBottom: 16,
+        marginBottom: 12,
         borderWidth: 1,
     },
     chartHeader: {
         marginBottom: 8,
+    },
+    chartTitleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
     },
     chartTitle: {
         fontSize: 16,
@@ -692,14 +882,19 @@ const styles = StyleSheet.create({
 
     // Exercises Card
     exercisesCard: {
-        borderRadius: 20,
+        borderRadius: 24,
         padding: 16,
-        marginBottom: 16,
+        marginBottom: 12,
         borderWidth: 1,
     },
     sectionTitle: {
         fontSize: 16,
         fontWeight: '700',
+    },
+    sectionTitleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
         marginBottom: 12,
     },
     exerciseItem: {
@@ -725,9 +920,9 @@ const styles = StyleSheet.create({
 
     // Streaks Card
     streaksCard: {
-        borderRadius: 20,
+        borderRadius: 24,
         padding: 16,
-        marginBottom: 16,
+        marginBottom: 12,
         borderWidth: 1,
     },
     streakItem: {
