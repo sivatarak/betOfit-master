@@ -19,20 +19,23 @@ import {
   Keyboard,
   RefreshControl,
   KeyboardAvoidingView,
+  StatusBar,
+  Animated as RNAnimated,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
-import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from "react-native-svg";
+import Svg, { Circle, Defs, RadialGradient as SvgRadialGradient, LinearGradient as SvgLinearGradient, Stop } from "react-native-svg";
 import { BlurView } from "expo-blur";
 import { searchFood as searchFoodApi, deleteFoodLog, logFoodToBackend, getTodayFoodLogs } from "../services/exerciseApi";
 import { useToday } from '../../context/todayContext';
 import { useTheme } from "../../context/themecontext";
 import { CustomLoader } from "@/components/CustomLoader";
+import { AmbientGlow } from "../../components/AmbientGlow";
 
 const { width } = Dimensions.get("window");
-const CIRCLE_SIZE = Math.min(width * 0.5, 200);
+const CIRCLE_SIZE = Math.min(width * 0.42, 156);
 
 interface FoodEntry {
   id: string;
@@ -91,7 +94,7 @@ interface WeeklyChartProps {
 
 export default function CaloriesScreen() {
   const { colors, theme } = useTheme();
-  const styles = makeStyles(colors);
+  const styles = makeStyles(colors, theme);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FoodItem[]>([]);
@@ -104,6 +107,7 @@ export default function CaloriesScreen() {
   const [waterIntake, setWaterIntake] = useState(1.5);
   const [selectedMealType, setSelectedMealType] = useState<"breakfast" | "lunch" | "dinner" | "snack">("breakfast");
   const searchInputRef = React.useRef<TextInput>(null);
+  const heroImageMotion = useRef(new RNAnimated.Value(0)).current;
   const interstitialUnitId = __DEV__ ? TestIds.INTERSTITIAL : 'ca-app-pub-5710308532604049/8371083607';
 
   // const { dailyCalorieGoal, waterGoal, bmr, tdee, weight, height, age, gender } = useProfile();
@@ -244,16 +248,24 @@ export default function CaloriesScreen() {
   }
 
   function MacroCard({ label, value, goal, color, icon, unit = "g", colors, theme }: MacroCardProps) {
-    const percentage = Math.min((value / goal) * 100, 100);
+    const percentage = Math.min(Math.max((value / goal) * 100, 0), 100);
 
     return (
-      <BlurView intensity={80} tint={theme === "dark" ? "dark" : "light"} style={[styles.macroCard, { borderColor: colors.border }]}>
-        <Ionicons name={icon as any} size={26} color={color} />
-        <Text style={[styles.macroCardLabel, { color: colors.textSecondary }]}>{label}</Text>
+      <View style={[styles.macroCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.macroCardHeader}>
+          <View style={[styles.macroIconWrap, { backgroundColor: `${color}18` }]}>
+            <Ionicons name={icon as any} size={18} color={color} />
+          </View>
+          <Text style={[styles.macroCardLabel, { color: colors.textSecondary }]}>{label}</Text>
+        </View>
         <Text style={[styles.macroCardValue, { color: colors.text }]}>
           {Math.round(value)}<Text style={[styles.macroCardUnit, { color: colors.textMuted }]}>/{goal}{unit}</Text>
         </Text>
-      </BlurView>
+        <View style={[styles.macroCardBar, { backgroundColor: colors.border }]}>
+          <View style={[styles.macroCardBarFill, { width: `${percentage}%`, backgroundColor: color }]} />
+        </View>
+        <Text style={[styles.macroCardPercentage, { color }]}>{Math.round(percentage)}% of goal</Text>
+      </View>
     );
   }
 
@@ -274,11 +286,18 @@ export default function CaloriesScreen() {
   }
 
   function MealCard({ title, calories, protein, carbs, fat, isLogged, onAddPress, items = [], onRemoveItem, colors }: MealCardProps) {
+    const mealIcon = title === "Breakfast" ? "sunny-outline" : title === "Lunch" ? "partly-sunny-outline" : "moon-outline";
+
     return (
       <View style={[styles.mealCard, !isLogged && styles.mealCardEmpty, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.mealCardContent}>
           <View style={styles.mealCardLeft}>
-            <Text style={[styles.mealCardTitle, { color: colors.text }]}>{title}</Text>
+            <View style={styles.mealCardTitleRow}>
+              <View style={[styles.mealIconWrap, { backgroundColor: `${colors.primary}16` }]}>
+                <Ionicons name={mealIcon as any} size={16} color={colors.primary} />
+              </View>
+              <Text style={[styles.mealCardTitle, { color: colors.text }]}>{title}</Text>
+            </View>
             {isLogged ? (
               <Text style={[styles.mealCardMacros, { color: colors.textSecondary }]}>
                 {calories} kcal • P:{Math.round(protein)} C:{Math.round(carbs)} F:{Math.round(fat)}
@@ -292,7 +311,7 @@ export default function CaloriesScreen() {
             isLogged ? { backgroundColor: colors.border } : { backgroundColor: colors.primary }]}
             onPress={onAddPress}
           >
-            <Ionicons name="add" size={24} color={isLogged ? colors.primary : "#FFFFFF"} />
+            <Ionicons name={isLogged ? "add" : "add-outline"} size={22} color={isLogged ? colors.primary : "#FFFFFF"} />
           </TouchableOpacity>
         </View>
 
@@ -324,6 +343,19 @@ export default function CaloriesScreen() {
   useEffect(() => {
     loadSaved();
   }, []);
+
+  useEffect(() => {
+    const loop = RNAnimated.loop(
+      RNAnimated.sequence([
+        RNAnimated.timing(heroImageMotion, { toValue: 1, duration: 4200, useNativeDriver: true }),
+        RNAnimated.timing(heroImageMotion, { toValue: 0, duration: 4200, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [heroImageMotion]);
+
+  const heroImageScale = heroImageMotion.interpolate({ inputRange: [0, 1], outputRange: [1, 1.045] });
 
 
 
@@ -531,6 +563,15 @@ export default function CaloriesScreen() {
   const dinnerCarbs = dinnerItems.reduce((sum, e) => sum + e.carbs, 0);
   const dinnerFat = dinnerItems.reduce((sum, e) => sum + e.fat, 0);
 
+  const goalProgress = Math.min(Math.max(progressPercent || 0, 0), 100);
+  const statusMessage = remainingCalories < 0
+    ? "You are over today's target"
+    : goalProgress < 30
+    ? "Fuel your day with intention"
+    : goalProgress < 80
+    ? "You are building a balanced day"
+    : "Almost at your daily target";
+
   const handleAddPress = (mealType: "breakfast" | "lunch" | "dinner" | "snack") => {
     setSelectedMealType(mealType);
     setResults([]);
@@ -627,18 +668,22 @@ export default function CaloriesScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <LinearGradient colors={[colors.background, colors.card]} style={styles.container}>
+      <StatusBar barStyle={theme === "dark" ? "light-content" : "dark-content"} />
+      <AmbientGlow />
 
       <SafeAreaView style={styles.safeArea}>
         {/* HEADER */}
-        <BlurView intensity={90} tint={theme === "dark" ? "dark" : "light"} style={[styles.header, { borderBottomColor: `${colors.primary}10` }]}>
-          <View style={styles.headerLeft}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()} accessibilityLabel="Go back">
+            <Ionicons name="arrow-back" size={18} color={colors.text} />
+          </TouchableOpacity>
+          <View style={styles.headerTitleRow}>
+            <Ionicons name="flame" size={19} color={colors.primary} />
             <Text style={[styles.headerTitle, { color: colors.text }]}>Nutrition</Text>
-
           </View>
-
-
-        </BlurView>
+        </View>
+        <Text style={[styles.statusMessage, { color: colors.textSecondary }]}>{statusMessage}</Text>
 
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -657,34 +702,35 @@ export default function CaloriesScreen() {
               />
             }
           >
-            {/* MAIN GOAL CARD */}
-            <BlurView intensity={80} tint={theme === "dark" ? "dark" : "light"} style={[styles.goalCard, { borderColor: 'rgba(255,255,255,0.3)' }]}>
-              <LinearGradient
-                colors={[colors.secondary, colors.primary]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={StyleSheet.absoluteFill}
-
+            {/* MAIN GOAL HERO */}
+            <View style={styles.goalCard}>
+              <RNAnimated.Image
+                source={{ uri: "https://images.pexels.com/photos/1640772/pexels-photo-1640772.jpeg?auto=compress&cs=tinysrgb&w=1200" }}
+                resizeMode="cover"
+                style={[styles.goalCardImage, { transform: [{ scale: heroImageScale }] }]}
               />
-              <View style={[styles.goalCardBackground, { backgroundColor: `${colors.accent}10` }]} />
+              <View style={styles.goalCardOverlay} />
               <View style={styles.goalCardContent}>
                 <CircularProgress remaining={remainingCalories} goal={adjustedGoal} eaten={todayEaten} colors={colors} />
-
-                <View style={styles.goalStats}>
-                  <View style={styles.goalStat}>
-                    <Text style={[styles.goalStatLabel, { color: colors.textSecondary }]}>Goal</Text>
-                    <Text style={[styles.goalStatValue, { color: colors.text }]}>{adjustedGoal.toLocaleString()}</Text>
-                  </View>
-                  <View style={[styles.goalStatDivider, { backgroundColor: colors.border }]} />
-                  <View style={styles.goalStat}>
-                    <Text style={[styles.goalStatLabel, { color: colors.textSecondary }]}>Eaten</Text>
-                    <Text style={[styles.goalStatValue, styles.goalStatValueEaten, { color: colors.text }]}>
-                      {todayEaten.toLocaleString()}
-                    </Text>
-                  </View>
+                <View style={styles.heroCopy}>
+                  <Ionicons name="restaurant" size={22} color={colors.primary} />
+                  <Text style={styles.heroCopyTitle}>Eat to perform</Text>
+                  <Text style={styles.heroCopyText}>Keep your energy steady with balanced meals.</Text>
                 </View>
               </View>
-            </BlurView>
+              <View style={styles.heroTelemetryBar}>
+                <Text style={styles.telemetryText}>Goal: <Text style={styles.telemetryTextStrong}>{adjustedGoal.toLocaleString()} kcal</Text></Text>
+                <Text style={styles.telemetrySeparator}>|</Text>
+                <Text style={styles.telemetryText}>Eaten: <Text style={[styles.telemetryTextStrong, { color: colors.primary }]}>{todayEaten.toLocaleString()} kcal</Text></Text>
+              </View>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${goalProgress}%`, backgroundColor: colors.primary }]} />
+              </View>
+              <View style={styles.progressLabels}>
+                <Text style={styles.progressLabel}>{Math.round(goalProgress)}% complete</Text>
+                <Text style={styles.progressLabel}>{Math.abs(Math.round(remainingCalories)).toLocaleString()} kcal {remainingCalories < 0 ? "over" : "left"}</Text>
+              </View>
+            </View>
 
 
             <View style={styles.macrosRow}>
@@ -721,6 +767,13 @@ export default function CaloriesScreen() {
 
             {/* SEARCH SECTION */}
             <View style={styles.searchSection}>
+              <View style={styles.sectionHeaderRow}>
+                <View>
+                  <Text style={[styles.sectionEyebrow, { color: colors.primary }]}>ADD FOOD</Text>
+                  <Text style={[styles.sectionLabel, { color: colors.text }]}>Find a meal</Text>
+                </View>
+                <Text style={styles.sectionHint}>Search by name</Text>
+              </View>
               <View style={[styles.searchInputWrapper, { backgroundColor: colors.card }]}>
                 <Ionicons name="search" size={20} color={colors.textMuted} />
                 <TextInput
@@ -730,7 +783,7 @@ export default function CaloriesScreen() {
                   style={[styles.searchInput, { color: colors.text }]}
                   value={query}
                   onChangeText={setQuery}
-                  onSubmitEditing={searchFood}
+                  onSubmitEditing={() => searchFood()}
                   returnKeyType="search"
                 />
                 {query.length > 0 && (
@@ -785,7 +838,13 @@ export default function CaloriesScreen() {
 
             {/* DAILY MEALS */}
             <View style={styles.mealsContainer}>
-              <Text style={[styles.mealsTitle, { color: colors.text }]}>Today's Meals</Text>
+              <View style={styles.sectionHeaderRow}>
+                <View>
+                  <Text style={[styles.sectionEyebrow, { color: colors.primary }]}>TODAY</Text>
+                  <Text style={[styles.mealsTitle, { color: colors.text }]}>Your meals</Text>
+                </View>
+                <Text style={styles.sectionHint}>{todayEntries.length} logged</Text>
+              </View>
 
               <MealCard
                 title="Breakfast"
@@ -935,14 +994,15 @@ export default function CaloriesScreen() {
       )}
       {loading && <CustomLoader fullScreen />}
 
-    </View>
+    </LinearGradient>
   );
 }
 
-const makeStyles = (colors: any) => StyleSheet.create({
+const makeStyles = (colors: any, theme: string) => StyleSheet.create({
   container: {
     flex: 1,
   },
+  ambientGlowWrap: { position: "absolute", top: -110, left: "50%", marginLeft: -180 },
   safeArea: {
     flex: 1,
     paddingTop: Platform.OS === "android" ? 24 : 0,
@@ -957,20 +1017,48 @@ const makeStyles = (colors: any) => StyleSheet.create({
   // Header
   header: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "flex-start",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+    marginBottom: 4,
   },
-  headerLeft: {
-    gap: 4,
-  },
+  headerTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: "800",
-    letterSpacing: -0.5,
   },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerIconButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  avatarButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  statusMessage: { fontSize: 12, fontWeight: "600", marginHorizontal: 16, marginBottom: 14 },
   headerDate: {
     flexDirection: "row",
     alignItems: "center",
@@ -1015,26 +1103,54 @@ const makeStyles = (colors: any) => StyleSheet.create({
 
   // Goal Card
   goalCard: {
-    marginHorizontal: 20,
-    marginTop: 16,
-    marginBottom: 24,
-    borderRadius: 24,
-    padding: 24,
+    marginHorizontal: 16,
+    marginBottom: 20,
+    borderRadius: 26,
+    padding: 14,
     overflow: "hidden",
     borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
   },
-  goalCardBackground: {
-    position: "absolute",
-    top: -96,
-    right: -96,
-    width: 192,
-    height: 192,
-    borderRadius: 96,
+  goalCardImage: { ...StyleSheet.absoluteFillObject, borderRadius: 26 },
+  goalCardOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: theme === "dark" ? "rgba(0,0,0,0.5)" : "rgba(255,255,255,0.42)",
   },
   goalCardContent: {
+    flexDirection: "row",
     alignItems: "center",
-    gap: 24,
+    justifyContent: "space-between",
+    gap: 8,
   },
+  heroCopy: { flex: 1, minWidth: 0, paddingLeft: 8, paddingRight: 2, justifyContent: "center" },
+  heroCopyTitle: { marginTop: 8, fontSize: 15, lineHeight: 18, fontWeight: "900", color: colors.text },
+  heroCopyText: { marginTop: 5, fontSize: 10.5, lineHeight: 14, fontWeight: "600", color: colors.textSecondary },
+  heroTelemetryBar: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    marginTop: 12,
+    backgroundColor: theme === "dark" ? "rgba(0,0,0,0.48)" : "rgba(255,255,255,0.72)",
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  telemetryText: { fontSize: 10.5, fontWeight: "500", color: colors.textSecondary },
+  telemetryTextStrong: { fontWeight: "800", color: colors.text },
+  telemetrySeparator: { color: colors.border, fontSize: 11 },
+  progressTrack: {
+    height: 7,
+    borderRadius: 4,
+    marginTop: 14,
+    overflow: "hidden",
+    backgroundColor: colors.card,
+  },
+  progressFill: { height: "100%", borderRadius: 4 },
+  progressLabels: { flexDirection: "row", justifyContent: "space-between", marginTop: 7 },
+  progressLabel: { fontSize: 10, fontWeight: "700", color: colors.textSecondary },
 
   // Circular Progress
   circularProgress: {
@@ -1092,48 +1208,51 @@ const makeStyles = (colors: any) => StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: 16,
     gap: 12,
-    marginBottom: 28,
+    marginBottom: 24,
   },
   macroCard: {
     flex: 1,
-    borderRadius: 20,
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    gap: 4,
+    minHeight: 132,
+    borderRadius: 16,
+    paddingVertical: 13,
+    paddingHorizontal: 11,
+    gap: 6,
     borderWidth: 1,
   },
-  macroCardLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
+  macroCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 7, width: '100%' },
+  macroIconWrap: { width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  macroCardLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
   macroCardValue: {
-    fontSize: 17,
-    fontWeight: '800',
+    width: '100%',
+    fontSize: 18,
+    fontWeight: '900',
+    marginTop: 2,
   },
-  macroCardUnit: {
-    fontSize: 12,
-    fontWeight: '400',
-  },
+  macroCardUnit: { fontSize: 11, fontWeight: '500' },
   macroCardBar: {
+    width: '100%',
     height: 4,
     borderRadius: 2,
     overflow: "hidden",
-    marginBottom: 8,
+    marginTop: 2,
   },
-  macroCardBarFill: {
-    height: "100%",
-    borderRadius: 2,
+  macroCardBarFill: { height: "100%", borderRadius: 2 },
+  macroCardPercentage: { width: '100%', fontSize: 9, fontWeight: "800" },
+
+  sectionHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    marginBottom: 10,
   },
-  macroCardPercentage: {
-    fontSize: 10,
-    fontWeight: "600",
-  },
+  sectionEyebrow: { fontSize: 9, fontWeight: "900", letterSpacing: 1.2, marginBottom: 3 },
+  sectionLabel: { fontSize: 16, fontWeight: "900" },
+  sectionHint: { fontSize: 11, fontWeight: "600", color: colors.textSecondary },
 
   // Search Section
   searchSection: {
     paddingHorizontal: 20,
-    marginBottom: 16,
+    marginBottom: 20,
   },
   searchInputWrapper: {
     flexDirection: "row",
@@ -1142,11 +1261,8 @@ const makeStyles = (colors: any) => StyleSheet.create({
     paddingHorizontal: 16,
     height: 56,
     gap: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   searchInput: {
     flex: 1,
@@ -1207,21 +1323,15 @@ const makeStyles = (colors: any) => StyleSheet.create({
     gap: 12,
   },
   mealsTitle: {
-    fontSize: 20,
-    fontWeight: "800",
-    marginBottom: 4,
-    paddingHorizontal: 4,
+    fontSize: 16,
+    fontWeight: "900",
   },
 
   // Meal Card
   mealCard: {
-    borderRadius: 20,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
   },
   mealCardEmpty: {
     borderWidth: 1,
@@ -1235,10 +1345,11 @@ const makeStyles = (colors: any) => StyleSheet.create({
   mealCardLeft: {
     flex: 1,
   },
+  mealCardTitleRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 5 },
+  mealIconWrap: { width: 28, height: 28, borderRadius: 9, alignItems: "center", justifyContent: "center" },
   mealCardTitle: {
     fontSize: 16,
     fontWeight: "700",
-    marginBottom: 4,
   },
   mealCardMacros: {
     fontSize: 13,
@@ -1248,9 +1359,9 @@ const makeStyles = (colors: any) => StyleSheet.create({
     fontStyle: "italic",
   },
   mealCardButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 16,
+    width: 38,
+    height: 38,
+    borderRadius: 13,
     justifyContent: "center",
     alignItems: "center",
   },

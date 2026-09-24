@@ -21,9 +21,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
+import Svg, { Circle, Defs, RadialGradient as SvgRadialGradient, Stop } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import auth from '@react-native-firebase/auth';
 import { useTheme } from '../../context/themecontext';
+import { AmbientGlow } from '../../components/AmbientGlow';
 import { useToday } from '../../context/todayContext';
 import { calculateCaloriesBurned, saveWorkoutToBackend } from '../services/exerciseApi';
 
@@ -549,6 +551,7 @@ export default function LogExerciseScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <AmbientGlow />
       {/* Header */}
       <ImageBackground
         source={{ uri: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800' }}
@@ -976,6 +979,7 @@ export default function LogExerciseScreen() {
 
 const makeStyles = (colors: any) => StyleSheet.create({
   container: { flex: 1 },
+  ambientGlowWrap: { position: 'absolute', top: -110, left: '50%', marginLeft: -180 },
 
   headerBg: { width: '100%', height: height * 0.38 },
   headerGradient: { flex: 1 },

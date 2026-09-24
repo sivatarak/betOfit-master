@@ -21,8 +21,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { FadeIn, FadeOut, Layout } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
+import Svg, { Circle, Defs, RadialGradient as SvgRadialGradient, Stop } from 'react-native-svg';
 import { CustomLoader } from '../../components/CustomLoader';
 import { useTheme } from '../../context/themecontext';
+import { AmbientGlow } from '../../components/AmbientGlow';
 import { fetchExercisesByMuscle } from '../services/exerciseApi';
 
 const { width } = Dimensions.get('window');
@@ -572,6 +574,7 @@ export default function ExerciseLibraryScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <AmbientGlow />
       <SafeAreaView style={styles.safeArea}>
         {/* GLASSMORPHIC HEADER */}
         <BlurView
@@ -800,6 +803,7 @@ const makeStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
   },
+  ambientGlowWrap: { position: 'absolute', top: -110, left: '50%', marginLeft: -180 },
   safeArea: {
     flex: 1,
     paddingTop: Platform.OS === 'android' ? 24 : 0,

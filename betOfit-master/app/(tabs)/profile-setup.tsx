@@ -14,6 +14,7 @@ import Svg, { Defs, RadialGradient as SvgRadialGradient, Stop, Circle, Path } fr
 import * as ImagePicker from 'expo-image-picker';
 import { STORAGE_KEYS } from "../../constants/storageKeys";
 import { useTheme } from "../../context/themecontext";
+import { AmbientGlow } from "../../components/AmbientGlow";
 import { saveProfile, getProfile } from '../services/profileApi';
 import { CustomLoader } from '../../components/CustomLoader';
 import auth from '@react-native-firebase/auth';
@@ -881,18 +882,7 @@ export default function ProfileScreen() {
     >
       <SafeAreaView style={styles.safeArea}>
         {/* Ambient glow */}
-          <View pointerEvents="none" style={styles.ambientGlowWrap}>
-               <Svg width={360} height={360}>
-                 <Defs>
-                   <SvgRadialGradient id="glow" cx="50%" cy="50%" r="50%">
-                     <Stop offset="0%" stopColor={colors.primary} stopOpacity={theme === 'dark' ? 0.32 : 0.2} />
-                     <Stop offset="55%" stopColor={colors.primary} stopOpacity={theme === 'dark' ? 0.14 : 0.09} />
-                     <Stop offset="100%" stopColor={colors.primary} stopOpacity={0} />
-                   </SvgRadialGradient>
-                 </Defs>
-                 <Circle cx={180} cy={180} r={180} fill="url(#glow)" />
-               </Svg>
-             </View>
+          <AmbientGlow />
 
         {/* Header */}
         <View style={styles.newHeader}>

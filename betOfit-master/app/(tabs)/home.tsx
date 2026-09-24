@@ -23,6 +23,7 @@ import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import auth from "@react-native-firebase/auth";
 import { useTheme } from "../../context/themecontext";
+import { AmbientGlow } from "../../components/AmbientGlow";
 import { CustomLoader } from "../../components/CustomLoader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useProfile } from "../../context/profileContext";
@@ -510,18 +511,7 @@ export default function Home() {
 
           {/* TODAY'S BALANCE */}
           <View style={styles.balanceCardWrap}>
-            <View pointerEvents="none" style={styles.ambientGlowWrap}>
-              <Svg width={360} height={360}>
-                <Defs>
-                  <SvgRadialGradient id="balanceGlow" cx="50%" cy="50%" r="50%">
-                    <Stop offset="0%" stopColor={colors.primary} stopOpacity={theme === "dark" ? 0.32 : 0.2} />
-                    <Stop offset="55%" stopColor={colors.primary} stopOpacity={theme === "dark" ? 0.14 : 0.09} />
-                    <Stop offset="100%" stopColor={colors.primary} stopOpacity={0} />
-                  </SvgRadialGradient>
-                </Defs>
-                <Circle cx={180} cy={180} r={180} fill="url(#balanceGlow)" />
-              </Svg>
-            </View>
+            <AmbientGlow />
 
             <LinearGradient
               colors={
@@ -669,7 +659,7 @@ const makeStyles = (colors: any) =>
     safeArea: { flex: 1 },
     scrollContent: {
       paddingHorizontal: 16,
-      paddingTop: Platform.OS === "ios" ? 76 : 36,
+      paddingTop: Platform.OS === "ios" ? 36 : 28,
       paddingBottom: 24,
     },
 

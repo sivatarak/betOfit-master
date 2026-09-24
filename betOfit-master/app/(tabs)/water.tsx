@@ -34,6 +34,7 @@ import { router, useFocusEffect } from "expo-router";
 import { BlurView } from "expo-blur";
 import { CustomLoader } from "../../components/CustomLoader";
 import { useTheme } from "../../context/themecontext";
+import { AmbientGlow } from "../../components/AmbientGlow";
 import {
   loadWaterData,
   addWaterIntake,
@@ -52,6 +53,7 @@ import Svg, {
   Rect,
   G,
   Defs,
+  RadialGradient as SvgRadialGradient,
   LinearGradient as SvgLinearGradient,
   Stop,
 } from "react-native-svg";
@@ -264,6 +266,7 @@ export default function WaterScreen() {
   return (
     <LinearGradient colors={[colors.background, colors.card]} style={styles.container}>
       <StatusBar barStyle={theme === "dark" ? "light-content" : "dark-content"} />
+      <AmbientGlow />
 
       <SafeAreaView
         style={styles.safeArea}
@@ -277,17 +280,12 @@ export default function WaterScreen() {
         >
           {/* HEADER */}
           <View style={styles.header}>
+            <TouchableOpacity style={styles.backButton} onPress={() => router.back()} accessibilityLabel="Go back">
+              <Ionicons name="arrow-back" size={18} color={colors.text} />
+            </TouchableOpacity>
             <View style={styles.headerTitleRow}>
               <Ionicons name="water" size={19} color={colors.primary} />
               <Text style={[styles.headerTitle, { color: colors.text }]}>Hydration</Text>
-            </View>
-            <View style={styles.headerActions}>
-              <TouchableOpacity style={styles.headerIconButton} onPress={() => router.back()} accessibilityLabel="Go back">
-                <Ionicons name="arrow-back" size={18} color={colors.text} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.avatarButton} onPress={() => router.push("/(tabs)/profile-setup")} accessibilityLabel="Open profile">
-                <Ionicons name="person" size={15} color={colors.background} />
-              </TouchableOpacity>
             </View>
           </View>
           <Text style={[styles.statusMessage, { color: colors.textSecondary }]}>{statusMessage}</Text>
@@ -592,17 +590,28 @@ const getStyles = (colors: any, theme: string) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
     safeArea: { flex: 1 },
+    ambientGlowWrap: { position: "absolute", top: -110, left: "50%", marginLeft: -180 },
     scrollContent: {
       paddingHorizontal: 16,
-      paddingTop: Platform.OS === "ios" ? 24 : 16,
+      paddingTop: Platform.OS === "ios" ? 36 : 28,
       paddingBottom: 28,
     },
 
     // Header
-    header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
+    header: { flexDirection: "row", justifyContent: "flex-start", alignItems: "center", gap: 8, marginBottom: 4 },
     headerTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
     headerTitle: { fontSize: 18, fontWeight: "800" },
     headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+    backButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     headerIconButton: {
       width: 32,
       height: 32,

@@ -19,10 +19,11 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Svg, { Path, Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
+import Svg, { Path, Circle, Defs, RadialGradient as SvgRadialGradient, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import { CustomLoader } from '../../components/CustomLoader';
 import { useTheme } from '../../context/themecontext';
+import { AmbientGlow } from '../../components/AmbientGlow';
 import { fetchExerciseById } from '../services/exerciseApi';
 
 const { width, height } = Dimensions.get('window');
@@ -532,6 +533,7 @@ export default function ExerciseDetailScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <AmbientGlow />
       {/* HERO SECTION */}
       <ImageBackground
         source={{
@@ -910,6 +912,7 @@ const makeStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
   },
+  ambientGlowWrap: { position: 'absolute', top: -110, left: '50%', marginLeft: -180 },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',

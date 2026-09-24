@@ -19,6 +19,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import Svg, { Circle, Defs, RadialGradient as SvgRadialGradient, Stop } from "react-native-svg";
 import { CustomLoader } from "@/components/CustomLoader";
 import { useTheme } from "../../context/themecontext";
+import { AmbientGlow } from "../../components/AmbientGlow";
 import { getWorkoutHistory, getFoodHistory, getWaterHistory } from "../services/profileApi";
 import auth from "@react-native-firebase/auth";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -277,20 +278,9 @@ export default function HistoryScreen() {
 
     return (
         <View style={styles.container}>
-            <StatusBar barStyle="light-content" />
+            <StatusBar barStyle={theme === "dark" ? "light-content" : "dark-content"} />
 
-            <View pointerEvents="none" style={styles.ambientGlowWrap}>
-                <Svg width={360} height={360}>
-                    <Defs>
-                        <SvgRadialGradient id="glow" cx="50%" cy="50%" r="50%">
-                            <Stop offset="0%" stopColor={colors.primary} stopOpacity={theme === "dark" ? 0.32 : 0.2} />
-                            <Stop offset="55%" stopColor={colors.primary} stopOpacity={theme === "dark" ? 0.14 : 0.09} />
-                            <Stop offset="100%" stopColor={colors.primary} stopOpacity={0} />
-                        </SvgRadialGradient>
-                    </Defs>
-                    <Circle cx={180} cy={180} r={180} fill="url(#glow)" />
-                </Svg>
-            </View>
+            <AmbientGlow />
 
             <SafeAreaView style={styles.safeArea}>
                 <ScrollView
@@ -299,12 +289,13 @@ export default function HistoryScreen() {
                 >
                     {/* HEADER */}
                     <View style={styles.header}>
-                        <Text style={[styles.headerTitle, { color: colors.text }]}>My History</Text>
-                        <TouchableOpacity onPress={openDatePicker} activeOpacity={0.85}>
-                            <LinearGradient colors={[ACCENT.orange, ACCENT.red]} style={styles.calendarButton}>
-                                <Ionicons name="calendar-outline" size={20} color="#FFFFFF" />
-                            </LinearGradient>
+                        <TouchableOpacity onPress={() => router.back()} activeOpacity={0.85} style={styles.backButton} accessibilityLabel="Go back">
+                            <Ionicons name="arrow-back" size={18} color={colors.text} />
                         </TouchableOpacity>
+                        <View style={styles.headerTitleRow}>
+                            <Ionicons name="time" size={19} color={colors.primary} />
+                            <Text style={[styles.headerTitle, { color: colors.text }]}>My History</Text>
+                        </View>
                     </View>
 
                     {/* DATE NAVIGATOR PILL */}
@@ -543,7 +534,7 @@ function formatTime(dateStr: string) {
 
 const getStyles = (colors: any, theme: string) =>
     StyleSheet.create({
-        container: { flex: 1, backgroundColor: "#000000" },
+        container: { flex: 1, backgroundColor: colors.background },
         ambientGlowWrap: {
             position: "absolute",
             top: -20,
@@ -556,7 +547,7 @@ const getStyles = (colors: any, theme: string) =>
         safeArea: { flex: 1 },
         scrollContent: {
             paddingHorizontal: 16,
-            paddingTop: Platform.OS === "ios" ? 56 : 20,
+            paddingTop: Platform.OS === "ios" ? 36 : 28,
             // Extra bottom padding so content clears the floating tab bar dock.
             paddingBottom: 120,
         },
@@ -566,9 +557,21 @@ const getStyles = (colors: any, theme: string) =>
             flexDirection: "row",
             justifyContent: "space-between",
             alignItems: "center",
-            marginBottom: 16,
+            gap: 8,
+            marginBottom: 12,
         },
-        headerTitle: { fontSize: 26, fontWeight: "800", letterSpacing: -0.5 },
+        backButton: {
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            borderWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: colors.card,
+            alignItems: "center",
+            justifyContent: "center",
+        },
+        headerTitleRow: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+        headerTitle: { fontSize: 18, fontWeight: "800" },
         calendarButton: {
             width: 40,
             height: 40,

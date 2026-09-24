@@ -47,12 +47,16 @@ export default function TabsLayout() {
         tabBarStyle: {
           display: shouldHideTabBar ? 'none' : 'flex',
           backgroundColor: colors.card,
-          height: Platform.OS === 'android' ? 60 + insets.bottom : 60,
-          paddingBottom: Platform.OS === 'android' ? insets.bottom : 0,
+          height: 64 + insets.bottom,
+          paddingTop: 5,
+          paddingBottom: Math.max(insets.bottom, 5),
           borderTopColor: colors.border,
           elevation: 0,
         },
         tabBarActiveTintColor: colors.primary,
+        tabBarItemStyle: { height: 54 },
+        tabBarIconStyle: { marginTop: 1 },
+        tabBarLabelStyle: { fontSize: 11, lineHeight: 14, marginBottom: 1 },
       }}
     >
       <Tabs.Screen
@@ -97,3 +101,4 @@ export default function TabsLayout() {
     </Tabs>
   );
 }
+

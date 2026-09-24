@@ -21,6 +21,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Svg, Circle, Path, Line, Rect, G, Text as SvgText, Defs, RadialGradient as SvgRadialGradient, Stop } from "react-native-svg";
 import { BlurView } from "expo-blur";
 import { useTheme } from "../../context/themecontext";
+import { AmbientGlow } from "../../components/AmbientGlow";
 import { CustomLoader } from '../../components/CustomLoader';
 const { width } = Dimensions.get("window");
 
@@ -81,10 +82,10 @@ function FlowingGlow({ color }: { color: string }) {
 export default function StatsScreen() {
     const { colors, theme } = useTheme();
     const isDark = theme === 'dark';
-    const cardSurface = isDark ? 'rgba(30,30,40,0.86)' : 'rgba(255,248,240,0.94)';
+    const cardSurface = colors.card;
     const cardGradientColors: [string, string, string] = isDark
-        ? ['rgba(253,117,5,0.2)', 'rgba(255,195,10,0.08)', 'rgba(30,30,40,0.94)']
-        : ['rgba(253,117,5,0.2)', 'rgba(255,195,10,0.08)', 'rgba(255,255,255,0.92)'];
+        ? [colors.primary + '12', colors.secondary + '06', colors.card]
+        : [colors.primary + '0A', colors.secondary + '04', colors.card];
 
     const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('week');
     const [userName, setUserName] = useState('Alex');
@@ -324,33 +325,22 @@ export default function StatsScreen() {
     // }
 
     return (
-        <View style={[styles.container, { backgroundColor: isDark ? colors.background : '#FFF9F3' }]}> 
-            <View pointerEvents="none" style={styles.ambientGlowWrap}>
-                <Svg width={360} height={360}>
-                    <Defs>
-                        <SvgRadialGradient id="statsAmbientGlow" cx="50%" cy="50%" r="50%">
-                            <Stop offset="0%" stopColor={colors.primary} stopOpacity={isDark ? 0.22 : 0.08} />
-                            <Stop offset="58%" stopColor={colors.primary} stopOpacity={isDark ? 0.07 : 0.025} />
-                            <Stop offset="100%" stopColor={colors.primary} stopOpacity={0} />
-                        </SvgRadialGradient>
-                    </Defs>
-                    <Circle cx={180} cy={180} r={180} fill="url(#statsAmbientGlow)" />
-                </Svg>
-            </View>
+        <View style={[styles.container, { backgroundColor: colors.background }]}> 
+            <AmbientGlow />
 
             <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
 
             <SafeAreaView style={styles.safeArea}>
                 {/* Header */}
-                <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={styles.header}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.headerIcon}>
+                <View style={styles.header}>
+                    <TouchableOpacity onPress={() => router.back()} style={[styles.headerIcon, { borderColor: colors.border, backgroundColor: colors.card }]} accessibilityLabel="Go back">
                         <Ionicons name="arrow-back" size={24} color={colors.text} />
                     </TouchableOpacity>
-                    <Text style={[styles.headerTitle, { color: colors.text }]}>Your Progress</Text>
-                    <TouchableOpacity style={styles.headerIcon}>
-                        <Ionicons name="settings-outline" size={24} color={colors.text} />
-                    </TouchableOpacity>
-                </BlurView>
+                    <View style={styles.headerTitleRow}>
+                        <Ionicons name="stats-chart" size={19} color={colors.primary} />
+                        <Text style={[styles.headerTitle, { color: colors.text }]}>Your Progress</Text>
+                    </View>
+                </View>
 
                 <ScrollView
                     contentContainerStyle={styles.scrollContent}
@@ -358,7 +348,7 @@ export default function StatsScreen() {
                     scrollEnabled={expandedSection !== null}
                 >
                     {/* Time Period Selector */}
-                    <View style={[styles.periodSelector, { backgroundColor: isDark ? 'rgba(253,117,5,0.12)' : 'rgba(253,117,5,0.1)', borderColor: colors.primary + '35' }]}> 
+                    <View style={[styles.periodSelector, { backgroundColor: colors.card, borderColor: colors.border }]}> 
                         <TouchableOpacity
                             style={[styles.periodButton, selectedPeriod === 'week' && [styles.periodButtonActive, { backgroundColor: colors.primary, shadowColor: colors.primary }]]}
                             onPress={() => setSelectedPeriod('week')}
@@ -624,23 +614,22 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: 16,
-        paddingVertical: 10,
-        marginHorizontal: 8,
-        marginBottom: 8,
-        borderRadius: 18,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.08)',
+        paddingTop: 12,
+        paddingBottom: 8,
+        marginBottom: 4,
     },
     headerIcon: {
-        width: 48,
-        height: 48,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        borderWidth: 1,
         justifyContent: 'center',
         alignItems: 'center',
     },
+    headerTitleRow: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
     headerTitle: {
-        fontSize: 22,
-        fontWeight: '900',
-        letterSpacing: -0.4,
+        fontSize: 18,
+        fontWeight: '800',
     },
 
     // Period Selector
