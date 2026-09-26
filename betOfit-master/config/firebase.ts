@@ -24,17 +24,40 @@ GoogleSignin.configure({
   scopes: ['profile', 'email'],
 });
 
-export const signInWithGoogle = async () => {
+type GoogleSignInOptions = {
+  forceAccountChooser?: boolean;
+  expectedEmail?: string;
+};
+
+export const signInWithGoogle = async (options: GoogleSignInOptions = {}) => {
   try {
     // Ensure Google Play Services is available
     await GoogleSignin.hasPlayServices();
-    
-    // Sign in and get user info
-    const userInfo = await GoogleSignin.signIn();
-    console.log('User info:', userInfo);
-    
-    // Get the idToken - THIS IS CRITICAL
-    const { idToken } = await GoogleSignin.getTokens();
+
+    if (options.forceAccountChooser) {
+      await GoogleSignin.signOut();
+    }
+
+    let googleUserInfo;
+    if (options.expectedEmail) {
+      const silentResponse = await GoogleSignin.signInSilently();
+      if (silentResponse.type !== 'success') {
+        throw new Error('No saved Google session is available. Use Continue with Google to select your account again.');
+      }
+      googleUserInfo = silentResponse.data;
+    } else {
+      const interactiveResponse = await GoogleSignin.signIn();
+      if (interactiveResponse.type === 'cancelled') return null;
+      googleUserInfo = interactiveResponse.data;
+    }
+
+    const selectedEmail = googleUserInfo.user.email;
+    if (options.expectedEmail && selectedEmail?.toLowerCase() !== options.expectedEmail.toLowerCase()) {
+      await GoogleSignin.signOut();
+      throw new Error(`The saved Google session is not ${options.expectedEmail}. Use Continue with Google to select that account.`);
+    }
+
+    const idToken = googleUserInfo.idToken || (await GoogleSignin.getTokens()).idToken;
     
     if (!idToken) {
       throw new Error('No idToken received from Google Sign-In');

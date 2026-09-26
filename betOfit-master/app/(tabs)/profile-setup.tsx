@@ -810,7 +810,11 @@ export default function ProfileScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              const recentGoogleEmail = await AsyncStorage.getItem(STORAGE_KEYS.RECENT_GOOGLE_EMAIL);
               await AsyncStorage.clear();
+              if (recentGoogleEmail) {
+                await AsyncStorage.setItem(STORAGE_KEYS.RECENT_GOOGLE_EMAIL, recentGoogleEmail);
+              }
               await auth().signOut();
               router.replace('/(auth)/google-signin');
             } catch (error) {

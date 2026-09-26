@@ -6,7 +6,6 @@ import {
   StyleSheet,
   Pressable,
   Alert,
-  ActivityIndicator,
   InteractionManager,
   SafeAreaView,
   Animated,
@@ -16,8 +15,10 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Defs, RadialGradient as SvgRadialGradient, Stop, Circle, Path } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../../context/themecontext';
 import { signInWithGoogle } from '../../config/firebase';
+import { STORAGE_KEYS } from '../../constants/storageKeys';
 
 // Adds an alpha channel to a hex color, e.g. hexToRgba('#fd7505', 0.15)
 function hexToRgba(hex: string, alpha: number) {
@@ -105,7 +106,9 @@ function PulseDot({ size, color }: { size: number; color: string }) {
 
 export default function GoogleSignInScreen() {
   const { colors, theme } = useTheme();
-  const [loading, setLoading] = useState(false);
+  const [loadingAction, setLoadingAction] = useState<'google' | 'recent' | null>(null);
+  const loading = loadingAction !== null;
+  const [recentEmail, setRecentEmail] = useState<string | null>(null);
   const styles = useMemo(() => makeStyles(colors, theme), [colors, theme]);
   const [termsPressed, setTermsPressed] = useState<'terms' | 'privacy' | null>(null);
   // Dumbbell tilt: rests at -20deg, straightens to 0deg on press/hover
@@ -148,23 +151,49 @@ export default function GoogleSignInScreen() {
   }, [spinAnim]);
   const spin = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
-  const handleGoogleSignIn = async () => {
-    setLoading(true);
+  useEffect(() => {
+    let mounted = true;
+    AsyncStorage.getItem(STORAGE_KEYS.RECENT_GOOGLE_EMAIL)
+      .then((email) => {
+        if (mounted) setRecentEmail(email);
+      })
+      .catch((error) => console.warn('Could not load recent Google account:', error));
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const completeGoogleSignIn = async (expectedEmail?: string) => {
+    setLoadingAction(expectedEmail ? 'recent' : 'google');
     try {
-      const user = await signInWithGoogle();
+      const user = await signInWithGoogle(
+        expectedEmail ? { expectedEmail } : { forceAccountChooser: true }
+      );
+      if (!user) return;
+
       console.log('✅ User signed in:', user.email);
       console.log('🆔 User UID:', user.uid);
+
+      if (user.email) {
+        setRecentEmail(user.email);
+        await AsyncStorage.setItem(STORAGE_KEYS.RECENT_GOOGLE_EMAIL, user.email)
+          .catch((error) => console.warn('Could not save recent Google account:', error));
+      }
 
       InteractionManager.runAfterInteractions(() => {
         router.replace('/(tabs)/profile-setup?mode=basic');
       });
     } catch (error: any) {
       console.error('❌ Sign-in error:', error);
-      Alert.alert('Sign-In Failed', error.message);
+      Alert.alert(expectedEmail ? 'Recent Account Unavailable' : 'Sign-In Failed', error.message);
     } finally {
-      setLoading(false);
+      setLoadingAction(null);
     }
   };
+
+  const handleGoogleSignIn = () => completeGoogleSignIn();
+  const handleRecentSignIn = () => recentEmail ? completeGoogleSignIn(recentEmail) : undefined;
 
   function GoogleGIcon({ size = 20 }: { size?: number }) {
     return (
@@ -334,7 +363,7 @@ export default function GoogleSignInScreen() {
           >
             {({ pressed, hovered }) => {
               const active = pressed || hovered;
-              return loading ? (
+              return loadingAction === 'google' ? (
                 <>
                   <LoadingRing size={18} color={colors.primary} />
                   <Text style={styles.googleButtonText}>Signing in…</Text>
@@ -350,6 +379,25 @@ export default function GoogleSignInScreen() {
             }}
           </Pressable>
         </View>
+
+        <Pressable
+          style={[styles.recentSignInButton, (!recentEmail || loading) && styles.recentSignInButtonDisabled]}
+          onPress={handleRecentSignIn}
+          disabled={!recentEmail || loading}
+        >
+          {loadingAction === 'recent' ? (
+            <LoadingRing size={19} color={colors.primary} />
+          ) : (
+            <Ionicons name="time-outline" size={19} color={colors.primary} />
+          )}
+          <View style={styles.recentSignInCopy}>
+            <Text style={styles.recentSignInTitle}>Continue with recent ID</Text>
+            <Text style={styles.recentSignInEmail} numberOfLines={1}>
+              {recentEmail || 'Available after your first sign-in'}
+            </Text>
+          </View>
+          {loadingAction !== 'recent' && <Ionicons name="arrow-forward" size={17} color={colors.textMuted} />}
+        </Pressable>
 
         <View style={styles.altSignInRow}>
           <PulseDot size={6} color={colors.success} />
@@ -588,6 +636,24 @@ const makeStyles = (colors: any, theme: 'light' | 'dark') =>
       gap: 10,
     },
     googleButtonText: { fontSize: 15, fontWeight: '700', color: colors.text },
+
+    recentSignInButton: {
+      width: '100%',
+      minHeight: 58,
+      marginTop: 10,
+      paddingHorizontal: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 11,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+    },
+    recentSignInButtonDisabled: { opacity: 0.55 },
+    recentSignInCopy: { flex: 1, minWidth: 0 },
+    recentSignInTitle: { color: colors.text, fontSize: 12, fontWeight: '700' },
+    recentSignInEmail: { color: colors.textMuted, fontSize: 10, marginTop: 2 },
 
     altSignInRow: {
       flexDirection: 'row',

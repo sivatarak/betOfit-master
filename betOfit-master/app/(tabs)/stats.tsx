@@ -21,7 +21,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { Svg, Circle, Path, Line, Rect, G, Text as SvgText, Defs, RadialGradient as SvgRadialGradient, Stop } from "react-native-svg";
 import { BlurView } from "expo-blur";
 import { useTheme } from "../../context/themecontext";
-import { AmbientGlow } from "../../components/AmbientGlow";
 import { CustomLoader } from '../../components/CustomLoader';
 const { width } = Dimensions.get("window");
 
@@ -54,38 +53,20 @@ interface ExerciseStat {
 
 type PeriodType = 'week' | 'month' | 'year';
 
-function FlowingGlow({ color }: { color: string }) {
-    return (
-        <View pointerEvents="none" style={styles.flowingGlow}>
-            <Svg width="100%" height={90} viewBox="0 0 360 90">
-                <Path
-                    d="M-20 64 C55 8 118 92 194 42 S315 18 380 56"
-                    fill="none"
-                    stroke={color}
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    opacity={0.28}
-                />
-                <Path
-                    d="M-18 78 C64 32 128 108 214 58 S318 42 380 70"
-                    fill="none"
-                    stroke={color}
-                    strokeWidth={1}
-                    strokeLinecap="round"
-                    opacity={0.18}
-                />
-            </Svg>
-        </View>
-    );
-}
+// Chart bucket labels/lengths default per period, used only until real data loads
+const getDefaultLabels = (period: PeriodType): string[] => {
+    if (period === 'week') return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    if (period === 'month') return ['W1', 'W2', 'W3', 'W4', 'W5'];
+    return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+};
 
 export default function StatsScreen() {
     const { colors, theme } = useTheme();
     const isDark = theme === 'dark';
-    const cardSurface = colors.card;
+    const cardSurface = isDark ? 'rgba(30,30,40,0.86)' : 'rgba(255,248,240,0.94)';
     const cardGradientColors: [string, string, string] = isDark
-        ? [colors.primary + '12', colors.secondary + '06', colors.card]
-        : [colors.primary + '0A', colors.secondary + '04', colors.card];
+        ? ['rgba(253,117,5,0.2)', 'rgba(255,195,10,0.08)', 'rgba(30,30,40,0.94)']
+        : ['rgba(253,117,5,0.2)', 'rgba(255,195,10,0.08)', 'rgba(255,255,255,0.92)'];
 
     const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('week');
     const [userName, setUserName] = useState('Alex');
@@ -101,11 +82,11 @@ export default function StatsScreen() {
     const [totalActiveMinutes, setTotalActiveMinutes] = useState(0);
     const [totalWater, setTotalWater] = useState(0);
 
-    // Weekly Data for Charts
-    const [weeklyCalories, setWeeklyCalories] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
-    const [weeklyWorkouts, setWeeklyWorkouts] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
-    const [weeklyWater, setWeeklyWater] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
-    const [weekLabels, setWeekLabels] = useState<string[]>(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']);
+    // Chart Data (length varies: 7 for week, 5 for month, 12 for year)
+    const [weeklyCalories, setWeeklyCalories] = useState<number[]>(getDefaultLabels('week').map(() => 0));
+    const [weeklyWorkouts, setWeeklyWorkouts] = useState<number[]>(getDefaultLabels('week').map(() => 0));
+    const [weeklyWater, setWeeklyWater] = useState<number[]>(getDefaultLabels('week').map(() => 0));
+    const [weekLabels, setWeekLabels] = useState<string[]>(getDefaultLabels('week'));
 
     // Quick Stats
     const [workoutDaysThisWeek, setWorkoutDaysThisWeek] = useState(0);
@@ -120,8 +101,8 @@ export default function StatsScreen() {
     const [waterStreak, setWaterStreak] = useState(0);
     const [calorieStreak, setCalorieStreak] = useState(0);
 
-    // Trend percentage
-    const [trendPercentage, setTrendPercentage] = useState(12);
+    // Trend percentage (period-over-period change, from API)
+    const [trendPercentage, setTrendPercentage] = useState(0);
 
     const [loading, setLoading] = useState(true);
     const [expandedSection, setExpandedSection] = useState<string | null>(null);
@@ -152,6 +133,9 @@ export default function StatsScreen() {
     const weightLost = initialWeight - currentWeight;
     const weightToGo = currentWeight - targetWeight;
     const periodLabel = selectedPeriod === 'week' ? 'Weekly' : selectedPeriod === 'month' ? 'Monthly' : 'Yearly';
+    // Actual calendar days covered by the selected period — used for "avg per day" math,
+    // which is independent of how many chart buckets (7/5/12) the data is grouped into.
+    const periodDays = selectedPeriod === 'week' ? 7 : selectedPeriod === 'month' ? 30 : 365;
     const progressPercentage = (() => {
         const denominator = initialWeight - targetWeight;
         if (denominator === 0) return weightToGo > 0 ? 0 : 100;
@@ -185,26 +169,38 @@ export default function StatsScreen() {
 
             console.log('✅ Stats loaded:', {
                 weight: stats.weight_progress,
-                charts: stats.weekly_charts,
+                charts: stats.chart_data,
                 exercises: Array.isArray(stats.top_exercises) ? stats.top_exercises.length : 0,
             });
 
             const weightProgress = stats.weight_progress || {};
-            const charts = stats.weekly_charts || {};
+            const charts = stats.chart_data || {};
             const quickStats = stats.quick_stats || {};
             const streaks = stats.streaks || {};
             const totalStats = stats.total_stats || {};
+            const comparison = stats.comparison || {};
+
+            const labels = Array.isArray(charts.labels) && charts.labels.length > 0
+                ? charts.labels.map((label: unknown) => String(label))
+                : getDefaultLabels(selectedPeriod);
+            const normalizeSeries = (series: unknown): number[] => {
+                const values = Array.isArray(series) ? series : [];
+                return labels.map((_: string, index: number) => {
+                    const value = Number(values[index] ?? 0);
+                    return Number.isFinite(value) ? value : 0;
+                });
+            };
 
             // Weight Progress
             setInitialWeight(Number(weightProgress.start_weight ?? initialWeight));
             setCurrentWeight(Number(weightProgress.current_weight ?? currentWeight));
             setTargetWeight(Number(weightProgress.target_weight ?? targetWeight));
 
-            // Weekly Charts
-            setWeeklyCalories(Array.isArray(charts.calories) && charts.calories.length === 7 ? charts.calories : [0, 0, 0, 0, 0, 0, 0]);
-            setWeeklyWorkouts(Array.isArray(charts.workouts) && charts.workouts.length === 7 ? charts.workouts : [0, 0, 0, 0, 0, 0, 0]);
-            setWeeklyWater(Array.isArray(charts.water) && charts.water.length === 7 ? charts.water : [0, 0, 0, 0, 0, 0, 0]);
-            setWeekLabels(Array.isArray(charts.labels) && charts.labels.length === 7 ? charts.labels : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']);
+            // Match each series to the labels returned for the selected period.
+            setWeeklyCalories(normalizeSeries(charts.calories_consumed));
+            setWeeklyWorkouts(normalizeSeries(charts.workout_minutes));
+            setWeeklyWater(normalizeSeries(charts.water_liters));
+            setWeekLabels(labels);
 
             // Quick Stats
             setWorkoutDaysThisWeek(Number(quickStats.workout_days ?? 0));
@@ -224,8 +220,8 @@ export default function StatsScreen() {
             // Total Stats
             setTotalActiveMinutes(Number(totalStats.total_active_minutes ?? totalActiveMinutes));
 
-            // Calculate trend (optional - based on total stats)
-            setTrendPercentage(12); // You can calculate this if needed
+            // Trend — period-over-period % change, now comes from the API
+            setTrendPercentage(Number(comparison.change_percent ?? 0));
         } catch (error) {
             console.error('❌ Error loading stats:', error);
             Alert.alert('Error', 'Failed to load stats. Please try again.');
@@ -244,36 +240,54 @@ export default function StatsScreen() {
         }, [loadStatsData])
     );
 
-    // Bar chart component
+    // Bar chart component — width/spacing now driven by data.length instead of a fixed 7,
+    // so month (5 bars) and year (12 bars) render correctly.
     const BarChart = ({ data, color, maxValue, height = 100 }: { data: number[]; color: string; maxValue: number; height?: number }) => {
         const maxDataValue = Math.max(...data, maxValue);
-        const barWidth = (width - 80) / 7 - 8;
+        const barCount = data.length || 1;
+        const chartViewportWidth = width - 80;
+        const slotWidth = Math.max(chartViewportWidth / barCount, 40);
+        const chartContentWidth = slotWidth * barCount;
+        const barWidth = slotWidth - 8;
 
         return (
-            <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', height, marginVertical: 10 }}>
-                {data.map((value, index) => {
-                    const barHeight = (value / maxDataValue) * (height - 20);
-                    return (
-                        <View key={index} style={{ alignItems: 'center', width: barWidth }}>
-                            <LinearGradient
-                                colors={[color, color + 'cc']}
-                                start={{ x: 0, y: 1 }}
-                                end={{ x: 0, y: 0 }}
-                                style={{ height: barHeight, width: barWidth - 4, borderRadius: 6 }}
-                            />
-                            <Text style={[styles.barLabel, { color: colors.textSecondary }]}>{weekLabels[index]}</Text>
-                        </View>
-                    );
-                })}
+            <View style={{ height: height + 20 }}>
+                <ScrollView
+                    horizontal
+                    nestedScrollEnabled
+                    showsHorizontalScrollIndicator={chartContentWidth > chartViewportWidth}
+                    style={{ height, flexGrow: 0 }}
+                >
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'flex-start', height, width: chartContentWidth }}>
+                        {data.map((value, index) => {
+                            const barHeight = (value / maxDataValue) * (height - 20);
+                            const rawLabel = weekLabels[index] || '';
+                            const label = selectedPeriod === 'year' ? rawLabel.slice(0, 3) : rawLabel;
+                            return (
+                                <View key={`${label}-${index}`} style={{ alignItems: 'center', justifyContent: 'flex-end', width: slotWidth, height }}>
+                                    <LinearGradient
+                                        colors={[color, color + 'cc']}
+                                        start={{ x: 0, y: 1 }}
+                                        end={{ x: 0, y: 0 }}
+                                        style={{ height: barHeight, width: barWidth, borderRadius: 6 }}
+                                    />
+                                    <Text style={[styles.barLabel, { color: colors.textSecondary, width: slotWidth }]} numberOfLines={1}>
+                                        {label}
+                                    </Text>
+                                </View>
+                            );
+                        })}
+                    </View>
+                </ScrollView>
             </View>
         );
     };
 
-    // Line chart component for calories
+    // Line chart component for calories — step now derived from data.length instead of a fixed 6.
     const LineChart = ({ data, color, maxValue }: { data: number[]; color: string; maxValue: number }) => {
         const maxDataValue = Math.max(...data, maxValue);
         const chartWidth = width - 60;
-        const stepX = chartWidth / 6;
+        const stepX = chartWidth / Math.max(data.length - 1, 1);
 
         const points = data.map((value, index) => {
             const x = 20 + (index * stepX);
@@ -325,22 +339,33 @@ export default function StatsScreen() {
     // }
 
     return (
-        <View style={[styles.container, { backgroundColor: colors.background }]}> 
-            <AmbientGlow />
+        <View style={[styles.container, { backgroundColor: isDark ? colors.background : '#FFF9F3' }]}> 
+            <View pointerEvents="none" style={styles.ambientGlowWrap}>
+                <Svg width={360} height={360}>
+                    <Defs>
+                        <SvgRadialGradient id="statsAmbientGlow" cx="50%" cy="50%" r="50%">
+                            <Stop offset="0%" stopColor={colors.primary} stopOpacity={isDark ? 0.22 : 0.08} />
+                            <Stop offset="58%" stopColor={colors.primary} stopOpacity={isDark ? 0.07 : 0.025} />
+                            <Stop offset="100%" stopColor={colors.primary} stopOpacity={0} />
+                        </SvgRadialGradient>
+                    </Defs>
+                    <Circle cx={180} cy={180} r={180} fill="url(#statsAmbientGlow)" />
+                </Svg>
+            </View>
 
             <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
 
             <SafeAreaView style={styles.safeArea}>
                 {/* Header */}
-                <View style={styles.header}>
-                    <TouchableOpacity onPress={() => router.back()} style={[styles.headerIcon, { borderColor: colors.border, backgroundColor: colors.card }]} accessibilityLabel="Go back">
+                <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={styles.header}>
+                    <TouchableOpacity onPress={() => router.back()} style={styles.headerIcon}>
                         <Ionicons name="arrow-back" size={24} color={colors.text} />
                     </TouchableOpacity>
-                    <View style={styles.headerTitleRow}>
-                        <Ionicons name="stats-chart" size={19} color={colors.primary} />
-                        <Text style={[styles.headerTitle, { color: colors.text }]}>Your Progress</Text>
-                    </View>
-                </View>
+                    <Text style={[styles.headerTitle, { color: colors.text }]}>Your Progress</Text>
+                    <TouchableOpacity style={styles.headerIcon}>
+                        <Ionicons name="settings-outline" size={24} color={colors.text} />
+                    </TouchableOpacity>
+                </BlurView>
 
                 <ScrollView
                     contentContainerStyle={styles.scrollContent}
@@ -348,7 +373,7 @@ export default function StatsScreen() {
                     scrollEnabled={expandedSection !== null}
                 >
                     {/* Time Period Selector */}
-                    <View style={[styles.periodSelector, { backgroundColor: colors.card, borderColor: colors.border }]}> 
+                    <View style={[styles.periodSelector, { backgroundColor: isDark ? 'rgba(253,117,5,0.12)' : 'rgba(253,117,5,0.1)', borderColor: colors.primary + '35' }]}> 
                         <TouchableOpacity
                             style={[styles.periodButton, selectedPeriod === 'week' && [styles.periodButtonActive, { backgroundColor: colors.primary, shadowColor: colors.primary }]]}
                             onPress={() => setSelectedPeriod('week')}
@@ -377,7 +402,6 @@ export default function StatsScreen() {
                             end={{ x: 1, y: 1 }}
                             style={styles.weightCardGradient}
                         />
-                        <FlowingGlow color={colors.primary} />
                         <View style={styles.accordionHeader}>
                             <View style={styles.accordionTitleRow}>
                                 <Ionicons name="trending-down" size={18} color={colors.primary} />
@@ -426,7 +450,6 @@ export default function StatsScreen() {
                     {/* Quick Stats Grid (2x2) */}
                     <View style={[styles.snapshotSection, { backgroundColor: cardSurface, borderColor: colors.primary + '30' }]}> 
                         <LinearGradient pointerEvents="none" colors={cardGradientColors} style={styles.cardGradient} />
-                        <FlowingGlow color={colors.primary} />
                         <AccordionHeader section="quickStats" title={`${periodLabel} Snapshot`} icon="pulse-outline" />
                         {expandedSection === 'quickStats' && <View style={styles.quickStatsGrid}>
                         <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.quickStatCard, { borderColor: colors.border, backgroundColor: cardSurface }]}> 
@@ -462,40 +485,36 @@ export default function StatsScreen() {
                     {/* Calories Chart */}
                     <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.chartCard, styles.gridSection, expandedSection === 'calories' ? styles.gridSectionExpanded : styles.gridSectionCollapsed, { borderColor: colors.border, backgroundColor: cardSurface }]}> 
                         <LinearGradient pointerEvents="none" colors={cardGradientColors} style={styles.cardGradient} />
-                        <FlowingGlow color={colors.primary} />
                         <AccordionHeader section="calories" title="Calories" icon="restaurant-outline" />
                         {expandedSection === 'calories' && <>
                         <BarChart data={weeklyCalories} color={colors.primary} maxValue={3000} height={100} />
-                        <Text style={[styles.chartAvg, { color: colors.textSecondary }]}>Avg: {Math.round(weeklyCalories.reduce((a, b) => a + b, 0) / 7)} kcal/day</Text>
+                        <Text style={[styles.chartAvg, { color: colors.textSecondary }]}>Avg: {Math.round(weeklyCalories.reduce((a, b) => a + b, 0) / periodDays)} kcal/day</Text>
                         </>}
                     </BlurView>
 
                     {/* Workout Minutes Chart */}
                     <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.chartCard, styles.gridSection, expandedSection === 'workouts' ? styles.gridSectionExpanded : styles.gridSectionCollapsed, { borderColor: colors.border, backgroundColor: cardSurface }]}> 
                         <LinearGradient pointerEvents="none" colors={cardGradientColors} style={styles.cardGradient} />
-                        <FlowingGlow color="#10B981" />
                         <AccordionHeader section="workouts" title="Workout" icon="barbell-outline" color="#10B981" />
                         {expandedSection === 'workouts' && <>
                         <BarChart data={weeklyWorkouts} color="#10B981" maxValue={120} height={100} />
-                        <Text style={[styles.chartAvg, { color: colors.textSecondary }]}>Total: {weeklyWorkouts.reduce((a, b) => a + b, 0)} min this week</Text>
+                        <Text style={[styles.chartAvg, { color: colors.textSecondary }]}>Total: {weeklyWorkouts.reduce((a, b) => a + b, 0)} min this {selectedPeriod}</Text>
                         </>}
                     </BlurView>
 
                     {/* Water Intake Chart */}
                     <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.chartCard, styles.gridSection, expandedSection === 'water' ? styles.gridSectionExpanded : styles.gridSectionCollapsed, { borderColor: colors.border, backgroundColor: cardSurface }]}> 
                         <LinearGradient pointerEvents="none" colors={cardGradientColors} style={styles.cardGradient} />
-                        <FlowingGlow color="#3B82F6" />
                         <AccordionHeader section="water" title="Hydration" icon="water-outline" color="#3B82F6" />
                         {expandedSection === 'water' && <>
                         <BarChart data={weeklyWater} color="#3B82F6" maxValue={4} height={100} />
-                        <Text style={[styles.chartAvg, { color: colors.textSecondary }]}>Avg: {(weeklyWater.reduce((a, b) => a + b, 0) / 7).toFixed(1)} L/day</Text>
+                        <Text style={[styles.chartAvg, { color: colors.textSecondary }]}>Avg: {(weeklyWater.reduce((a, b) => a + b, 0) / periodDays).toFixed(1)} L/day</Text>
                         </>}
                     </BlurView>
 
                     {/* Top Exercises */}
                     <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.exercisesCard, styles.gridSection, expandedSection === 'exercises' ? styles.gridSectionExpanded : styles.gridSectionCollapsed, { borderColor: colors.border, backgroundColor: cardSurface }]}> 
                         <LinearGradient pointerEvents="none" colors={cardGradientColors} style={styles.cardGradient} />
-                        <FlowingGlow color={colors.primary} />
                         <AccordionHeader section="exercises" title="Top Exercises" icon="trophy-outline" />
                         {expandedSection === 'exercises' && <>
                         {topExercises.length > 0 ? (
@@ -507,7 +526,7 @@ export default function StatsScreen() {
                                 </View>
                             ))
                         ) : (
-                            <Text style={[styles.noDataText, { color: colors.textSecondary }]}>No workouts logged this week</Text>
+                            <Text style={[styles.noDataText, { color: colors.textSecondary }]}>No workouts logged this {selectedPeriod}</Text>
                         )}
                         </>}
                     </BlurView>
@@ -515,7 +534,6 @@ export default function StatsScreen() {
                     {/* Streaks & Achievements */}
                     <BlurView intensity={80} tint={isDark ? "dark" : "light"} style={[styles.streaksCard, styles.gridSection, expandedSection === 'streaks' ? styles.gridSectionExpanded : styles.gridSectionCollapsed, { borderColor: colors.border, backgroundColor: cardSurface }]}> 
                         <LinearGradient pointerEvents="none" colors={cardGradientColors} style={styles.cardGradient} />
-                        <FlowingGlow color={colors.primary} />
                         <AccordionHeader section="streaks" title="Streaks" icon="flame-outline" />
                         {expandedSection === 'streaks' && <>
 
@@ -614,22 +632,23 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: 16,
-        paddingTop: 12,
-        paddingBottom: 8,
-        marginBottom: 4,
+        paddingVertical: 10,
+        marginHorizontal: 8,
+        marginBottom: 8,
+        borderRadius: 18,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.08)',
     },
     headerIcon: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        borderWidth: 1,
+        width: 48,
+        height: 48,
         justifyContent: 'center',
         alignItems: 'center',
     },
-    headerTitleRow: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
     headerTitle: {
-        fontSize: 18,
-        fontWeight: '800',
+        fontSize: 22,
+        fontWeight: '900',
+        letterSpacing: -0.4,
     },
 
     // Period Selector
@@ -734,14 +753,6 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         bottom: 0,
-        zIndex: 0,
-    },
-    flowingGlow: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: 90,
         zIndex: 0,
     },
     weightCardSubtitle: {
