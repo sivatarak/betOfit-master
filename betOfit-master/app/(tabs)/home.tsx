@@ -7,14 +7,13 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Animated,
-  Easing,
   Dimensions,
   StatusBar,
   SafeAreaView,
   Platform,
   Image,
   FlatList,
+  Animated as RNAnimated,
 } from "react-native";
 import { getDashboard } from "../services/profileApi";
 import { router, useFocusEffect } from "expo-router";
@@ -34,6 +33,13 @@ const { width } = Dimensions.get("window");
 const SLIDE_WIDTH = width;
 const CARD_WIDTH = width - 32;
 const WATER_GOAL_ML = 2500;
+const WATER_HERO_IMAGE = { uri: "https://images.pexels.com/photos/4853255/pexels-photo-4853255.jpeg?auto=compress&cs=tinysrgb&w=1200" };
+const FOOD_HERO_IMAGE = { uri: "https://images.pexels.com/photos/1640772/pexels-photo-1640772.jpeg?auto=compress&cs=tinysrgb&w=1200" };
+const WORKOUT_HERO_IMAGE = { uri: "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800" };
+const SMART_WORKOUT_IMAGE = { uri: "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=1200&q=80" };
+const PROTEIN_TIP_IMAGE = { uri: "https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&w=1200&q=80" };
+const RECOVERY_TIP_IMAGE = { uri: "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?auto=format&fit=crop&w=1200&q=80" };
+const CONSISTENCY_TIP_IMAGE = { uri: "https://images.unsplash.com/photo-1552674605-db6ffd4facb5?auto=format&fit=crop&w=1200&q=80" };
 
 // A rough, non-fabricated macro split (30% protein / 40% carbs / 30% fat of
 // the daily calorie goal) used until real per-macro tracking exists.
@@ -67,28 +73,42 @@ const FocusCard = ({
   meta,
   accentColor,
   colors,
+  theme,
   activeIndex,
   total,
-  rotation,
+  imageSource,
 }: any) => {
   const styles = makeStyles(colors);
+  const imageMotion = useRef(new RNAnimated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = RNAnimated.loop(
+      RNAnimated.sequence([
+        RNAnimated.timing(imageMotion, { toValue: 1, duration: 4200, useNativeDriver: true }),
+        RNAnimated.timing(imageMotion, { toValue: 0, duration: 4200, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [imageMotion]);
+
+  const imageScale = imageMotion.interpolate({ inputRange: [0, 1], outputRange: [1, 1.045] });
+
   return (
     <View style={styles.focusCardWrap}>
-      <Animated.View style={[styles.focusCardBorder, { transform: [{ rotate: rotation }] }]}>
-        <LinearGradient
-          colors={["transparent", accentColor + "33", accentColor, accentColor, accentColor + "33", "transparent"]}
-          locations={[0, 0.4, 0.47, 0.53, 0.6, 1]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.focusCardGradient}
-        />
-      </Animated.View>
-      <LinearGradient
-      colors={[colors.card, colors.card, colors.card]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.focusCard, { borderColor: accentColor + "35" }]}
-      >
+      <View style={[styles.focusCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
+      <RNAnimated.Image
+        source={imageSource}
+        style={[styles.focusCardImage, { transform: [{ scale: imageScale }] }]}
+        resizeMode="cover"
+      />
+      <View
+        pointerEvents="none"
+        style={[
+          StyleSheet.absoluteFill,
+          { backgroundColor: theme === "dark" ? "rgba(0,0,0,0.46)" : "rgba(255,255,255,0.38)" },
+        ]}
+      />
       <View style={styles.focusHeaderRow}>
         <View style={styles.focusEyebrowRow}>
           <Text style={{ fontSize: 13 }}>{icon}</Text>
@@ -126,7 +146,7 @@ const FocusCard = ({
         </TouchableOpacity>
         {!!meta && <Text style={styles.focusMeta}>{meta}</Text>}
       </View>
-      </LinearGradient>
+      </View>
     </View>
   );
 };
@@ -135,23 +155,6 @@ export default function Home() {
   const { colors, theme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { name, workoutDays } = useProfile();
-  const quickActionSpin = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.timing(quickActionSpin, {
-        toValue: 1,
-        duration: 1800,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      })
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [quickActionSpin]);
-
-  const quickActionRotate = quickActionSpin.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
-
   const [userName, setUserName] = useState("");
   const [greeting, setGreeting] = useState("Good morning");
   const [lastWeekWorkout, setLastWeekWorkout] = useState<any>(null);
@@ -360,7 +363,8 @@ export default function Home() {
         return (
           <FocusCard
             colors={colors}
-            rotation={quickActionRotate}
+            theme={theme}
+            imageSource={WORKOUT_HERO_IMAGE}
             eyebrow="WORKOUT FOCUS"
             icon="⚡"
             accentColor={colors.primary}
@@ -378,7 +382,8 @@ export default function Home() {
         return (
           <FocusCard
             colors={colors}
-            rotation={quickActionRotate}
+            theme={theme}
+            imageSource={WORKOUT_HERO_IMAGE}
             eyebrow="DAY 1 FOCUS"
             icon="⚡"
             accentColor={colors.primary}
@@ -399,7 +404,8 @@ export default function Home() {
       return (
         <FocusCard
           colors={colors}
-          rotation={quickActionRotate}
+          theme={theme}
+          imageSource={WORKOUT_HERO_IMAGE}
           eyebrow="REST DAY"
           icon="😴"
           accentColor={colors.success}
@@ -416,10 +422,17 @@ export default function Home() {
 
     if (item.type === "suggestion" && item.data) {
       const s = item.data;
+      const suggestionText = `${s.title} ${s.message} ${s.suggestion || ""}`.toLowerCase();
+      const suggestionImage = /water|hydrat/.test(suggestionText)
+        ? WATER_HERO_IMAGE
+        : /food|meal|protein|calorie|refuel/.test(suggestionText) || s.actionRoute?.includes("calories")
+          ? FOOD_HERO_IMAGE
+          : SMART_WORKOUT_IMAGE;
       return (
         <FocusCard
           colors={colors}
-          rotation={quickActionRotate}
+          theme={theme}
+          imageSource={suggestionImage}
           eyebrow="SMART FOCUS"
           icon={s.icon || "✨"}
           accentColor={s.color || colors.secondary}
@@ -437,7 +450,14 @@ export default function Home() {
     return (
       <FocusCard
         colors={colors}
-        rotation={quickActionRotate}
+        theme={theme}
+        imageSource={dailyTip.title.includes("Hydration")
+          ? WATER_HERO_IMAGE
+          : dailyTip.title.includes("Protein")
+            ? PROTEIN_TIP_IMAGE
+            : dailyTip.title.includes("Recovery")
+              ? RECOVERY_TIP_IMAGE
+              : CONSISTENCY_TIP_IMAGE}
         eyebrow="DAILY TIP"
         icon={dailyTip.icon}
         accentColor={colors.accent}
@@ -728,23 +748,21 @@ const makeStyles = (colors: any) =>
     focusCardWrap: {
       width: CARD_WIDTH,
       minHeight: 168,
-      borderRadius: 22,
-      padding: 1,
+      borderRadius: 21,
       overflow: "hidden",
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
     },
-    focusCardBorder: {
-      ...StyleSheet.absoluteFillObject,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    focusCardGradient: { width: 520, height: 520 },
     focusCard: {
       width: "100%",
-      borderRadius: 21,
+      borderRadius: 20,
       borderWidth: 0,
       padding: 18,
       minHeight: 168,
+      overflow: "hidden",
     },
+    focusCardImage: { ...StyleSheet.absoluteFillObject, borderRadius: 20 },
     focusHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
     focusEyebrowRow: { flexDirection: "row", alignItems: "center", gap: 6 },
     focusEyebrow: { fontSize: 11, fontWeight: "900", letterSpacing: 0.6, textTransform: "uppercase" },
