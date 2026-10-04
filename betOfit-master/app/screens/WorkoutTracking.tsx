@@ -12,7 +12,6 @@ import {
   Modal,
   FlatList,
   Dimensions,
-  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +20,7 @@ import { LineChart } from 'react-native-chart-kit';
 
 // Import the hook from the correct path
 import { useWorkoutTracking } from '../../hooks/useWorkout';
+import { CustomLoader } from '../../components/CustomLoader';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -104,10 +104,11 @@ export default function WorkoutTrackingScreen() {
   if (workoutTracking.isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <StatusBar barStyle="light-content" />
-        <LinearGradient colors={['#1a1a2e', '#16213e']} style={StyleSheet.absoluteFill} />
-        <ActivityIndicator size="large" color="#667eea" />
-        <Text style={styles.loadingText}>Loading your data...</Text>
+        <CustomLoader
+          fullScreen={false}
+          showText
+          text="Loading your workout..."
+        />
       </View>
     );
   }
@@ -814,11 +815,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#0f0f23',
-  },
-  loadingText: {
-    color: '#fff',
-    marginTop: 16,
-    fontSize: 16,
   },
   header: {
     flexDirection: 'row',

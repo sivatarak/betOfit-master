@@ -41,7 +41,7 @@ export function generateSmartSuggestion({
         message: `You're ${Math.round(caloriesDiff)} kcal over your goal.`,
         suggestion: "Do a 30-min cardio session to burn ~250 kcal!",
         action: "Start Workout",
-        actionRoute: "/(tabs)/workout",
+        actionRoute: "/(tabs)/exercise-library",
         color: "#F97316",
       };
     }
@@ -74,7 +74,7 @@ export function generateSmartSuggestion({
         message: `Today is ${todayName} - a workout day!`,
         suggestion: "Let's crush this workout!",
         action: "Start Workout",
-        actionRoute: "/(tabs)/workout",
+        actionRoute: "/(tabs)/exercise-library",
         color: "#8B5CF6",
       };
     }
@@ -88,7 +88,7 @@ export function generateSmartSuggestion({
         ? "Keep it up — small consistent days add up!"
         : "Fit in a session when you're ready.",
       action: workedOut ? null : "Start Workout",
-      actionRoute: workedOut ? null : "/(tabs)/workout",
+      actionRoute: workedOut ? null : "/(tabs)/exercise-library",
       color: "#6366F1",
     };
   }

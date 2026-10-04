@@ -1,45 +1,41 @@
 // app/(auth)/splash.tsx
-import { View, Text, Image, StyleSheet, Animated, Dimensions } from "react-native";
+import { View, Text, Image, StyleSheet, Animated } from "react-native";
 import { useEffect, useRef } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 
 import { useTheme } from "../../context/themecontext";
 
-const { width, height } = Dimensions.get("window");
-
 export default function SplashScreen() {
   const { colors, theme } = useTheme();
-  
-  // Animation values
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.9)).current;
-  const slideUpAnim = useRef(new Animated.Value(50)).current;
+  const scaleAnim = useRef(new Animated.Value(0.94)).current;
+  const slideUpAnim = useRef(new Animated.Value(18)).current;
   const lineScaleX = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // All animations with useNativeDriver: true
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 1000,
+        duration: 650,
         useNativeDriver: true,
       }),
       Animated.spring(scaleAnim, {
         toValue: 1,
-        friction: 8,
-        tension: 40,
+        friction: 9,
+        tension: 55,
         useNativeDriver: true,
       }),
       Animated.timing(slideUpAnim, {
         toValue: 0,
-        duration: 800,
-        delay: 300,
+        duration: 550,
+        delay: 100,
         useNativeDriver: true,
       }),
       Animated.timing(lineScaleX, {
         toValue: 1,
-        duration: 1200,
-        delay: 500,
+        duration: 700,
+        delay: 250,
         useNativeDriver: true,
       }),
     ]).start();
@@ -47,15 +43,12 @@ export default function SplashScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Background - Clean and minimal */}
       <LinearGradient
         colors={[colors.background, colors.card]}
         style={styles.background}
       />
 
-      {/* Main Content */}
       <View style={styles.content}>
-        {/* Logo Container */}
         <Animated.View
           style={[
             styles.logoWrapper,
@@ -65,25 +58,17 @@ export default function SplashScreen() {
                 { scale: scaleAnim },
                 { translateY: slideUpAnim }
               ],
-              shadowColor: colors.primary,
+              backgroundColor: colors.card,
             },
           ]}
         >
-          <LinearGradient
-            colors={[colors.secondary, colors.primary]}
-            style={styles.logoGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <Image
-              source={require("../../assets/images/icon.png")}
-              style={styles.logo}
-              resizeMode="contain"
-            />
-          </LinearGradient>
+          <Image
+            source={require("../../assets/images/icon.png")}
+            style={styles.logo}
+            resizeMode="contain"
+          />
         </Animated.View>
 
-        {/* App Name */}
         <Animated.Text
           style={[
             styles.title,
@@ -97,7 +82,6 @@ export default function SplashScreen() {
           BetOFit
         </Animated.Text>
 
-        {/* Decorative Line */}
         <Animated.View
           style={[
             styles.line,
@@ -112,7 +96,6 @@ export default function SplashScreen() {
           ]}
         />
 
-        {/* Subtitle */}
         <Animated.Text
           style={[
             styles.subtitle,
@@ -123,19 +106,9 @@ export default function SplashScreen() {
             },
           ]}
         >
-          fitness companion
-        </Animated.Text>
-
-        {/* Version */}
-        <Animated.Text style={[styles.version, { opacity: fadeAnim, color: colors.textMuted }]}>
-          v1.0.0
+          Rise every day. Live healthy.
         </Animated.Text>
       </View>
-
-      {/* Footer Note */}
-      <Animated.Text style={[styles.footer, { opacity: fadeAnim, color: colors.textMuted }]}>
-        © 2026 BetOFit
-      </Animated.Text>
     </View>
   );
 }
@@ -155,61 +128,43 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
   },
   logoWrapper: {
-    width: 120,
-    height: 120,
-    borderRadius: 30,
+    width: 112,
+    height: 112,
+    borderRadius: 28,
     overflow: "hidden",
-    marginBottom: 30,
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 15,
-    elevation: 10,
-  },
-  logoGradient: {
-    flex: 1,
+    marginBottom: 26,
     justifyContent: "center",
     alignItems: "center",
+    shadowOffset: {
+      width: 0,
+      height: 5,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 4,
   },
   logo: {
-    width: 70,
-    height: 70,
-    tintColor: "#FFFFFF",
+    width: 82,
+    height: 82,
   },
   title: {
-    fontSize: 42,
-    fontWeight: "400",
-    letterSpacing: 2,
-    marginBottom: 16,
+    fontSize: 34,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+    marginBottom: 14,
   },
   line: {
-    width: 60,
-    height: 1,
-    marginBottom: 16,
+    width: 44,
+    height: 3,
+    borderRadius: 2,
+    marginBottom: 14,
   },
   subtitle: {
     fontSize: 14,
-    fontWeight: "400",
-    letterSpacing: 1,
-    textTransform: "lowercase",
-    marginBottom: 40,
-  },
-  version: {
-    fontSize: 12,
-    fontWeight: "300",
-    letterSpacing: 1,
-  },
-  footer: {
-    position: "absolute",
-    bottom: 40,
-    alignSelf: "center",
-    fontSize: 11,
-    fontWeight: "300",
-    letterSpacing: 0.5,
+    fontWeight: "500",
+    letterSpacing: 0.2,
   },
 });

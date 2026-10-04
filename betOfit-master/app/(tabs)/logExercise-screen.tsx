@@ -54,6 +54,15 @@ interface LogExerciseParams {
 
 type SetTimerState = 'idle' | 'running' | 'paused';
 
+interface WorkoutSummary {
+  sets: WorkoutSet[];
+  totalCalories: number;
+  totalVolume: number;
+  totalDistance: number;
+  totalReps: number;
+  totalDuration: number;
+}
+
 const getParamValue = (value: string | string[] | undefined): string => {
   if (Array.isArray(value)) {
     return value[0] ?? '';
@@ -125,6 +134,9 @@ export default function LogExerciseScreen() {
 
   const [completedSets, setCompletedSets] = useState<WorkoutSet[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
+  const [summaryVisible, setSummaryVisible] = useState(false);
+  const [workoutSummary, setWorkoutSummary] = useState<WorkoutSummary | null>(null);
+  const [savingWorkout, setSavingWorkout] = useState(false);
   const [currentSet, setCurrentSet] = useState<WorkoutSet>(createEmptySet());
   const [notes, setNotes] = useState('');
   const [startTime] = useState(new Date());
@@ -476,15 +488,19 @@ export default function LogExerciseScreen() {
   // Save workout
   // Save workout - Save to BOTH AsyncStorage AND Database
   const saveWorkout = async () => {
-    if (completedSets.length === 0) {
-      Alert.alert('No sets', 'Complete at least one set first.');
+    if (completedSets.length === 0 || savingWorkout) {
+      if (completedSets.length === 0) {
+        Alert.alert('No sets', 'Complete at least one set first.');
+      }
       return;
     }
 
+    setSavingWorkout(true);
     try {
       const totalVolume = completedSets.reduce((sum, s) => sum + ((s.weight || 0) * (s.reps || 0)), 0);
       const totalDistance = completedSets.reduce((sum, s) => sum + (s.distance || 0), 0);
       const totalTimeSec = completedSets.reduce((sum, s) => sum + (s.actualDuration || 0), 0);
+      const totalDuration = completedSets.reduce((sum, s) => sum + (s.duration || 0), 0);
       const totalReps = completedSets.reduce((sum, s) => sum + (s.reps || 0), 0);
       const totalCalories = completedSets.reduce((sum, s) => sum + (s.caloriesBurned || 0), 0);
       console.log(`Saving workout: ${completedSets.length} sets, ${totalCalories} kcal burned`);
@@ -538,12 +554,20 @@ export default function LogExerciseScreen() {
       );
 
       Vibration.vibrate(200);
-      Alert.alert('Workout Saved!', `${completedSets.length} sets • ${totalCalories} kcal burned`, [
-        { text: 'Done', onPress: () => router.back() }
-      ]);
+      setWorkoutSummary({
+        sets: [...completedSets],
+        totalCalories,
+        totalVolume,
+        totalDistance,
+        totalReps,
+        totalDuration,
+      });
+      setSummaryVisible(true);
     } catch (err) {
       console.error('Save error:', err);
       Alert.alert('Error', 'Could not save workout');
+    } finally {
+      setSavingWorkout(false);
     }
   };
   // Calculate total calories burned so far
@@ -729,10 +753,14 @@ export default function LogExerciseScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.saveBtn} onPress={saveWorkout}>
+        <TouchableOpacity
+          style={[styles.saveBtn, savingWorkout && styles.saveBtnDisabled]}
+          onPress={saveWorkout}
+          disabled={savingWorkout}
+        >
           <LinearGradient colors={[colors.secondary, colors.primary]} style={styles.saveGradient}>
-            <Text style={styles.saveText}>FINISH WORKOUT</Text>
-            <Ionicons name="checkmark-circle" size={22} color="white" />
+            <Text style={styles.saveText}>{savingWorkout ? 'SAVING WORKOUT...' : 'FINISH WORKOUT'}</Text>
+            {!savingWorkout && <Ionicons name="checkmark-circle" size={22} color="white" />}
           </LinearGradient>
         </TouchableOpacity>
       </BlurView>
@@ -972,6 +1000,167 @@ export default function LogExerciseScreen() {
             </TouchableOpacity>
           </TouchableOpacity>
         </TouchableOpacity>
+      </Modal>
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={summaryVisible}
+        statusBarTranslucent
+        onRequestClose={() => {
+          setSummaryVisible(false);
+          router.back();
+        }}
+      >
+        <View style={styles.summaryOverlay}>
+          <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.summaryScrollContent}
+            >
+              <View style={[styles.summarySuccessIcon, { backgroundColor: `${colors.success}18` }]}>
+                <Ionicons name="checkmark-circle" size={44} color={colors.success} />
+              </View>
+              <Text style={[styles.summaryEyebrow, { color: colors.success }]}>WORKOUT SAVED</Text>
+              <Text style={[styles.summaryTitle, { color: colors.text }]}>Great work!</Text>
+              <Text style={[styles.summaryExercise, { color: colors.text }]}>{exerciseName}</Text>
+              <Text style={[styles.summarySubtitle, { color: colors.textSecondary }]}>
+                {muscle ? `${muscle} · ` : ''}{completedSets.length} {completedSets.length === 1 ? 'set' : 'sets'} completed
+              </Text>
+
+              {workoutSummary && (
+                <>
+                  <View style={styles.summaryMetrics}>
+                    <View style={[styles.summaryMetric, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                      <Ionicons name="layers-outline" size={18} color={colors.primary} />
+                      <Text style={[styles.summaryMetricValue, { color: colors.text }]}>
+                        {workoutSummary.sets.length}
+                      </Text>
+                      <Text style={[styles.summaryMetricLabel, { color: colors.textSecondary }]}>SETS</Text>
+                    </View>
+                    <View style={[styles.summaryMetric, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                      <Ionicons name="flame-outline" size={18} color={colors.warning} />
+                      <Text style={[styles.summaryMetricValue, { color: colors.text }]}>
+                        {workoutSummary.totalCalories}
+                      </Text>
+                      <Text style={[styles.summaryMetricLabel, { color: colors.textSecondary }]}>KCAL</Text>
+                    </View>
+                    {trackingMode === 'reps-weight' && (
+                      <View style={[styles.summaryMetric, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                        <Ionicons name="barbell-outline" size={18} color={colors.secondary} />
+                        <Text style={[styles.summaryMetricValue, { color: colors.text }]}>
+                          {workoutSummary.totalVolume.toLocaleString()}
+                        </Text>
+                        <Text style={[styles.summaryMetricLabel, { color: colors.textSecondary }]}>KG VOLUME</Text>
+                      </View>
+                    )}
+                    {trackingMode === 'reps-only' && (
+                      <View style={[styles.summaryMetric, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                        <Ionicons name="repeat-outline" size={18} color={colors.secondary} />
+                        <Text style={[styles.summaryMetricValue, { color: colors.text }]}>
+                          {workoutSummary.totalReps}
+                        </Text>
+                        <Text style={[styles.summaryMetricLabel, { color: colors.textSecondary }]}>REPS</Text>
+                      </View>
+                    )}
+                    {trackingMode === 'time-only' && (
+                      <View style={[styles.summaryMetric, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                        <Ionicons name="time-outline" size={18} color={colors.secondary} />
+                        <Text style={[styles.summaryMetricValue, { color: colors.text }]}>
+                          {formatTime(workoutSummary.totalDuration)}
+                        </Text>
+                        <Text style={[styles.summaryMetricLabel, { color: colors.textSecondary }]}>DURATION</Text>
+                      </View>
+                    )}
+                    {trackingMode === 'time-distance' && (
+                      <View style={[styles.summaryMetric, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                        <Ionicons name="navigate-outline" size={18} color={colors.secondary} />
+                        <Text style={[styles.summaryMetricValue, { color: colors.text }]}>
+                          {workoutSummary.totalDistance.toFixed(1)}
+                        </Text>
+                        <Text style={[styles.summaryMetricLabel, { color: colors.textSecondary }]}>KM</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={styles.summarySets}>
+                    <Text style={[styles.summarySetsTitle, { color: colors.text }]}>Set breakdown</Text>
+                    {workoutSummary.sets.map((set) => (
+                      <View
+                        key={set.id}
+                        style={[styles.summarySetRow, { borderBottomColor: colors.border }]}
+                      >
+                        <View style={[styles.summarySetNumber, { backgroundColor: `${colors.primary}16` }]}>
+                          <Text style={[styles.summarySetNumberText, { color: colors.primary }]}>{set.setNumber}</Text>
+                        </View>
+                        <Text style={[styles.summarySetValue, { color: colors.text }]}>{getSetDisplay(set)}</Text>
+                        <Text style={[styles.summarySetCalories, { color: colors.textSecondary }]}>
+                          {set.caloriesBurned || 0} kcal
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              <TouchableOpacity
+                style={[styles.summaryHistoryHint, { backgroundColor: `${colors.primary}10`, borderColor: `${colors.primary}28` }]}
+                activeOpacity={0.8}
+                onPress={() => {
+                  setSummaryVisible(false);
+                  router.replace('/(tabs)/history');
+                }}
+              >
+                <View style={[styles.summaryHistoryIcon, { backgroundColor: `${colors.primary}18` }]}>
+                  <Ionicons name="time-outline" size={18} color={colors.primary} />
+                </View>
+                <View style={styles.summaryHistoryCopy}>
+                  <Text style={[styles.summaryHistoryTitle, { color: colors.text }]}>Looking for today's activity?</Text>
+                  <Text style={[styles.summaryHistorySubtitle, { color: colors.textSecondary }]}>
+                    Open History to review your workout and daily logs.
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.summaryPrimaryButton}
+                activeOpacity={0.85}
+                onPress={() => {
+                  setSummaryVisible(false);
+                  router.replace({ pathname: '/(tabs)/stats', params: { section: 'workouts' } });
+                }}
+              >
+                <LinearGradient colors={[colors.secondary, colors.primary]} style={styles.summaryPrimaryGradient}>
+                  <Ionicons name="stats-chart-outline" size={19} color="#FFFFFF" />
+                  <Text style={styles.summaryPrimaryText}>VIEW STATS</Text>
+                  <Ionicons name="arrow-forward" size={17} color="#FFFFFF" />
+                </LinearGradient>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.summarySecondaryButton, { borderColor: colors.border }]}
+                activeOpacity={0.8}
+                onPress={() => {
+                  setSummaryVisible(false);
+                  router.replace('/(tabs)/exercise-library');
+                }}
+              >
+                <Ionicons name="add-circle-outline" size={19} color={colors.primary} />
+                <Text style={[styles.summarySecondaryText, { color: colors.primary }]}>LOG ANOTHER EXERCISE</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.summaryDoneButton}
+                activeOpacity={0.7}
+                onPress={() => {
+                  setSummaryVisible(false);
+                  router.back();
+                }}
+              >
+                <Text style={[styles.summaryDoneText, { color: colors.textSecondary }]}>DONE</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -1294,6 +1483,9 @@ const makeStyles = (colors: any) => StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
+  saveBtnDisabled: {
+    opacity: 0.72,
+  },
   saveGradient: {
     paddingVertical: 18,
     alignItems: 'center',
@@ -1437,5 +1629,201 @@ const makeStyles = (colors: any) => StyleSheet.create({
     fontSize: 20,
     fontWeight: '900',
     letterSpacing: 1.5,
+  },
+  summaryOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.58)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 24,
+  },
+  summaryCard: {
+    width: '100%',
+    maxWidth: 460,
+    maxHeight: height * 0.9,
+    borderRadius: 28,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    elevation: 16,
+  },
+  summaryScrollContent: {
+    alignItems: 'center',
+    padding: 22,
+    paddingBottom: 16,
+  },
+  summarySuccessIcon: {
+    width: 76,
+    height: 76,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  summaryEyebrow: {
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
+  summaryTitle: {
+    fontSize: 28,
+    fontWeight: '900',
+    marginTop: 4,
+  },
+  summaryExercise: {
+    fontSize: 17,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginTop: 14,
+  },
+  summarySubtitle: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 5,
+    textTransform: 'capitalize',
+  },
+  summaryMetrics: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 20,
+  },
+  summaryMetric: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 4,
+  },
+  summaryMetricValue: {
+    fontSize: 17,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  summaryMetricLabel: {
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    textAlign: 'center',
+  },
+  summarySets: {
+    width: '100%',
+    marginTop: 22,
+  },
+  summarySetsTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  summarySetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 9,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  summarySetNumber: {
+    width: 28,
+    height: 28,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  summarySetNumberText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  summarySetValue: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  summarySetCalories: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  summaryHistoryHint: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 12,
+    borderRadius: 15,
+    borderWidth: 1,
+    marginTop: 18,
+  },
+  summaryHistoryIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  summaryHistoryCopy: {
+    flex: 1,
+  },
+  summaryHistoryTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  summaryHistorySubtitle: {
+    fontSize: 10,
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  summaryPrimaryButton: {
+    width: '100%',
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginTop: 22,
+  },
+  summaryPrimaryGradient: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+  },
+  summaryPrimaryText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+  summarySecondaryButton: {
+    width: '100%',
+    minHeight: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginTop: 10,
+  },
+  summarySecondaryText: {
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+  },
+  summaryDoneButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    marginTop: 2,
+  },
+  summaryDoneText: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.8,
   },
 });

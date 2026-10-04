@@ -1,5 +1,5 @@
 // app/(tabs)/stats.tsx
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import {
     View,
     Text,
@@ -15,7 +15,7 @@ import {
 import { getStats } from '../services/profileApi';
 import auth from '@react-native-firebase/auth';
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { Svg, Circle, Path, Line, Rect, G, Text as SvgText, Defs, RadialGradient as SvgRadialGradient, Stop } from "react-native-svg";
@@ -62,6 +62,8 @@ const getDefaultLabels = (period: PeriodType): string[] => {
 
 export default function StatsScreen() {
     const { colors, theme } = useTheme();
+    const params = useLocalSearchParams<{ section?: string | string[] }>();
+    const requestedSection = Array.isArray(params.section) ? params.section[0] : params.section;
     const isDark = theme === 'dark';
     const cardSurface = isDark ? 'rgba(30,30,40,0.86)' : 'rgba(255,248,240,0.94)';
     const cardGradientColors: [string, string, string] = isDark
@@ -105,7 +107,9 @@ export default function StatsScreen() {
     const [trendPercentage, setTrendPercentage] = useState(0);
 
     const [loading, setLoading] = useState(true);
-    const [expandedSection, setExpandedSection] = useState<string | null>(null);
+    const [expandedSection, setExpandedSection] = useState<string | null>(
+        requestedSection === 'workouts' ? 'workouts' : null
+    );
 
     const toggleSection = (section: string) => {
         setExpandedSection((current) => (current === section ? null : section));
@@ -230,14 +234,13 @@ export default function StatsScreen() {
         }
     }, [selectedPeriod]);
 
-    useEffect(() => {
-        loadStatsData();
-    }, [loadStatsData]);
-
     useFocusEffect(
         useCallback(() => {
+            if (requestedSection === 'workouts') {
+                setExpandedSection('workouts');
+            }
             loadStatsData();
-        }, [loadStatsData])
+        }, [loadStatsData, requestedSection])
     );
 
     // Bar chart component — width/spacing now driven by data.length instead of a fixed 7,

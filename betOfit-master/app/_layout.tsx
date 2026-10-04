@@ -228,16 +228,6 @@ function RootLayoutNav() {
         return;
       }
 
-      // Check if trying to access workout without workout completed
-      if (currentTab === 'workout' && !profileStatus.workout_completed) {
-        if (pendingNavigationRef.current === '/(tabs)/workout') {
-          console.log('⏳ Pending nav to workout, waiting for fresh profile status...');
-          return;
-        }
-        console.log('➡️ Workout not completed, redirecting to workout setup');
-        router.replace('/(tabs)/profile-setup?mode=workout');
-        return;
-      }
     }
 
     // CASE 3: On profile-setup screen (in tabs)

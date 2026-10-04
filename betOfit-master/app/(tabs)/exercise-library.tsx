@@ -14,6 +14,7 @@ import {
   Alert,
   Image,
   Dimensions,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
@@ -361,14 +362,20 @@ export default function ExerciseLibraryScreen() {
         style={[styles.muscleCard, selectedMuscle === muscle.id && styles.muscleCardActive]}
       >
         <Image source={muscle.image} style={styles.muscleFullImage} resizeMode="cover" />
-
-        {/* Text with background color from theme */}
-        <View style={[styles.muscleCardBottom, { backgroundColor: colors.background }]}>
-          <Text style={[styles.muscleCount, { color: colors.textSecondary }]}>{muscle.count} Exercises</Text>
-          <Text style={[styles.muscleLabel, { color: colors.text }]}>{muscle.label}</Text>
+        <LinearGradient
+          pointerEvents="none"
+          colors={['transparent', 'rgba(0,0,0,0.78)']}
+          style={styles.muscleImageShade}
+        />
+        <View style={styles.muscleCardBottom}>
+          <Text style={styles.muscleCount}>{muscle.count} exercises</Text>
+          <Text style={styles.muscleLabel}>{muscle.label}</Text>
         </View>
-
-        {selectedMuscle === muscle.id && <View style={styles.activeIndicator} />}
+        {selectedMuscle === muscle.id && (
+          <View style={styles.activeIndicator}>
+            <Ionicons name="checkmark-circle" size={22} color="#FFFFFF" />
+          </View>
+        )}
       </LinearGradient>
     </TouchableOpacity>
   );
@@ -413,84 +420,63 @@ export default function ExerciseLibraryScreen() {
   const renderGridItem = useCallback(({ item }: { item: Exercise }) => {
     return (
       <TouchableOpacity
-        activeOpacity={1}
+        activeOpacity={0.88}
         onPress={() => navigateToDetail(item)}
-        style={{
-          width: (width - 60) / 2,
-          marginBottom: 18,
-        }}
+        style={styles.gridItem}
       >
         <Animated.View
-          style={{
-            borderRadius: 20,
-            backgroundColor: colors.card,
-            overflow: 'hidden',
-
-            // 🔥 soft shadow (premium)
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.06,
-            shadowRadius: 16,
-            elevation: 3,
-          }}
+          style={[styles.gridCard, { backgroundColor: colors.card, borderColor: colors.border }]}
         >
-
-          {/* 🎯 TOP VISUAL */}
           <Image
             source={getMuscleImage(item.muscle)}
             defaultSource={MUSCLE_IMAGES.chest}
-            style={{
-              width: '100%',
-              height: 140,
-              backgroundColor: colors.surfaceContainerLow,
-            }}
+            style={[styles.gridImage, { backgroundColor: colors.surfaceContainerLow }]}
             resizeMode="cover"
             fadeDuration={0}
           />
-
-
-          {/* 🧠 CONTENT */}
-          <View style={{ padding: 14 }}>
+          <View style={styles.gridContent}>
             <Text
               numberOfLines={2}
-              style={{
-                fontSize: 14,
-                fontWeight: '600',
-                color: colors.text,
-                lineHeight: 18,
-              }}
+              style={[styles.gridTitle, { color: colors.text }]}
             >
               {item.name}
             </Text>
-
-            <Text
-              style={{
-                marginTop: 6,
-                fontSize: 11,
-                color: colors.textSecondary,
-                textTransform: 'capitalize',
-              }}
-            >
-              {item.muscle}
-            </Text>
+            <View style={styles.gridMetaRow}>
+              <Text style={[styles.gridMeta, { color: colors.textSecondary }]} numberOfLines={1}>
+                {item.muscle}
+              </Text>
+              <View
+                style={[
+                  styles.difficultyBadge,
+                  {
+                    backgroundColor: `${DIFFICULTY_COLORS[item.difficulty as keyof typeof DIFFICULTY_COLORS] || colors.textMuted}18`,
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.difficultyDot,
+                    {
+                      backgroundColor:
+                        DIFFICULTY_COLORS[item.difficulty as keyof typeof DIFFICULTY_COLORS] || colors.textMuted,
+                    },
+                  ]}
+                />
+                <Text
+                  style={[
+                    styles.difficultyText,
+                    {
+                      color:
+                        DIFFICULTY_COLORS[item.difficulty as keyof typeof DIFFICULTY_COLORS] || colors.textMuted,
+                    },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {item.difficulty || 'beginner'}
+                </Text>
+              </View>
+            </View>
           </View>
-
-          {/* ⚡ MINIMAL DIFFICULTY DOT */}
-          <View
-            style={{
-              position: 'absolute',
-              bottom: 10,
-              right: 10,
-              width: 10,
-              height: 10,
-              borderRadius: 5,
-              backgroundColor:
-                DIFFICULTY_COLORS[
-                item.difficulty as keyof typeof DIFFICULTY_COLORS
-                ] || colors.textMuted,
-            }}
-          />
-
         </Animated.View>
       </TouchableOpacity>
     );
@@ -532,8 +518,13 @@ export default function ExerciseLibraryScreen() {
           </View>
         </View>
       </TouchableOpacity>
-      <TouchableOpacity style={styles.listAddButton}>
-        <Ionicons name="add-circle" size={28} color={colors.primary} />
+      <TouchableOpacity
+        style={styles.listAddButton}
+        onPress={() => navigateToDetail(item)}
+        accessibilityRole="button"
+        accessibilityLabel={`View ${item.name}`}
+      >
+        <Ionicons name="arrow-forward-circle" size={28} color={colors.primary} />
       </TouchableOpacity>
     </Animated.View>
   );
@@ -574,13 +565,11 @@ export default function ExerciseLibraryScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={theme === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
       <AmbientGlow />
-      <SafeAreaView style={styles.safeArea}>
-        {/* GLASSMORPHIC HEADER */}
-        <BlurView
-          intensity={80}
-          tint={theme === "dark" ? "dark" : "light"}
-          style={[styles.header, { borderBottomColor: colors.border }]}
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <View
+          style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}
         >
           <View style={styles.headerTop}>
             <View style={styles.headerLeft}>
@@ -590,16 +579,15 @@ export default function ExerciseLibraryScreen() {
               >
                 <Ionicons name="barbell" size={24} color="#FFFFFF" />
               </LinearGradient>
-              <Text style={[styles.appTitle, { color: colors.text }]}>Library</Text>
-            </View>
-            <View style={styles.headerRight}>
-              <View style={[styles.avatar, { backgroundColor: `${colors.primary}15` }]}>
-                <Ionicons name="person" size={20} color={colors.primary} />
+              <View>
+                <Text style={[styles.appTitle, { color: colors.text }]}>Exercise Library</Text>
+                <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
+                  Find your next move
+                </Text>
               </View>
             </View>
           </View>
-          {/* SEARCH BAR */}
-          <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
+          <View style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Ionicons name="search" size={20} color={colors.textMuted} style={styles.searchIcon} />
             <TextInput
               style={[styles.searchInput, { color: colors.text }]}
@@ -607,10 +595,22 @@ export default function ExerciseLibraryScreen() {
               placeholderTextColor={colors.textMuted}
               value={searchQuery}
               onChangeText={setSearchQuery}
+              returnKeyType="search"
+              accessibilityLabel="Search exercises"
             />
             {loadingMore && <ActivityIndicator size="small" color={colors.primary} />}
+            {!!searchQuery && (
+              <TouchableOpacity
+                onPress={() => setSearchQuery('')}
+                style={styles.clearSearchButton}
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
+              >
+                <Ionicons name="close-circle" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+            )}
           </View>
-        </BlurView>
+        </View>
 
         {/* MAIN CONTENT */}
         <FlatList
@@ -633,9 +633,12 @@ export default function ExerciseLibraryScreen() {
               {/* MUSCLE CAROUSEL */}
               <View style={styles.muscleSection}>
                 <View style={styles.sectionHeader}>
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                    Muscle Groups
-                  </Text>
+                  <View>
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Muscle Groups</Text>
+                    <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
+                      Choose an area to explore
+                    </Text>
+                  </View>
                 </View>
 
                 <ScrollView
@@ -652,11 +655,16 @@ export default function ExerciseLibraryScreen() {
 
               {/* VIEW TOGGLE */}
               <View style={styles.viewToggleSection}>
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                  {`${muscleGroups.find(m => m.id === selectedMuscle)?.label} Exercises`}
-                </Text>
+                <View style={styles.resultsHeading}>
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                    {`${muscleGroups.find(m => m.id === selectedMuscle)?.label || 'All'} Exercises`}
+                  </Text>
+                  <Text style={[styles.resultsCount, { color: colors.textSecondary }]}>
+                    {filteredExercises.length} {filteredExercises.length === 1 ? 'exercise' : 'exercises'}
+                  </Text>
+                </View>
 
-                <View style={[styles.viewToggle, { backgroundColor: colors.surfaceContainerLow }]}>
+                <View style={[styles.viewToggle, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.border }]}>
                   <TouchableOpacity
                     style={[
                       styles.toggleButton,
@@ -671,11 +679,11 @@ export default function ExerciseLibraryScreen() {
                     />
                     <Text
                       style={{
-                        color: viewMode === 'grid' ? '#FFFFFF' : colors.text,
+                        color: viewMode === 'grid' ? '#FFFFFF' : colors.textSecondary,
                         fontWeight: viewMode === 'grid' ? '800' : '600',
                       }}
                     >
-                      GRID
+                      Grid
                     </Text>
                   </TouchableOpacity>
 
@@ -693,11 +701,11 @@ export default function ExerciseLibraryScreen() {
                     />
                     <Text
                       style={{
-                        color: viewMode === 'list' ? '#FFFFFF' : colors.text,
+                        color: viewMode === 'list' ? '#FFFFFF' : colors.textSecondary,
                         fontWeight: viewMode === 'list' ? '800' : '600',
                       }}
                     >
-                      LIST
+                      List
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -754,8 +762,13 @@ export default function ExerciseLibraryScreen() {
                         </View>
                       </TouchableOpacity>
 
-                      <TouchableOpacity style={styles.recommendedAddButton}>
-                        <Ionicons name="add" size={20} color={colors.primary} />
+                      <TouchableOpacity
+                        style={[styles.recommendedAddButton, { backgroundColor: `${colors.primary}14` }]}
+                        onPress={() => navigateToDetail(exercise)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`View ${exercise.name}`}
+                      >
+                        <Ionicons name="arrow-forward" size={18} color={colors.primary} />
                       </TouchableOpacity>
                     </View>
                   ))}
@@ -769,19 +782,25 @@ export default function ExerciseLibraryScreen() {
           ListEmptyComponent={
             isLoadingMuscle ? (
               <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-                  Loading {muscleGroups.find(m => m.id === selectedMuscle)?.label} exercises...
-                </Text>
+                <CustomLoader
+                  fullScreen={false}
+                  size="small"
+                  showText
+                  text={`Loading ${muscleGroups.find(m => m.id === selectedMuscle)?.label} exercises...`}
+                />
               </View>
-            ) : !loading && exercises.length === 0 ? (
+            ) : !loading && filteredExercises.length === 0 ? (
               <View style={styles.emptyContainer}>
-                <Ionicons name="barbell" size={64} color={colors.textMuted} />
+                <View style={[styles.emptyIcon, { backgroundColor: `${colors.primary}14` }]}>
+                  <Ionicons name="search" size={30} color={colors.primary} />
+                </View>
                 <Text style={[styles.emptyTitle, { color: colors.text }]}>
-                  No exercises found
+                  {searchQuery ? 'No matching exercises' : 'No exercises found'}
                 </Text>
                 <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-                  Try selecting a different muscle group
+                  {searchQuery
+                    ? 'Try another exercise name, muscle, or equipment.'
+                    : 'Try selecting a different muscle group.'}
                 </Text>
               </View>
             ) : null
@@ -834,8 +853,12 @@ const makeStyles = (colors: any) => StyleSheet.create({
     alignItems: 'center',
   },
   appTitle: {
-    fontSize: 20,
-    fontWeight: '800',
+    fontSize: 21,
+    fontWeight: '900',
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
   },
   headerRight: {
     flexDirection: 'row',
@@ -854,9 +877,10 @@ const makeStyles = (colors: any) => StyleSheet.create({
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 24,
+    borderRadius: 16,
     paddingHorizontal: 16,
-    height: 48,
+    height: 50,
+    borderWidth: 1,
   },
   searchIcon: {
     marginRight: 12,
@@ -864,6 +888,10 @@ const makeStyles = (colors: any) => StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 14,
+  },
+  clearSearchButton: {
+    padding: 4,
+    marginRight: -6,
   },
   // Muscle Section
   muscleSection: {
@@ -880,6 +908,10 @@ const makeStyles = (colors: any) => StyleSheet.create({
     fontSize: 18,
     fontWeight: '800',
   },
+  sectionSubtitle: {
+    fontSize: 12,
+    marginTop: 3,
+  },
   sectionLink: {
     fontSize: 14,
     fontWeight: '600',
@@ -890,10 +922,12 @@ const makeStyles = (colors: any) => StyleSheet.create({
   },
   muscleCard: {
     width: 140,
-    height: 180,
+    height: 168,
     borderRadius: 20,
     overflow: 'hidden',
     position: 'relative',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.2,
@@ -908,6 +942,9 @@ const makeStyles = (colors: any) => StyleSheet.create({
     top: 0,
     left: 0,
   },
+  muscleImageShade: {
+    ...StyleSheet.absoluteFillObject,
+  },
   muscleOverlay: {
     position: 'absolute',
     bottom: 0,
@@ -920,18 +957,25 @@ const makeStyles = (colors: any) => StyleSheet.create({
   },
   muscleCardBottom: {
     position: 'absolute',
-    bottom: 12,
-    left: 12,
+    bottom: 13,
+    left: 14,
     right: 12,
-    backgroundColor: colors.background,
-    borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    gap: 2,
+    gap: 3,
     zIndex: 2,
   },
+  muscleCount: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.82)',
+    fontWeight: '600',
+  },
+  muscleLabel: {
+    fontSize: 19,
+    color: '#FFFFFF',
+    fontWeight: '900',
+  },
   muscleCardActive: {
-    transform: [{ scale: 1.05 }],
+    borderColor: colors.primary,
+    borderWidth: 3,
   },
   muscleIconContainer: {
     width: 40,
@@ -952,18 +996,6 @@ const makeStyles = (colors: any) => StyleSheet.create({
     height: 32,
   },
 
-  muscleCount: {
-    fontSize: 11,
-    color: colors.background,
-    fontWeight: '500',
-  },
-
-  muscleLabel: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.background,
-  },
-
   // View Toggle
   viewToggleSection: {
     flexDirection: 'row',
@@ -971,27 +1003,96 @@ const makeStyles = (colors: any) => StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     marginTop: 16,
-    marginBottom: 24,
+    marginBottom: 18,
+    gap: 8,
+  },
+  resultsHeading: {
+    flex: 1,
+    minWidth: 0,
+  },
+  resultsCount: {
+    fontSize: 11,
+    marginTop: 3,
   },
   viewToggle: {
     flexDirection: 'row',
     padding: 4,
-    borderRadius: 24,
+    borderRadius: 14,
+    borderWidth: 1,
   },
   toggleButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 10,
   },
   toggleButtonActive: {
     backgroundColor: colors.primary,
   },
   toggleText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
+  },
+  gridItem: {
+    width: (width - 60) / 2,
+    marginBottom: 14,
+  },
+  gridCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  gridImage: {
+    width: '100%',
+    height: 128,
+  },
+  gridContent: {
+    padding: 12,
+    gap: 8,
+  },
+  gridTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    lineHeight: 19,
+    minHeight: 38,
+    textTransform: 'capitalize',
+  },
+  gridMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  gridMeta: {
+    flex: 1,
+    fontSize: 11,
+    textTransform: 'capitalize',
+  },
+  difficultyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    maxWidth: 86,
+  },
+  difficultyDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  difficultyText: {
+    fontSize: 9,
+    fontWeight: '800',
+    textTransform: 'capitalize',
   },
   // Featured Card
   featuredCard: {
@@ -1061,58 +1162,6 @@ const makeStyles = (colors: any) => StyleSheet.create({
     alignItems: 'center',
     zIndex: 2,
   },
-  // Exercises Container
-  exercisesContainer: {
-    paddingBottom: 20,
-  },
-  // Grid View
-  gridCard: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  gridImageContainer: {
-    aspectRatio: 16 / 9,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  gridContent: {
-    padding: 12,
-  },
-  gridTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 6,
-    textTransform: 'capitalize',
-  },
-  gridMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  gridMetaText: {
-    fontSize: 11,
-    textTransform: 'capitalize',
-  },
-  gridDot: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    marginHorizontal: 6,
-  },
-  gridAddButton: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   // List View
   listCard: {
     flexDirection: 'row',
@@ -1160,6 +1209,7 @@ const makeStyles = (colors: any) => StyleSheet.create({
   },
   listAddButton: {
     marginLeft: 8,
+    padding: 2,
   },
   // Recommended Section
   recommendedSection: {
@@ -1237,25 +1287,32 @@ const makeStyles = (colors: any) => StyleSheet.create({
   },
   // Loading & Empty States
   loadingContainer: {
-    paddingVertical: 60,
+    paddingVertical: 52,
     alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 14,
   },
   emptyContainer: {
     paddingVertical: 60,
+    paddingHorizontal: 24,
     alignItems: 'center',
+  },
+  emptyIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyTitle: {
     fontSize: 18,
     fontWeight: '700',
-    marginTop: 16,
+    marginTop: 14,
+    textAlign: 'center',
   },
   emptySubtitle: {
     fontSize: 14,
     marginTop: 8,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 
 });

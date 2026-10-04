@@ -5,8 +5,8 @@ import {
   View,
   Text,
   StyleSheet,
-  Image
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   useSharedValue,
   withRepeat,
@@ -14,7 +14,8 @@ import Animated, {
   withTiming,
   useAnimatedStyle,
   Easing,
-  FadeIn
+  FadeIn,
+  cancelAnimation,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { useTheme } from '../context/themecontext';
@@ -33,59 +34,66 @@ export const CustomLoader = ({
   showText = false
 }: CustomLoaderProps) => {
 
-  const { colors } = useTheme();
-  const iconSize = size === 'large' ? 70 : 50;
-
-  // 🎯 Animations
-  const rotation = useSharedValue(0);
-  const scale = useSharedValue(1);
+  const { colors, theme } = useTheme();
+  const iconSize = size === 'large' ? 38 : 26;
+  const haloSize = size === 'large' ? 84 : 58;
+  const tilt = useSharedValue(0);
+  const pulse = useSharedValue(1);
 
   useEffect(() => {
-    // 🪙 Coin flip
-    rotation.value = withRepeat(
+    tilt.value = withRepeat(
       withSequence(
-        withTiming(90, { duration: 250, easing: Easing.out(Easing.ease) }),
-        withTiming(180, { duration: 250 }),
-        withTiming(270, { duration: 250 }),
-        withTiming(360, { duration: 250, easing: Easing.in(Easing.ease) })
+        withTiming(-14, { duration: 550, easing: Easing.inOut(Easing.ease) }),
+        withTiming(14, { duration: 1100, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0, { duration: 550, easing: Easing.inOut(Easing.ease) })
       ),
       -1,
       false
     );
 
-    // 💥 Slight bounce
-    scale.value = withRepeat(
+    pulse.value = withRepeat(
       withSequence(
-        withTiming(1.15, { duration: 200 }),
-        withTiming(0.95, { duration: 150 }),
-        withTiming(1, { duration: 150 })
+        withTiming(1.06, { duration: 700, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1, { duration: 700, easing: Easing.inOut(Easing.ease) })
       ),
       -1,
-      true
+      false
     );
-  }, []);
+    return () => {
+      cancelAnimation(tilt);
+      cancelAnimation(pulse);
+    };
+  }, [tilt, pulse]);
 
-  // 🎬 3D flip style
   const animatedIconStyle = useAnimatedStyle(() => ({
-    transform: [
-      { perspective: 1000 },
-      { rotateY: `${rotation.value}deg` },
-      { scale: scale.value }
-    ]
+    transform: [{ rotate: `${tilt.value}deg` }],
+  }));
+  const animatedHaloStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulse.value }],
   }));
 
   const content = (
     <Animated.View entering={FadeIn.duration(200)} style={styles.content}>
-      <Animated.View style={animatedIconStyle}>
-        <Image
-          source={require('../assets/images/icon.png')}
-          style={{ width: iconSize, height: iconSize }}
-          resizeMode="contain"
-        />
+      <Animated.View
+        style={[
+          styles.iconHalo,
+          {
+            width: haloSize,
+            height: haloSize,
+            borderRadius: haloSize / 2.7,
+            backgroundColor: `${colors.primary}16`,
+            borderColor: `${colors.primary}35`,
+          },
+          animatedHaloStyle,
+        ]}
+      >
+        <Animated.View style={animatedIconStyle}>
+          <Ionicons name="barbell" size={iconSize} color={colors.primary} />
+        </Animated.View>
       </Animated.View>
 
       {showText && text ? (
-        <Text style={[styles.text, { color: colors.text }]}>
+        <Text style={[styles.text, { color: colors.textSecondary }]}>
           {text}
         </Text>
       ) : null}
@@ -96,27 +104,24 @@ export const CustomLoader = ({
     return (
       <Animated.View
         entering={FadeIn.duration(200)}
-        style={[styles.fullScreen, { backgroundColor: 'transparent' }]}
+        style={styles.fullScreen}
       >
-
-        {/* 🌫️ REAL BACKGROUND BLUR */}
         <BlurView
-          intensity={80}
-          tint="light"
+          intensity={55}
+          tint={theme === 'dark' ? 'dark' : 'light'}
           style={StyleSheet.absoluteFill}
         />
-
-        {/* 🤍 GLASS WHITE OVERLAY (light, not blocking) */}
         <View
           style={[
             StyleSheet.absoluteFillObject,
-            { backgroundColor: 'rgba(255,255,255,0.2)' }
+            {
+              backgroundColor: theme === 'dark'
+                ? 'rgba(10,10,12,0.38)'
+                : 'rgba(255,255,255,0.42)',
+            }
           ]}
         />
-
-        {/* 🪙 LOADER */}
         {content}
-
       </Animated.View>
     );
   }
@@ -139,6 +144,11 @@ const styles = StyleSheet.create({
   content: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  iconHalo: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
   },
 
   text: {

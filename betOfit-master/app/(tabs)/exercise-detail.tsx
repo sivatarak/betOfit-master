@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   SafeAreaView,
   ScrollView,
-  ActivityIndicator,
   Platform,
   Linking,
   Alert,
@@ -753,10 +752,12 @@ export default function ExerciseDetailScreen() {
           {/* Loading */}
           {videoLoading && (
             <View style={[styles.noVideoCard, { backgroundColor: colors.card }]}>
-              <ActivityIndicator size="large" color={colors.primary} />
-              <Text style={[styles.noVideoSubtitle, { color: colors.textSecondary, marginTop: 12 }]}>
-                Finding tutorial...
-              </Text>
+              <CustomLoader
+                fullScreen={false}
+                size="small"
+                showText
+                text="Finding tutorial..."
+              />
             </View>
           )}
 

@@ -421,7 +421,12 @@ export default function HistoryScreen() {
 
                         {loading ? (
                             <View style={styles.loadingContainer}>
-                                <Text style={styles.loadingText}>Loading history...</Text>
+                                <CustomLoader
+                                    fullScreen={false}
+                                    size="small"
+                                    showText
+                                    text="Loading history..."
+                                />
                             </View>
                         ) : historyItems.length === 0 ? (
                             <View style={styles.emptyContainer}>

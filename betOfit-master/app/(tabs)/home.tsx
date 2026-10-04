@@ -371,7 +371,7 @@ export default function Home() {
             title="Today's Workout Plan"
             message={`Last ${item.data.today.day_name} you did ${lastWeek.exercises.length} exercise${lastWeek.exercises.length === 1 ? "" : "s"} · ${lastWeek.total_duration} min · ~${lastWeek.total_calories_burned} kcal burned.`}
             actionLabel="Start Workout"
-            onPress={() => router.push("/(tabs)/workout")}
+            onPress={() => router.push("/(tabs)/exercise-library")}
             meta={`${lastWeek.total_duration} MIN\nSESSION`}
             activeIndex={index}
             total={widgetData.length}
@@ -394,7 +394,7 @@ export default function Home() {
                 : `${item.data.today.day_name} is a scheduled workout day — no history logged for it yet.`
             }
             actionLabel="Browse Guided Exercises"
-            onPress={() => router.push("/(tabs)/workout")}
+            onPress={() => router.push("/(tabs)/exercise-library")}
             meta={"3 MIN\nREAD"}
             activeIndex={index}
             total={widgetData.length}
@@ -651,11 +651,11 @@ export default function Home() {
                 <Text style={styles.quickActionSub}>+250 ml</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.quickAction} onPress={() => router.push("/(tabs)/workout")}>
+            <TouchableOpacity style={styles.quickAction} onPress={() => router.push("/(tabs)/exercise-library")}>
                 <View style={[styles.quickActionIcon, { backgroundColor: colors.primary }]}>
                   <Ionicons name="barbell" size={20} color={colors.background} />
                 </View>
-                <Text style={[styles.quickActionLabel, { color: colors.text }]}>Workout</Text>
+                <Text style={[styles.quickActionLabel, { color: colors.text }]}>Start Workout</Text>
                 <Text style={styles.quickActionSub}>Start now</Text>
             </TouchableOpacity>
           </View>
