@@ -1,5 +1,5 @@
 // app/(tabs)/exercise-detail.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -135,9 +135,7 @@ export default function ExerciseDetailScreen() {
 
   useEffect(() => {
     if (exercise) {
-      loadWorkoutHistory(exercise.name);
       checkIfFavorite(exercise.name);
-
     }
   }, [exercise]);
 
@@ -314,6 +312,14 @@ export default function ExerciseDetailScreen() {
       console.error('Error loading workout history:', error);
     }
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      if (exercise) {
+        loadWorkoutHistory(exercise.name);
+      }
+    }, [exercise])
+  );
 
   const checkIfFavorite = async (exerciseName: string) => {
     try {
