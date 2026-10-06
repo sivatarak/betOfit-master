@@ -137,6 +137,8 @@ export default function LogExerciseScreen() {
   const [summaryVisible, setSummaryVisible] = useState(false);
   const [workoutSummary, setWorkoutSummary] = useState<WorkoutSummary | null>(null);
   const [savingWorkout, setSavingWorkout] = useState(false);
+  const saveStartedRef = useRef(false);
+  const summaryNavigationStartedRef = useRef(false);
   const [currentSet, setCurrentSet] = useState<WorkoutSet>(createEmptySet());
   const [notes, setNotes] = useState('');
   const [startTime] = useState(new Date());
@@ -488,14 +490,16 @@ export default function LogExerciseScreen() {
   // Save workout
   // Save workout - Save to BOTH AsyncStorage AND Database
   const saveWorkout = async () => {
-    if (completedSets.length === 0 || savingWorkout) {
+    if (completedSets.length === 0 || savingWorkout || saveStartedRef.current) {
       if (completedSets.length === 0) {
         Alert.alert('No sets', 'Complete at least one set first.');
       }
       return;
     }
 
+    saveStartedRef.current = true;
     setSavingWorkout(true);
+    let savedLocally = false;
     try {
       const totalVolume = completedSets.reduce((sum, s) => sum + ((s.weight || 0) * (s.reps || 0)), 0);
       const totalDistance = completedSets.reduce((sum, s) => sum + (s.distance || 0), 0);
@@ -529,6 +533,7 @@ export default function LogExerciseScreen() {
       const hist = JSON.parse(histStr);
       hist.unshift(workoutLog);
       await AsyncStorage.setItem('WORKOUT_HISTORY', JSON.stringify(hist.slice(0, 100)));
+      savedLocally = true;
 
       // ✅ STEP 2: Save to database (persistent)
       const currentUser = auth().currentUser;
@@ -564,6 +569,9 @@ export default function LogExerciseScreen() {
       });
       setSummaryVisible(true);
     } catch (err) {
+      if (!savedLocally) {
+        saveStartedRef.current = false;
+      }
       console.error('Save error:', err);
       Alert.alert('Error', 'Could not save workout');
     } finally {
@@ -1107,6 +1115,8 @@ export default function LogExerciseScreen() {
                 style={[styles.summaryHistoryHint, { backgroundColor: `${colors.primary}10`, borderColor: `${colors.primary}28` }]}
                 activeOpacity={0.8}
                 onPress={() => {
+                  if (summaryNavigationStartedRef.current) return;
+                  summaryNavigationStartedRef.current = true;
                   setSummaryVisible(false);
                   router.replace('/(tabs)/history');
                 }}
@@ -1127,6 +1137,8 @@ export default function LogExerciseScreen() {
                 style={styles.summaryPrimaryButton}
                 activeOpacity={0.85}
                 onPress={() => {
+                  if (summaryNavigationStartedRef.current) return;
+                  summaryNavigationStartedRef.current = true;
                   setSummaryVisible(false);
                   router.replace({ pathname: '/(tabs)/stats', params: { section: 'workouts' } });
                 }}
@@ -1141,6 +1153,8 @@ export default function LogExerciseScreen() {
                 style={[styles.summarySecondaryButton, { borderColor: colors.border }]}
                 activeOpacity={0.8}
                 onPress={() => {
+                  if (summaryNavigationStartedRef.current) return;
+                  summaryNavigationStartedRef.current = true;
                   setSummaryVisible(false);
                   router.replace('/(tabs)/exercise-library');
                 }}
@@ -1152,8 +1166,10 @@ export default function LogExerciseScreen() {
                 style={styles.summaryDoneButton}
                 activeOpacity={0.7}
                 onPress={() => {
+                  if (summaryNavigationStartedRef.current) return;
+                  summaryNavigationStartedRef.current = true;
                   setSummaryVisible(false);
-                  router.back();
+                  router.replace('/(tabs)/home');
                 }}
               >
                 <Text style={[styles.summaryDoneText, { color: colors.textSecondary }]}>DONE</Text>
