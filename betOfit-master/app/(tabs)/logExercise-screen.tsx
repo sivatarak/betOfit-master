@@ -28,6 +28,13 @@ import { useTheme } from '../../context/themecontext';
 import { AmbientGlow } from '../../components/AmbientGlow';
 import { useToday } from '../../context/todayContext';
 import { calculateCaloriesBurned, saveWorkoutToBackend } from '../services/exerciseApi';
+import {
+  ACTIVE_WORKOUT_SESSION_KEY,
+  ACTIVE_WORKOUT_SESSION_META_KEY,
+  ActiveWorkoutSession,
+  ActiveWorkoutSessionMeta,
+} from '../utils/activeWorkoutSession';
+import { ACTIVE_WORKOUT_UPDATED, appEvents } from '../utils/eventEmitter';
 
 const { width, height } = Dimensions.get('window');
 
@@ -115,6 +122,10 @@ export default function LogExerciseScreen() {
   const equipment = getParamValue(params.equipment as string | string[] | undefined);
   const exerciseType = getParamValue(params.type as string | string[] | undefined);
   const trackingMode = getTrackingMode(exerciseType, equipment, exerciseName);
+  const generatedSessionIdRef = useRef(Date.now().toString());
+  const sessionId = getParamValue(params.sessionId as string | string[] | undefined) || generatedSessionIdRef.current;
+  const generatedWorkoutIdRef = useRef(`${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const workoutId = getParamValue(params.workoutId as string | string[] | undefined) || generatedWorkoutIdRef.current;
 
   const appState = useRef<AppStateStatus>('active');
   const backgroundTime = useRef<number>(0);
@@ -136,12 +147,16 @@ export default function LogExerciseScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [summaryVisible, setSummaryVisible] = useState(false);
   const [workoutSummary, setWorkoutSummary] = useState<WorkoutSummary | null>(null);
+  const [backendSaveError, setBackendSaveError] = useState<string | null>(null);
   const [savingWorkout, setSavingWorkout] = useState(false);
+  const [workoutSaved, setWorkoutSaved] = useState(false);
   const saveStartedRef = useRef(false);
   const summaryNavigationStartedRef = useRef(false);
   const [currentSet, setCurrentSet] = useState<WorkoutSet>(createEmptySet());
   const [notes, setNotes] = useState('');
-  const [startTime] = useState(new Date());
+  const [workoutStartTime, setWorkoutStartTime] = useState(Date.now());
+  const [sessionEndTime, setSessionEndTime] = useState<number | null>(null);
+  const [clockNow, setClockNow] = useState(Date.now());
   const [userWeight, setUserWeight] = useState(70);
 
   // ⏱️ TIMER STATES
@@ -152,6 +167,10 @@ export default function LogExerciseScreen() {
   const [restElapsedTime, setRestElapsedTime] = useState<number>(0);
   const timerInterval = useRef<any>(null);
   const restTimerInterval = useRef<any>(null);
+  const [sessionHydrated, setSessionHydrated] = useState(false);
+  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftWriteRef = useRef<Promise<void>>(Promise.resolve());
+  const blockedByExistingSessionRef = useRef(false);
 
   // Formatting helpers
   const formatTime = (seconds: number): string => {
@@ -168,7 +187,160 @@ export default function LogExerciseScreen() {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const elapsedSeconds = Math.floor((new Date().getTime() - startTime.getTime()) / 1000);
+  const elapsedSeconds = Math.floor(((sessionEndTime ?? clockNow) - workoutStartTime) / 1000);
+
+  useEffect(() => {
+    if (sessionEndTime !== null) return;
+
+    const interval = setInterval(() => setClockNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [sessionEndTime]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    blockedByExistingSessionRef.current = false;
+    saveStartedRef.current = false;
+    summaryNavigationStartedRef.current = false;
+    setSessionHydrated(false);
+    setCompletedSets([]);
+    setCurrentSet(createEmptySet());
+    setNotes('');
+    setWorkoutSummary(null);
+    setBackendSaveError(null);
+    setSavingWorkout(false);
+    setWorkoutSaved(false);
+    setSummaryVisible(false);
+    setModalVisible(false);
+    setWorkoutStartTime(Date.now());
+    setSessionEndTime(null);
+    setClockNow(Date.now());
+    setSetTimerState('idle');
+    setSetStartTime(0);
+    setSetElapsedTime(0);
+    setRestStartTime(0);
+    setRestElapsedTime(0);
+    setTimerStateRef.current = 'idle';
+    if (timerInterval.current) clearInterval(timerInterval.current);
+    if (restTimerInterval.current) clearInterval(restTimerInterval.current);
+    if (draftSaveTimerRef.current) {
+      clearTimeout(draftSaveTimerRef.current);
+      draftSaveTimerRef.current = null;
+    }
+
+    const restoreSession = async () => {
+      try {
+        const [stored, storedMeta] = await Promise.all([
+          AsyncStorage.getItem(ACTIVE_WORKOUT_SESSION_KEY),
+          AsyncStorage.getItem(ACTIVE_WORKOUT_SESSION_META_KEY),
+        ]);
+        if (!mounted) return;
+
+        if (stored) {
+          const draft = JSON.parse(stored) as ActiveWorkoutSession;
+          const meta = storedMeta ? JSON.parse(storedMeta) as ActiveWorkoutSessionMeta : null;
+          const draftWasAlreadySaved = Boolean(
+            meta &&
+            draft.sessionId === meta.sessionId &&
+            (meta.lastCompletedAt ?? 0) >= draft.workoutStartTime
+          );
+          if (draftWasAlreadySaved) {
+            await AsyncStorage.removeItem(ACTIVE_WORKOUT_SESSION_KEY);
+          } else if (
+            draft.sessionId !== sessionId ||
+            (draft.workoutId && draft.workoutId !== workoutId) ||
+            (!draft.workoutId && draft.exerciseId !== exerciseId)
+          ) {
+            blockedByExistingSessionRef.current = true;
+            Alert.alert(
+              'Workout already in progress',
+              `Resume ${draft.exerciseName} from the workout banner before starting another session.`,
+              [{ text: 'OK', onPress: () => router.back() }]
+            );
+            return;
+          } else {
+            setWorkoutStartTime(draft.workoutStartTime);
+            setCompletedSets(draft.completedSets as WorkoutSet[]);
+            setCurrentSet(draft.currentSet as WorkoutSet);
+            setNotes(draft.notes);
+            setSetTimerState(draft.setTimerState);
+            setSetStartTime(draft.setStartTime);
+            setSetElapsedTime(
+              draft.setTimerState === 'running'
+                ? Math.max(0, Math.floor((Date.now() - draft.setStartTime) / 1000))
+                : draft.setElapsedTime
+            );
+            setRestStartTime(draft.restStartTime);
+            setModalVisible(draft.modalVisible);
+            setClockNow(Date.now());
+          }
+        }
+      } catch (error) {
+        console.error('Could not restore active workout:', error);
+      } finally {
+        if (mounted) setSessionHydrated(true);
+      }
+    };
+
+    restoreSession();
+    return () => {
+      mounted = false;
+    };
+  }, [sessionId, workoutId]);
+
+  useEffect(() => {
+    if (!sessionHydrated || blockedByExistingSessionRef.current || workoutSaved) return;
+
+    if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+    draftSaveTimerRef.current = setTimeout(() => {
+      if (saveStartedRef.current) return;
+
+      const draft: ActiveWorkoutSession = {
+        sessionId,
+        workoutId,
+        exerciseId,
+        exerciseName,
+        muscle,
+        equipment,
+        difficulty: getParamValue(params.difficulty as string | string[] | undefined),
+        type: exerciseType,
+        workoutStartTime,
+        completedSets,
+        currentSet,
+        notes,
+        setTimerState,
+        setStartTime,
+        setElapsedTime,
+        restStartTime,
+        modalVisible,
+      };
+      draftWriteRef.current = AsyncStorage.setItem(ACTIVE_WORKOUT_SESSION_KEY, JSON.stringify(draft))
+        .then(() => appEvents.emit(ACTIVE_WORKOUT_UPDATED))
+        .catch(error => console.error('Could not save active workout:', error));
+    }, 200);
+
+    return () => {
+      if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+    };
+  }, [
+    sessionHydrated,
+    workoutSaved,
+    sessionId,
+    workoutId,
+    exerciseId,
+    exerciseName,
+    muscle,
+    equipment,
+    exerciseType,
+    workoutStartTime,
+    completedSets,
+    currentSet,
+    notes,
+    setTimerState,
+    setStartTime,
+    restStartTime,
+    modalVisible,
+  ]);
 
   // 🔙 COMEBACK ALERT (FIXED)
   useEffect(() => {
@@ -207,7 +379,7 @@ export default function LogExerciseScreen() {
 
   // ⏰ 5-MINUTE IDLE ALERT — fires when user paused and did nothing for 5 minutes
   useEffect(() => {
-    if (setTimerState === 'idle' && completedSets.length > 0) {
+    if (setTimerState === 'idle' && completedSets.length > 0 && !summaryVisible) {
       awayFromScreenTimer.current = setTimeout(() => {
         Vibration.vibrate([0, 300, 200, 300]);
         Alert.alert(
@@ -242,7 +414,7 @@ export default function LogExerciseScreen() {
         clearTimeout(awayFromScreenTimer.current);
       }
     };
-  }, [setTimerState, completedSets.length]);
+  }, [setTimerState, completedSets.length, summaryVisible]);
 
   // Load user weight
   useEffect(() => {
@@ -489,11 +661,30 @@ export default function LogExerciseScreen() {
 
   // Save workout
   // Save workout - Save to BOTH AsyncStorage AND Database
+  const startNewSession = () => {
+    saveStartedRef.current = false;
+    summaryNavigationStartedRef.current = false;
+    setWorkoutSaved(false);
+    setCompletedSets([]);
+    setCurrentSet(createEmptySet());
+    setNotes('');
+    setWorkoutSummary(null);
+    setBackendSaveError(null);
+    setSummaryVisible(false);
+    setSessionEndTime(null);
+    setWorkoutStartTime(Date.now());
+    setClockNow(Date.now());
+    setSetTimerState('idle');
+    setSetElapsedTime(0);
+    setRestStartTime(0);
+    setRestElapsedTime(0);
+  };
+
   const saveWorkout = async () => {
-    if (completedSets.length === 0 || savingWorkout || saveStartedRef.current) {
-      if (completedSets.length === 0) {
-        Alert.alert('No sets', 'Complete at least one set first.');
-      }
+    if (savingWorkout || saveStartedRef.current || workoutSaved) return;
+
+    if (completedSets.length === 0) {
+      Alert.alert('No sets', 'Complete at least one set first.');
       return;
     }
 
@@ -501,6 +692,12 @@ export default function LogExerciseScreen() {
     setSavingWorkout(true);
     let savedLocally = false;
     try {
+      if (draftSaveTimerRef.current) {
+        clearTimeout(draftSaveTimerRef.current);
+        draftSaveTimerRef.current = null;
+      }
+      await draftWriteRef.current;
+
       const totalVolume = completedSets.reduce((sum, s) => sum + ((s.weight || 0) * (s.reps || 0)), 0);
       const totalDistance = completedSets.reduce((sum, s) => sum + (s.distance || 0), 0);
       const totalTimeSec = completedSets.reduce((sum, s) => sum + (s.actualDuration || 0), 0);
@@ -534,21 +731,61 @@ export default function LogExerciseScreen() {
       hist.unshift(workoutLog);
       await AsyncStorage.setItem('WORKOUT_HISTORY', JSON.stringify(hist.slice(0, 100)));
       savedLocally = true;
+      try {
+        const storedMeta = await AsyncStorage.getItem(ACTIVE_WORKOUT_SESSION_META_KEY);
+        const meta: ActiveWorkoutSessionMeta = storedMeta
+          ? JSON.parse(storedMeta) as ActiveWorkoutSessionMeta
+          : { sessionId, completedWorkoutCount: 0 };
+        if (meta.sessionId !== sessionId) {
+          throw new Error('The active workout session changed before this workout was saved.');
+        }
+        const updatedMeta: ActiveWorkoutSessionMeta = {
+          ...meta,
+          completedWorkoutCount: meta.completedWorkoutCount + 1,
+          lastCompletedExerciseId: exerciseId,
+          lastCompletedAt: Date.now(),
+        };
+        await AsyncStorage.setItem(
+          ACTIVE_WORKOUT_SESSION_META_KEY,
+          JSON.stringify(updatedMeta)
+        );
+      } catch (error) {
+        console.error('Could not update workout session progress:', error);
+        Alert.alert(
+          'Workout saved',
+          'This exercise was saved, but the session progress could not be updated. You can still end the session with DONE.'
+        );
+      }
+      try {
+        await AsyncStorage.removeItem(ACTIVE_WORKOUT_SESSION_KEY);
+      } catch (error) {
+        console.error('Could not clear the saved workout draft:', error);
+        Alert.alert('Workout saved', 'The exercise was saved, but its temporary draft could not be cleared.');
+      }
+      appEvents.emit(ACTIVE_WORKOUT_UPDATED);
 
-      // ✅ STEP 2: Save to database (persistent)
+      // Save to the backend; keep the local workout if sync is unavailable.
       const currentUser = auth().currentUser;
       const userId = currentUser?.uid;
 
       if (userId) {
-        await saveWorkoutToBackend({
-          userId,
-          exerciseId,
-          exerciseName,
-          sets: completedSets,
-          durationMinutes: Math.max(1, Math.floor(totalTimeSec / 60)),
-          caloriesBurned: totalCalories,   // 👈 add this line
-          notes,
-        });
+        try {
+          await saveWorkoutToBackend({
+            userId,
+            exerciseId,
+            exerciseName,
+            sets: completedSets,
+            durationMinutes: Math.max(1, Math.floor(totalTimeSec / 60)),
+            caloriesBurned: totalCalories,
+            notes,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unknown backend error';
+          console.error('Workout saved locally but backend sync failed:', error);
+          setBackendSaveError(message);
+        }
+      } else {
+        setBackendSaveError('No signed-in user is available to sync this workout.');
       }
       console.log("totalCalories:", totalCalories, "totalTimeSec:", totalTimeSec);
 
@@ -557,6 +794,12 @@ export default function LogExerciseScreen() {
         totalCalories,
         Math.max(1, Math.floor(totalTimeSec / 60))
       );
+
+      setSessionEndTime(Date.now());
+      setSetTimerState('idle');
+      setSetElapsedTime(0);
+      setRestStartTime(0);
+      setRestElapsedTime(0);
 
       Vibration.vibrate(200);
       setWorkoutSummary({
@@ -567,6 +810,10 @@ export default function LogExerciseScreen() {
         totalReps,
         totalDuration,
       });
+      setCompletedSets([]);
+      setCurrentSet(createEmptySet());
+      setNotes('');
+      setWorkoutSaved(true);
       setSummaryVisible(true);
     } catch (err) {
       if (!savedLocally) {
@@ -612,7 +859,7 @@ export default function LogExerciseScreen() {
             <View style={styles.durationBox}>
               <Text style={[styles.durationLabel, { color: colors.textMuted }]}>TOTAL TIME</Text>
               <Text style={[styles.bigDuration, { color: colors.text }]}>
-                {formatFullDuration(new Date().getTime() - startTime.getTime())}
+                {formatFullDuration(elapsedSeconds * 1000)}
               </Text>
             </View>
           </SafeAreaView>
@@ -762,12 +1009,14 @@ export default function LogExerciseScreen() {
         </View>
 
         <TouchableOpacity
-          style={[styles.saveBtn, savingWorkout && styles.saveBtnDisabled]}
+          style={[styles.saveBtn, (savingWorkout || workoutSaved) && styles.saveBtnDisabled]}
           onPress={saveWorkout}
-          disabled={savingWorkout}
+          disabled={savingWorkout || workoutSaved}
         >
           <LinearGradient colors={[colors.secondary, colors.primary]} style={styles.saveGradient}>
-            <Text style={styles.saveText}>{savingWorkout ? 'SAVING WORKOUT...' : 'FINISH WORKOUT'}</Text>
+            <Text style={styles.saveText}>
+              {savingWorkout ? 'SAVING WORKOUT...' : workoutSaved ? 'WORKOUT SAVED' : 'FINISH WORKOUT'}
+            </Text>
             {!savingWorkout && <Ionicons name="checkmark-circle" size={22} color="white" />}
           </LinearGradient>
         </TouchableOpacity>
@@ -1029,12 +1278,39 @@ export default function LogExerciseScreen() {
               <View style={[styles.summarySuccessIcon, { backgroundColor: `${colors.success}18` }]}>
                 <Ionicons name="checkmark-circle" size={44} color={colors.success} />
               </View>
-              <Text style={[styles.summaryEyebrow, { color: colors.success }]}>WORKOUT SAVED</Text>
+              <Text style={[styles.summaryEyebrow, { color: backendSaveError ? colors.warning : colors.success }]}>
+                {backendSaveError ? 'SAVED ON DEVICE · NOT SYNCED' : 'WORKOUT SAVED'}
+              </Text>
               <Text style={[styles.summaryTitle, { color: colors.text }]}>Great work!</Text>
               <Text style={[styles.summaryExercise, { color: colors.text }]}>{exerciseName}</Text>
               <Text style={[styles.summarySubtitle, { color: colors.textSecondary }]}>
-                {muscle ? `${muscle} · ` : ''}{completedSets.length} {completedSets.length === 1 ? 'set' : 'sets'} completed
+                {muscle ? `${muscle} · ` : ''}
+                {workoutSummary?.sets.length ?? 0} {(workoutSummary?.sets.length ?? 0) === 1 ? 'set' : 'sets'} completed
               </Text>
+              <TouchableOpacity
+                style={styles.summaryPrimaryButton}
+                activeOpacity={0.85}
+                onPress={() => {
+                  if (summaryNavigationStartedRef.current) return;
+                  summaryNavigationStartedRef.current = true;
+                  setSummaryVisible(false);
+                  router.replace('/(tabs)/exercise-library');
+                }}
+              >
+                <LinearGradient colors={[colors.secondary, colors.primary]} style={styles.summaryPrimaryGradient}>
+                  <Ionicons name="add-circle-outline" size={19} color="#FFFFFF" />
+                  <Text style={styles.summaryPrimaryText}>LOG ANOTHER EXERCISE</Text>
+                  <Ionicons name="arrow-forward" size={17} color="#FFFFFF" />
+                </LinearGradient>
+              </TouchableOpacity>
+              <Text style={[styles.summarySubtitle, { color: colors.textSecondary, marginTop: 8 }]}>
+                Choose another exercise to continue this session.
+              </Text>
+              {backendSaveError && (
+                <Text style={[styles.summarySubtitle, { color: colors.warning, marginTop: 8 }]}>
+                  This workout is saved on this device, but syncing failed: {backendSaveError}
+                </Text>
+              )}
 
               {workoutSummary && (
                 <>
@@ -1134,8 +1410,8 @@ export default function LogExerciseScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.summaryPrimaryButton}
-                activeOpacity={0.85}
+                style={[styles.summarySecondaryButton, { borderColor: colors.border }]}
+                activeOpacity={0.8}
                 onPress={() => {
                   if (summaryNavigationStartedRef.current) return;
                   summaryNavigationStartedRef.current = true;
@@ -1143,36 +1419,47 @@ export default function LogExerciseScreen() {
                   router.replace({ pathname: '/(tabs)/stats', params: { section: 'workouts' } });
                 }}
               >
-                <LinearGradient colors={[colors.secondary, colors.primary]} style={styles.summaryPrimaryGradient}>
-                  <Ionicons name="stats-chart-outline" size={19} color="#FFFFFF" />
-                  <Text style={styles.summaryPrimaryText}>VIEW STATS</Text>
-                  <Ionicons name="arrow-forward" size={17} color="#FFFFFF" />
-                </LinearGradient>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.summarySecondaryButton, { borderColor: colors.border }]}
-                activeOpacity={0.8}
-                onPress={() => {
-                  if (summaryNavigationStartedRef.current) return;
-                  summaryNavigationStartedRef.current = true;
-                  setSummaryVisible(false);
-                  router.replace('/(tabs)/exercise-library');
-                }}
-              >
-                <Ionicons name="add-circle-outline" size={19} color={colors.primary} />
-                <Text style={[styles.summarySecondaryText, { color: colors.primary }]}>LOG ANOTHER EXERCISE</Text>
+                <Ionicons name="stats-chart-outline" size={18} color={colors.primary} />
+                <Text style={[styles.summarySecondaryText, { color: colors.primary }]}>VIEW WORKOUT STATS</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.summaryDoneButton}
                 activeOpacity={0.7}
                 onPress={() => {
                   if (summaryNavigationStartedRef.current) return;
-                  summaryNavigationStartedRef.current = true;
-                  setSummaryVisible(false);
-                  router.replace('/(tabs)/home');
+                  Alert.alert(
+                    'Finish workout session?',
+                    'This exercise is saved. Finishing the session will end it, and you will need to start a new session to log more exercises.',
+                    [
+                      {
+                        text: 'Keep Session',
+                        style: 'cancel',
+                      },
+                      {
+                        text: 'Finish Session',
+                        onPress: async () => {
+                          if (summaryNavigationStartedRef.current) return;
+                          summaryNavigationStartedRef.current = true;
+                          try {
+                            await Promise.all([
+                              AsyncStorage.removeItem(ACTIVE_WORKOUT_SESSION_KEY),
+                              AsyncStorage.removeItem(ACTIVE_WORKOUT_SESSION_META_KEY),
+                            ]);
+                            appEvents.emit(ACTIVE_WORKOUT_UPDATED);
+                            setSummaryVisible(false);
+                            router.replace('/(tabs)/home');
+                          } catch (error) {
+                            summaryNavigationStartedRef.current = false;
+                            console.error('Could not finish workout session:', error);
+                            Alert.alert('Error', 'Could not finish the workout session. Please try again.');
+                          }
+                        },
+                      },
+                    ]
+                  );
                 }}
               >
-                <Text style={[styles.summaryDoneText, { color: colors.textSecondary }]}>DONE</Text>
+                <Text style={[styles.summaryDoneText, { color: colors.textSecondary }]}>DONE · FINISH SESSION</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>

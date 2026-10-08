@@ -1,6 +1,7 @@
 // app/_layout.tsx
 import { Slot, useRouter, useSegments, usePathname } from "expo-router";
 import { useState, useEffect, useRef } from "react";
+import { View } from "react-native";
 import { ThemeProvider } from '../context/themecontext';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import SplashScreen from "./(auth)/splash";
@@ -10,6 +11,7 @@ import { appEvents, PROFILE_UPDATED } from './utils/eventEmitter';
 import { ProfileProvider, useProfile } from '../context/profileContext';
 import { TodayProvider } from "@/context/todayContext";
 import { CustomLoader } from "../components/CustomLoader";
+import { ActiveWorkoutBanner } from "../components/ActiveWorkoutBanner";
 import { BackHandler } from 'react-native';
 // Event for pending navigation to prevent bounce-back
 export const PENDING_NAVIGATION = 'PENDING_NAVIGATION';
@@ -276,7 +278,12 @@ function RootLayoutNav() {
   if (loading || profileStatus.checking) {
     return <CustomLoader fullScreen={true} />;
   }
-  return <Slot />;
+  return (
+    <View style={{ flex: 1 }}>
+      <Slot />
+      <ActiveWorkoutBanner />
+    </View>
+  );
 }
 function TodayWrapper({ children }: { children: React.ReactNode }) {
   const { dailyCalorieGoal, loading } = useProfile();

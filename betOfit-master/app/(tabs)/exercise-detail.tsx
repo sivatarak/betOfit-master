@@ -24,6 +24,12 @@ import { CustomLoader } from '../../components/CustomLoader';
 import { useTheme } from '../../context/themecontext';
 import { AmbientGlow } from '../../components/AmbientGlow';
 import { fetchExerciseById } from '../services/exerciseApi';
+import {
+  ACTIVE_WORKOUT_SESSION_KEY,
+  ACTIVE_WORKOUT_SESSION_META_KEY,
+  ActiveWorkoutSession,
+  ActiveWorkoutSessionMeta,
+} from '../utils/activeWorkoutSession';
 
 const { width, height } = Dimensions.get('window');
 
@@ -353,13 +359,46 @@ export default function ExerciseDetailScreen() {
     }
   };
 
-  const startExercise = () => {
+  const startExercise = async () => {
     if (!exercise) return;
 
     try {
+      const [storedDraft, storedMeta] = await Promise.all([
+        AsyncStorage.getItem(ACTIVE_WORKOUT_SESSION_KEY),
+        AsyncStorage.getItem(ACTIVE_WORKOUT_SESSION_META_KEY),
+      ]);
+      let activeDraft = storedDraft ? JSON.parse(storedDraft) as ActiveWorkoutSession : null;
+      let sessionMeta = storedMeta ? JSON.parse(storedMeta) as ActiveWorkoutSessionMeta : null;
+
+      const draftWasAlreadySaved = Boolean(
+        activeDraft &&
+        sessionMeta &&
+        activeDraft.sessionId === sessionMeta.sessionId &&
+        (sessionMeta.lastCompletedAt ?? 0) >= activeDraft.workoutStartTime
+      );
+      if (draftWasAlreadySaved) {
+        await AsyncStorage.removeItem(ACTIVE_WORKOUT_SESSION_KEY);
+        activeDraft = null;
+      }
+
+      if (activeDraft) {
+        Alert.alert(
+          'Workout already in progress',
+          `Continue ${activeDraft.exerciseName} before starting another exercise.`,
+        );
+        return;
+      }
+
+      if (!sessionMeta) {
+        sessionMeta = { sessionId: Date.now().toString(), completedWorkoutCount: 0 };
+        await AsyncStorage.setItem(ACTIVE_WORKOUT_SESSION_META_KEY, JSON.stringify(sessionMeta));
+      }
+
       router.push({
         pathname: '/(tabs)/logExercise-screen',
         params: {
+          sessionId: sessionMeta.sessionId,
+          workoutId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           exerciseId: exercise.id,
           exerciseName: exercise.name || '',
           muscle: exercise.muscle || '',
@@ -370,7 +409,7 @@ export default function ExerciseDetailScreen() {
       });
     } catch (error) {
       console.error('Navigation error:', error);
-      Alert.alert('Error', 'Could not navigate to workout screen');
+      Alert.alert('Error', 'Could not start workout session. Please try again.');
     }
   };
 

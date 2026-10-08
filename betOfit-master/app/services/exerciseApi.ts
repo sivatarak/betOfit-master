@@ -439,19 +439,18 @@ export const saveWorkoutToBackend = async (workoutData: {
   durationMinutes: number;
   notes: string;
   caloriesBurned: number;
-}): Promise<any> => {
-  try {
-    const response = await fetch(`${BACKEND_BASE_URL   }/api/workouts`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(workoutData)
-    });
+}): Promise<void> => {
+  const response = await fetch(`${BACKEND_BASE_URL   }/api/workouts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(workoutData)
+  });
 
-    if (!response.ok) throw new Error("Failed to save workout");
-    return await response.json();
-  } catch (error) {
-    console.error("Save workout error:", error);
-    return null;
+  if (!response.ok) {
+    const responseBody = await response.text();
+    const rawDetail = responseBody || response.statusText || "No error details returned";
+    const detail = rawDetail.length > 300 ? `${rawDetail.slice(0, 300)}...` : rawDetail;
+    throw new Error(`Workout sync failed (HTTP ${response.status}): ${detail}`);
   }
 };
 
