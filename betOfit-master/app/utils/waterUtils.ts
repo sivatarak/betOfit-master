@@ -27,6 +27,57 @@ export interface WaterData {
   history: WaterLog[];
   streak: number;
 }
+
+export const getStoredWaterData = async (): Promise<WaterData | null> => {
+  const stored = await AsyncStorage.getItem(WATER_KEY);
+  if (stored) {
+    try {
+      return JSON.parse(stored) as WaterData;
+    } catch (error) {
+      console.error("Could not parse saved water data:", error);
+      await AsyncStorage.removeItem(WATER_KEY);
+    }
+  }
+
+  let legacyData: WaterData | null = null;
+  const legacyStored = await AsyncStorage.getItem("WATER_DATA");
+  if (legacyStored) {
+    try {
+      legacyData = JSON.parse(legacyStored) as WaterData;
+    } catch (error) {
+      console.error("Could not migrate legacy water data:", error);
+      await AsyncStorage.removeItem("WATER_DATA");
+    }
+  }
+
+  const today = getToday();
+  const legacyDailyKey = `WATER_INTAKE_${today}`;
+  const legacyDailyIntake = await AsyncStorage.getItem(legacyDailyKey);
+  const amount = legacyDailyIntake ? Number.parseInt(legacyDailyIntake, 10) : 0;
+  const migratedData = legacyData && legacyData.date === today
+    ? {
+        ...legacyData,
+        current: Number.isFinite(amount) ? Math.max(legacyData.current, amount) : legacyData.current,
+      }
+    : legacyData ?? (Number.isFinite(amount) && amount > 0
+      ? {
+          date: today,
+          current: amount,
+          goal: 2500,
+          history: [],
+          streak: 0,
+        }
+      : null);
+
+  if (migratedData) {
+    await AsyncStorage.setItem(WATER_KEY, JSON.stringify(migratedData));
+    await AsyncStorage.removeItem("WATER_DATA");
+    await AsyncStorage.removeItem(legacyDailyKey);
+    return migratedData;
+  }
+
+  return null;
+};
 // Delete single log from backend
 export const deleteWaterFromBackend = async (userId: string) => {
   try {
@@ -160,11 +211,11 @@ export const loadWaterData = async (weightKg: number): Promise<WaterData> => {
   const currentGoal = calculateDailyGoal(weightKg);
 
   // Try to load from AsyncStorage first (fast)
-  const stored = await AsyncStorage.getItem(WATER_KEY);
+  const stored = await getStoredWaterData();
 
   if (stored) {
     try {
-      const parsed: WaterData = JSON.parse(stored);
+      const parsed = stored;
 
       // ✅ ADD THIS CORRUPTED DATA CHECK
       if (parsed.current > currentGoal * 2) {
@@ -224,10 +275,10 @@ export const loadWaterData = async (weightKg: number): Promise<WaterData> => {
 // ========================================
 
 export const addWaterIntake = async (amount: number): Promise<WaterData> => {
-  const stored = await AsyncStorage.getItem(WATER_KEY);
+  const stored = await getStoredWaterData();
   if (!stored) throw new Error("No water data");
 
-  const parsed: WaterData = JSON.parse(stored);
+  const parsed = stored;
 
   // DEBUG: Log the current state
   console.log('💧 Before add - current:', parsed.current, 'goal:', parsed.goal, 'amount:', amount);

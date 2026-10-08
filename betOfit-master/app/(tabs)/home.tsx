@@ -28,6 +28,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useProfile } from "../../context/profileContext";
 import { useToday } from "../../context/todayContext";
 import { generateSmartSuggestion, SuggestionInput } from "../utils/smartsuggestionengine";
+import { getStoredWaterData } from "../utils/waterUtils";
 
 const { width } = Dimensions.get("window");
 const SLIDE_WIDTH = width;
@@ -263,8 +264,8 @@ export default function Home() {
 
   const loadWater = useCallback(async () => {
     try {
-      const stored = await AsyncStorage.getItem(`WATER_INTAKE_${dateKey}`);
-      setWaterMl(stored ? parseInt(stored, 10) : 0);
+      const waterData = await getStoredWaterData();
+      setWaterMl(waterData?.date === dateKey ? waterData.current : 0);
     } catch (e) {
       console.log("Water widget error:", e);
     }

@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState, AppStateStatus } from 'react-native';
 import auth from '@react-native-firebase/auth';
 import { getTodayFoodLogs, getWorkoutHistory } from '../app/services/exerciseApi';
+import { getStoredWaterData } from '../app/utils/waterUtils';
 
 interface TodayData {
   todayEaten: number;
@@ -138,11 +139,8 @@ export const TodayProvider: React.FC<{
         }
       }
 
-      const waterRaw = await AsyncStorage.getItem('WATER_DATA');
-      if (waterRaw) {
-        const waterData = JSON.parse(waterRaw);
-        if (waterData.date === TODAY) water = waterData.current || 0;
-      }
+      const waterData = await getStoredWaterData();
+      if (waterData?.date === TODAY) water = waterData.current || 0;
 
       const workoutRaw = await AsyncStorage.getItem('WORKOUT_HISTORY');
       if (workoutRaw) {
@@ -242,11 +240,8 @@ export const TodayProvider: React.FC<{
 
       // ── WATER (still from AsyncStorage only) ──
       let water = 0;
-      const waterRaw = await AsyncStorage.getItem('WATER_DATA');
-      if (waterRaw) {
-        const waterData = JSON.parse(waterRaw);
-        if (waterData.date === TODAY) water = waterData.current || 0;
-      }
+      const waterData = await getStoredWaterData();
+      if (waterData?.date === TODAY) water = waterData.current || 0;
       console.log('🌐 loadFromBackend computed burned =', burned);
       return calculate(eaten, burned, protein, carbs, fat, water, workoutCount, activeMinutes, goal);
 
@@ -265,7 +260,11 @@ export const TodayProvider: React.FC<{
     // Try cache first (instant)
     const cached = await loadFromCache(goal);
     if (cached) {
-      setData(cached);
+      const waterData = await getStoredWaterData();
+      setData({
+        ...cached,
+        waterIntake: waterData?.date === getToday() ? waterData.current : 0,
+      });
     }
 
     // Always sync with backend in background
