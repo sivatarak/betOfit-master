@@ -10,8 +10,8 @@ import {
     StatusBar,
     SafeAreaView,
     Platform,
-    Alert,
 } from "react-native";
+import { AppAlert as Alert } from '../utils/appAlert';
 import { getStats } from '../services/profileApi';
 import auth from '@react-native-firebase/auth';
 import AsyncStorage from "@react-native-async-storage/async-storage";

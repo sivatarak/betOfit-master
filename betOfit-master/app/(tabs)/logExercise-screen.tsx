@@ -8,7 +8,6 @@ import {
   SafeAreaView,
   ScrollView,
   TextInput,
-  Alert,
   Platform,
   Vibration,
   ImageBackground,
@@ -35,6 +34,7 @@ import {
   ActiveWorkoutSessionMeta,
 } from '../utils/activeWorkoutSession';
 import { ACTIVE_WORKOUT_UPDATED, appEvents } from '../utils/eventEmitter';
+import { AppAlert as Alert } from '../utils/appAlert';
 
 const { width, height } = Dimensions.get('window');
 
@@ -286,7 +286,7 @@ export default function LogExerciseScreen() {
     return () => {
       mounted = false;
     };
-  }, [sessionId, workoutId]);
+  }, [sessionId, workoutId, exerciseId]);
 
   useEffect(() => {
     if (!sessionHydrated || blockedByExistingSessionRef.current || workoutSaved) return;
@@ -315,7 +315,9 @@ export default function LogExerciseScreen() {
         modalVisible,
       };
       draftWriteRef.current = AsyncStorage.setItem(ACTIVE_WORKOUT_SESSION_KEY, JSON.stringify(draft))
-        .then(() => appEvents.emit(ACTIVE_WORKOUT_UPDATED))
+        .then(() => {
+          appEvents.emit(ACTIVE_WORKOUT_UPDATED);
+        })
         .catch(error => console.error('Could not save active workout:', error));
     }, 200);
 
@@ -361,7 +363,7 @@ export default function LogExerciseScreen() {
           const label = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
 
           Alert.alert(
-            '⏸️ Welcome Back!',
+            'Welcome back',
             `You were away for ${label}. Your set timer is still running — what would you like to do?`,
             [
               { text: 'Keep Going', style: 'cancel' },
@@ -383,7 +385,7 @@ export default function LogExerciseScreen() {
       awayFromScreenTimer.current = setTimeout(() => {
         Vibration.vibrate([0, 300, 200, 300]);
         Alert.alert(
-          '💪 Still Working Out?',
+          'Still working out?',
           `You have ${completedSets.length} set(s) logged but haven't continued for 5 minutes. What would you like to do?`,
           [
             { text: 'Keep Going', style: 'cancel' },
@@ -588,19 +590,19 @@ export default function LogExerciseScreen() {
   const completeSet = async () => {
     // Validate inputs
     if (trackingMode === 'reps-weight' && (!currentSet.reps || !currentSet.weight)) {
-      Alert.alert('Enter values', 'Please enter reps and weight');
+      Alert.alert('Enter values', 'Please enter reps and weight.');
       return;
     }
     if (trackingMode === 'reps-only' && !currentSet.reps) {
-      Alert.alert('Enter reps', 'Please enter number of reps');
+      Alert.alert('Enter reps', 'Please enter the number of reps.');
       return;
     }
     if (trackingMode === 'time-only' && !currentSet.duration) {
-      Alert.alert('Enter duration', 'Please enter duration');
+      Alert.alert('Enter duration', 'Please enter a duration.');
       return;
     }
     if (trackingMode === 'time-distance' && (!currentSet.duration || !currentSet.distance)) {
-      Alert.alert('Enter values', 'Please enter duration and distance');
+      Alert.alert('Enter values', 'Please enter both duration and distance.');
       return;
     }
 
@@ -684,7 +686,7 @@ export default function LogExerciseScreen() {
     if (savingWorkout || saveStartedRef.current || workoutSaved) return;
 
     if (completedSets.length === 0) {
-      Alert.alert('No sets', 'Complete at least one set first.');
+      Alert.alert('No sets logged yet', 'Complete at least one set before saving this exercise.');
       return;
     }
 
@@ -820,7 +822,7 @@ export default function LogExerciseScreen() {
         saveStartedRef.current = false;
       }
       console.error('Save error:', err);
-      Alert.alert('Error', 'Could not save workout');
+      Alert.alert('Could not save workout', 'Your workout could not be saved. Please try again.');
     } finally {
       setSavingWorkout(false);
     }
@@ -1451,7 +1453,7 @@ export default function LogExerciseScreen() {
                           } catch (error) {
                             summaryNavigationStartedRef.current = false;
                             console.error('Could not finish workout session:', error);
-                            Alert.alert('Error', 'Could not finish the workout session. Please try again.');
+                            Alert.alert('Could not finish session', 'Please try again.');
                           }
                         },
                       },
@@ -1465,6 +1467,7 @@ export default function LogExerciseScreen() {
           </View>
         </View>
       </Modal>
+
     </View>
   );
 }

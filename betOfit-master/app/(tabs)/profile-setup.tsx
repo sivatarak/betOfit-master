@@ -3,9 +3,10 @@ import { useState, useEffect, useRef } from 'react';
 import { useLocalSearchParams } from "expo-router";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ScrollView, SafeAreaView, Platform, Alert, Dimensions,
+  ScrollView, SafeAreaView, Platform, Dimensions,
   Image, Modal, ActivityIndicator, Animated, Easing, LayoutAnimation, KeyboardAvoidingView
 } from 'react-native';
+import { AppAlert as Alert } from '../utils/appAlert';
 import { router } from 'expo-router';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";

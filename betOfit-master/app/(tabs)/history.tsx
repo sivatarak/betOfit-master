@@ -9,9 +9,9 @@ import {
     StatusBar,
     SafeAreaView,
     Platform,
-    Alert,
     Modal,
 } from "react-native";
+import { AppAlert as Alert } from '../utils/appAlert';
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";

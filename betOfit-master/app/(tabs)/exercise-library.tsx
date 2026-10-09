@@ -11,7 +11,6 @@ import {
   ActivityIndicator,
   FlatList,
   Platform,
-  Alert,
   Image,
   Dimensions,
   StatusBar,

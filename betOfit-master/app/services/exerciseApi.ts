@@ -2,7 +2,6 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import auth from '@react-native-firebase/auth';
-import { Alert } from 'react-native';
 
 const BACKEND_BASE_URL   = process.env.EXPO_PUBLIC_BACKEND_URL;
 

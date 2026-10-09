@@ -10,8 +10,8 @@ import {
   FlatList,
   Modal,
   TextInput,
-  Alert,
 } from 'react-native';
+import { AppAlert as Alert } from '../utils/appAlert';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
 

@@ -9,10 +9,10 @@ import {
   SafeAreaView,
   StatusBar,
   TextInput,
-  Alert,
   Animated,
   Dimensions,
 } from 'react-native';
+import { AppAlert as Alert } from '../utils/appAlert';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';

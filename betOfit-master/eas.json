@@ -3,7 +3,8 @@
     "version": ">= 3.12.0"
   },
   "build": {
-    "apk": {
+    "apk-arm64": {
+      "distribution": "internal",
       "android": {
         "buildType": "apk"
       }
@@ -12,13 +13,6 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
-      }
-    },
-    "apk-arm64": {
-      "distribution": "internal",
-      "android": {
-        "buildType": "apk",
-        "gradleCommand": ":app:assembleRelease -PreactNativeArchitectures=arm64-v8a"
       }
     },
     "production": {

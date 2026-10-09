@@ -11,11 +11,11 @@ import {
   ScrollView,
   StatusBar,
   Platform,
-  Alert,
   Animated as RNAnimated,
   Modal,
   TextInput,
 } from "react-native";
+import { AppAlert as Alert } from '../utils/appAlert';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
 import {
   onFirstAppOpen,

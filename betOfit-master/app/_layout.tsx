@@ -12,6 +12,7 @@ import { ProfileProvider, useProfile } from '../context/profileContext';
 import { TodayProvider } from "@/context/todayContext";
 import { CustomLoader } from "../components/CustomLoader";
 import { ActiveWorkoutBanner } from "../components/ActiveWorkoutBanner";
+import { AppAlertProvider } from "../components/AppAlertProvider";
 import { BackHandler } from 'react-native';
 // Event for pending navigation to prevent bounce-back
 export const PENDING_NAVIGATION = 'PENDING_NAVIGATION';
@@ -309,22 +310,26 @@ export default function RootLayout() {
   if (showSplash) {
     return (
       <ThemeProvider>
-        <AuthProvider>
-          <SplashScreen />
-        </AuthProvider>
+        <AppAlertProvider>
+          <AuthProvider>
+            <SplashScreen />
+          </AuthProvider>
+        </AppAlertProvider>
       </ThemeProvider>
     );
   }
 
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <ProfileProvider>
-          <TodayWrapper>
-            <RootLayoutNav />
-          </TodayWrapper>
-        </ProfileProvider>
-      </AuthProvider>
+      <AppAlertProvider>
+        <AuthProvider>
+          <ProfileProvider>
+            <TodayWrapper>
+              <RootLayoutNav />
+            </TodayWrapper>
+          </ProfileProvider>
+        </AuthProvider>
+      </AppAlertProvider>
     </ThemeProvider>
   );
 }

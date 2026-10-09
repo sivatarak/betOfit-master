@@ -13,7 +13,6 @@ import {
   ScrollView,
   TextInput,
   ActivityIndicator,
-  Alert,
   FlatList,
   Platform,
   Keyboard,

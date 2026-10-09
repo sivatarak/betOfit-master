@@ -9,10 +9,10 @@ import {
   ScrollView,
   Platform,
   Linking,
-  Alert,
   ImageBackground,
   Dimensions,
 } from 'react-native';
+import { AppAlert as Alert } from '../utils/appAlert';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';

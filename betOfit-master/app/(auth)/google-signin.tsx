@@ -5,12 +5,12 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  Alert,
   InteractionManager,
   SafeAreaView,
   Animated,
   Easing,
 } from 'react-native';
+import { AppAlert as Alert } from '../utils/appAlert';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Defs, RadialGradient as SvgRadialGradient, Stop, Circle, Path } from 'react-native-svg';

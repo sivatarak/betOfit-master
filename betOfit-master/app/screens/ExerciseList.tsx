@@ -9,12 +9,12 @@ import {
   StyleSheet,
   SafeAreaView,
   ActivityIndicator,
-  Alert,
   RefreshControl,
   Animated,
   Dimensions,
   Platform, // Add this import
 } from 'react-native';
+import { AppAlert as Alert } from '../utils/appAlert';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useWorkoutStore } from '../../hooks/useWorkoutstore';
