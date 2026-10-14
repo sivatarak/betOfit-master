@@ -12,6 +12,7 @@ import {
     Modal,
 } from "react-native";
 import { AppAlert as Alert } from '../utils/appAlert';
+import { ScreenGuide } from '../../components/ScreenGuide';
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -278,6 +279,12 @@ export default function HistoryScreen() {
 
     return (
         <View style={styles.container}>
+            <ScreenGuide
+                screenId="history"
+                title="Review your activity"
+                message="History brings your logged workouts, meals, and water together by day. Choose a date to look back at what you recorded."
+                icon="time"
+            />
             <StatusBar barStyle={theme === "dark" ? "light-content" : "dark-content"} />
 
             <AmbientGlow />

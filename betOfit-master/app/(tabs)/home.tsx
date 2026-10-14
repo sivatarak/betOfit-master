@@ -29,6 +29,7 @@ import { useProfile } from "../../context/profileContext";
 import { useToday } from "../../context/todayContext";
 import { generateSmartSuggestion, SuggestionInput } from "../utils/smartsuggestionengine";
 import { getStoredWaterData } from "../utils/waterUtils";
+import { ScreenGuide } from "../../components/ScreenGuide";
 
 const { width } = Dimensions.get("window");
 const SLIDE_WIDTH = width;
@@ -475,6 +476,12 @@ export default function Home() {
 
   return (
     <View style={styles.container}>
+      <ScreenGuide
+        screenId="home"
+        title="Your daily fitness dashboard"
+        message="Check your calorie balance, activity, hydration, and daily suggestions here. Use the cards and shortcuts to log meals, add water, and start an exercise."
+        icon="home"
+      />
       <StatusBar barStyle={theme === "dark" ? "light-content" : "dark-content"} />
 
       <SafeAreaView style={styles.safeArea}>

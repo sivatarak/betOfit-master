@@ -1,5 +1,5 @@
 // app/_layout.tsx
-import { Slot, useRouter, useSegments, usePathname } from "expo-router";
+import { Stack, useRouter, useSegments, usePathname } from "expo-router";
 import { useState, useEffect, useRef } from "react";
 import { View } from "react-native";
 import { ThemeProvider } from '../context/themecontext';
@@ -62,94 +62,100 @@ function RootLayoutNav() {
 
   const redirectedToHomeRef = useRef(false);
   const pendingNavigationRef = useRef<string | null>(null);
+  const profileLoadRequestRef = useRef(0);
 
   const getModeFromPathname = (path: string): string | undefined => {
     const match = path.match(/[?&]mode=([^&]+)/);
     return match ? match[1] : undefined;
   };
 
-  const loadProfileStatus = async () => {
-    if (!user) return;
-    console.log('🔄 Loading profile status...');
+  const loadProfileStatus = async (userId: string, requestId: number) => {
     try {
-      const storedProfile = await AsyncStorage.getItem(`USER_PROFILE_${user.uid}`);
-      console.log("storedProfile", storedProfile);
-      if (storedProfile) {
-        const profile = JSON.parse(storedProfile);
-        console.log('✅ Profile status from AsyncStorage:', {
-          basic: profile.basic_completed,
-          goals: profile.goals_completed,
-          workout: profile.workout_completed
-        });
+      const [storedProfile, storedStatus] = await Promise.all([
+        AsyncStorage.getItem(`USER_PROFILE_${userId}`),
+        AsyncStorage.getItem(`USER_PROFILE_STATUS_${userId}`),
+      ]);
+      const cachedProfile = storedProfile ? JSON.parse(storedProfile) : {};
+      const cachedStatus = storedStatus ? JSON.parse(storedStatus) : {};
+      const cached = {
+        basic_completed: Boolean(cachedProfile.basic_completed || cachedStatus.basic_completed),
+        goals_completed: Boolean(cachedProfile.goals_completed || cachedStatus.goals_completed),
+        workout_completed: Boolean(cachedProfile.workout_completed || cachedStatus.workout_completed),
+      };
 
-        setProfileStatus({
-          basic_completed: profile.basic_completed || false,
-          goals_completed: profile.goals_completed || false,
-          workout_completed: profile.workout_completed || false,
-          checking: false
-        });
+      if (profileLoadRequestRef.current !== requestId) return;
+      setProfileStatus({ ...cached, checking: false });
 
-      }
-      const profileFromDB = await getProfile(user.uid);
-      if (profileFromDB && profileFromDB.user_id) {
-        console.log('✅ Profile status from database:', {
-          basic: profileFromDB.basic_completed,
-          goals: profileFromDB.goals_completed,
-          workout: profileFromDB.workout_completed
-        });
-        setProfileStatus({
-          basic_completed: profileFromDB.basic_completed || false,
-          goals_completed: profileFromDB.goals_completed || false,
-          workout_completed: profileFromDB.workout_completed || false,
-          checking: false
-        });
-        console.log("user id for caching", user.uid, profileFromDB);
+      const profileFromDB = await getProfile(userId);
+      if (profileLoadRequestRef.current !== requestId) return;
+
+      if (profileFromDB?.user_id) {
+        const freshStatus = {
+          basic_completed: Boolean(cached.basic_completed || profileFromDB.basic_completed),
+          goals_completed: Boolean(cached.goals_completed || profileFromDB.goals_completed),
+          workout_completed: Boolean(cached.workout_completed || profileFromDB.workout_completed),
+        };
+        setProfileStatus({ ...freshStatus, checking: false });
         await AsyncStorage.setItem(
-          `USER_PROFILE_STATUS_${user.uid}`,
-          JSON.stringify({
-            basic_completed: profileFromDB.basic_completed,
-            goals_completed: profileFromDB.goals_completed,
-            workout_completed: profileFromDB.workout_completed
-          })
+          `USER_PROFILE_STATUS_${userId}`,
+          JSON.stringify(freshStatus)
         );
-      } else {
-        console.log('📝 No profile found');
-        setProfileStatus({
-          basic_completed: false,
-          goals_completed: false,
-          workout_completed: false,
-          checking: false
-        });
       }
     } catch (error) {
       console.error('Error loading profile:', error);
-      setProfileStatus(prev => ({ ...prev, checking: false }));
+      if (profileLoadRequestRef.current === requestId) {
+        setProfileStatus(prev => ({ ...prev, checking: false }));
+      }
     }
   };
 
   useEffect(() => {
     if (user) {
       redirectedToHomeRef.current = false;
-      loadProfileStatus();
+      profileLoadRequestRef.current += 1;
+      const requestId = profileLoadRequestRef.current;
+      setProfileStatus({
+        basic_completed: false,
+        goals_completed: false,
+        workout_completed: false,
+        checking: true,
+      });
+      void loadProfileStatus(user.uid, requestId);
     } else {
-      setProfileStatus(prev => ({ ...prev, checking: false }));
+      profileLoadRequestRef.current += 1;
+      setProfileStatus({
+        basic_completed: false,
+        goals_completed: false,
+        workout_completed: false,
+        checking: false,
+      });
     }
   }, [user]);
 
   useEffect(() => {
     const handleProfileUpdate = (updatedStatus?: { basic_completed: boolean, goals_completed: boolean, workout_completed: boolean }) => {
       if (updatedStatus) {
+        profileLoadRequestRef.current += 1;
         console.log('📢 Profile update received with fresh data, skipping reload');
         setProfileStatus({ ...updatedStatus, checking: false });
+        if (user?.uid) {
+          AsyncStorage.setItem(`USER_PROFILE_STATUS_${user.uid}`, JSON.stringify(updatedStatus))
+            .catch(error => console.error('Could not cache updated profile status:', error));
+        }
       } else {
-        loadProfileStatus();
+        if (user?.uid) {
+          profileLoadRequestRef.current += 1;
+          const requestId = profileLoadRequestRef.current;
+          setProfileStatus(prev => ({ ...prev, checking: true }));
+          void loadProfileStatus(user.uid, requestId);
+        }
       }
     };
     appEvents.on(PROFILE_UPDATED, handleProfileUpdate);
     return () => {
       appEvents.off(PROFILE_UPDATED, handleProfileUpdate);
     };
-  }, [user]);
+  }, [user?.uid]);
 
   // Listen for pending navigation events
   useEffect(() => {
@@ -276,13 +282,14 @@ function RootLayoutNav() {
     }
 
   }, [user, loading, profileStatus.basic_completed, profileStatus.goals_completed, profileStatus.workout_completed, profileStatus.checking, segments.join('/'), pathname]);
-  if (loading || profileStatus.checking) {
-    return <CustomLoader fullScreen={true} />;
-  }
   return (
     <View style={{ flex: 1 }}>
-      <Slot />
-      <ActiveWorkoutBanner />
+      <Stack screenOptions={{ headerShown: false }} />
+      {loading || profileStatus.checking ? (
+        <CustomLoader fullScreen={true} />
+      ) : (
+        <ActiveWorkoutBanner />
+      )}
     </View>
   );
 }

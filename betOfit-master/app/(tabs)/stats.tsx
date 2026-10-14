@@ -12,6 +12,7 @@ import {
     Platform,
 } from "react-native";
 import { AppAlert as Alert } from '../utils/appAlert';
+import { ScreenGuide } from '../../components/ScreenGuide';
 import { getStats } from '../services/profileApi';
 import auth from '@react-native-firebase/auth';
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -343,6 +344,12 @@ export default function StatsScreen() {
 
     return (
         <View style={[styles.container, { backgroundColor: isDark ? colors.background : '#FFF9F3' }]}> 
+            <ScreenGuide
+                screenId="stats"
+                title="Understand your progress"
+                message="Review workout, calorie, hydration, and weight trends over time. Change the period and expand sections to see more detail."
+                icon="bar-chart"
+            />
             <View pointerEvents="none" style={styles.ambientGlowWrap}>
                 <Svg width={360} height={360}>
                     <Defs>

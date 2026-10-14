@@ -5,13 +5,11 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  InteractionManager,
   SafeAreaView,
   Animated,
   Easing,
 } from 'react-native';
 import { AppAlert as Alert } from '../utils/appAlert';
-import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Defs, RadialGradient as SvgRadialGradient, Stop, Circle, Path } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -181,9 +179,7 @@ export default function GoogleSignInScreen() {
           .catch((error) => console.warn('Could not save recent Google account:', error));
       }
 
-      InteractionManager.runAfterInteractions(() => {
-        router.replace('/(tabs)/profile-setup?mode=basic');
-      });
+      // RootLayoutNav routes after loading this user's saved profile status.
     } catch (error: any) {
       console.error('❌ Sign-in error:', error);
       Alert.alert(expectedEmail ? 'Recent Account Unavailable' : 'Sign-In Failed', error.message);

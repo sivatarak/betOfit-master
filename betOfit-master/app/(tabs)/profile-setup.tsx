@@ -7,6 +7,7 @@ import {
   Image, Modal, ActivityIndicator, Animated, Easing, LayoutAnimation, KeyboardAvoidingView
 } from 'react-native';
 import { AppAlert as Alert } from '../utils/appAlert';
+import { ScreenGuide } from '../../components/ScreenGuide';
 import { router } from 'expo-router';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
@@ -117,6 +118,7 @@ const sanitizeNumericInput = (
 export default function ProfileScreen() {
   const { colors, theme } = useTheme();
   const { mode } = useLocalSearchParams();
+  const guideEnabled = (Array.isArray(mode) ? mode[0] : mode) === 'all';
   const isDark = theme === 'dark';
   const styles = makeStyles(colors);
   const [profile, setProfile] = useState<UserProfile>(defaultProfile);
@@ -885,6 +887,13 @@ export default function ProfileScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={0}
     >
+      <ScreenGuide
+        screenId="profile"
+        title="Make your plan personal"
+        message="Keep your personal details, weight goals, and weekly workout schedule up to date so the app can tailor your targets and recommendations."
+        icon="person"
+        enabled={guideEnabled}
+      />
       <SafeAreaView style={styles.safeArea}>
         {/* Ambient glow */}
           <AmbientGlow />
