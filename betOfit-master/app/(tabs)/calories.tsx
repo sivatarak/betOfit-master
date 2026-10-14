@@ -32,6 +32,7 @@ import { useToday } from '../../context/todayContext';
 import { useTheme } from "../../context/themecontext";
 import { CustomLoader } from "@/components/CustomLoader";
 import { AmbientGlow } from "../../components/AmbientGlow";
+import { ContextualTip } from "../../components/ContextualTip";
 
 const { width } = Dimensions.get("window");
 const CIRCLE_SIZE = Math.min(width * 0.42, 156);
@@ -763,6 +764,12 @@ export default function CaloriesScreen() {
                 theme={theme}
               />
             </View>
+
+            <ContextualTip
+              tipId="nutrition-food-log"
+              message="Search for a food, choose a serving size, and add it to a meal. Calories and macros update in today's totals."
+              icon="restaurant-outline"
+            />
 
             {/* SEARCH SECTION */}
             <View style={styles.searchSection}>

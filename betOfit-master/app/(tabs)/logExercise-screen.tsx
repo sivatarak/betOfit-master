@@ -25,6 +25,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import auth from '@react-native-firebase/auth';
 import { useTheme } from '../../context/themecontext';
 import { AmbientGlow } from '../../components/AmbientGlow';
+import { ContextualTip } from '../../components/ContextualTip';
 import { useToday } from '../../context/todayContext';
 import { calculateCaloriesBurned, saveWorkoutToBackend } from '../services/exerciseApi';
 import {
@@ -869,6 +870,12 @@ export default function LogExerciseScreen() {
       </ImageBackground>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+        <ContextualTip
+          tipId="workout-set-logging"
+          message="Tap Start to time a set, then enter its reps, weight, or duration and complete it. Finish Workout saves your logged sets."
+          icon="timer-outline"
+        />
+
         {/* ⏱️ SET TIMER CARD (When timer is running) */}
         {setTimerState === 'running' && (
           <View style={[styles.timerCard, { backgroundColor: colors.card, borderColor: colors.primary }]}>

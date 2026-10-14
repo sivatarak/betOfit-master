@@ -25,6 +25,7 @@ import Svg, { Circle, Defs, RadialGradient as SvgRadialGradient, Stop } from 're
 import { CustomLoader } from '../../components/CustomLoader';
 import { useTheme } from '../../context/themecontext';
 import { AmbientGlow } from '../../components/AmbientGlow';
+import { ContextualTip } from '../../components/ContextualTip';
 import { fetchExercisesByMuscle } from '../services/exerciseApi';
 
 const { width } = Dimensions.get('window');
@@ -629,6 +630,12 @@ export default function ExerciseLibraryScreen() {
 
           ListHeaderComponent={
             <>
+              <ContextualTip
+                tipId="exercise-library"
+                message="Choose a muscle group or search by exercise, muscle, or equipment. Tap an exercise to see its instructions and start tracking."
+                icon="search-outline"
+              />
+
               {/* MUSCLE CAROUSEL */}
               <View style={styles.muscleSection}>
                 <View style={styles.sectionHeader}>

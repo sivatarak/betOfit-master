@@ -35,6 +35,7 @@ import { BlurView } from "expo-blur";
 import { CustomLoader } from "../../components/CustomLoader";
 import { useTheme } from "../../context/themecontext";
 import { AmbientGlow } from "../../components/AmbientGlow";
+import { ContextualTip } from "../../components/ContextualTip";
 import {
   loadWaterData,
   addWaterIntake,
@@ -346,6 +347,12 @@ export default function WaterScreen() {
               </View>
               <Text style={styles.quickIntakeHint}>{saving ? "Saving..." : "Choose a serving"}</Text>
             </View>
+
+            <ContextualTip
+              tipId="water-intake"
+              message="Tap a serving size to log it instantly, or choose Custom to enter another amount. Your progress updates toward today's goal."
+              icon="water-outline"
+            />
 
             <View style={styles.quickIntakeGrid}>
               <TouchableOpacity disabled={saving} style={styles.quickIntakeButton} onPress={() => add(250)} activeOpacity={0.85}>

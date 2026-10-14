@@ -23,6 +23,7 @@ import YoutubePlayer from 'react-native-youtube-iframe';
 import { CustomLoader } from '../../components/CustomLoader';
 import { useTheme } from '../../context/themecontext';
 import { AmbientGlow } from '../../components/AmbientGlow';
+import { ContextualTip } from '../../components/ContextualTip';
 import { fetchExerciseById } from '../services/exerciseApi';
 import {
   ACTIVE_WORKOUT_SESSION_KEY,
@@ -628,6 +629,12 @@ export default function ExerciseDetailScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        <ContextualTip
+          tipId="exercise-detail"
+          message="Review the instructions and muscle focus, then tap Start Exercise at the bottom to begin logging your sets."
+          icon="barbell-outline"
+        />
+
         {/* PERFORMANCE STATS GRID */}
         {personalRecord && (
           <View style={styles.statsGrid}>
