@@ -414,7 +414,7 @@ export default function GoogleSignInScreen() {
         </View>
 
         <Text style={styles.termsText}>
-          By continuing, you agree to BetOFit's{' '}
+          By continuing, you agree to BetOFit&apos;s{' '}
           <Text
             style={[
               styles.termsLink,

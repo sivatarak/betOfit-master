@@ -14,6 +14,20 @@ import { Platform } from 'react-native';
 
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 
+export interface SmartSuggestion {
+  mealType: Exclude<MealType, 'snack'>;
+  suggestion: string;
+  streakDays: number;
+  missedCount: number;
+  avgLogHour: number | null;
+  topFoods: {
+    name: string;
+    avgQuantity: number;
+    frequency: number;
+    avgCalories: number;
+  }[];
+}
+
 // Default reminder times (24h). Adjust to match your product's schedule,
 // or make these per-user/configurable later.
 const MEAL_TIMES: Record<MealType, { hour: number; minute: number } | null> = {
@@ -52,33 +66,13 @@ Notifications.setNotificationHandler({
     shouldSetBadge: false,
   }),
 });
-/**
- * ⚠️ TEMPORARY STUB — this unblocks the crash in app/(tabs)/home.tsx,
- * which imports `loadSmartSuggestions` from THIS file.
- *
- * This name/logic actually belongs to the smart-suggestion engine
- * (utils/smartSuggestionEngine.ts -> generateSmartSuggestion), not to
- * meal reminders. Whatever added this call to home.tsx likely meant to
- * import from '../../utils/smartSuggestionEngine' instead.
- *
- * This stub exists only so the app stops crashing with
- * "loadSmartSuggestions is not a function". It safely does nothing and
- * returns null — it does NOT compute or return a real suggestion.
- *
- * ACTION NEEDED: open app/(tabs)/home.tsx, find the import of
- * `loadSmartSuggestions` from './mealReminders' (or similar), and either:
- *   a) change it to import `generateSmartSuggestion` from
- *      '../../utils/smartSuggestionEngine', or
- *   b) if you genuinely want meal-reminder-aware suggestions, describe
- *      what data/shape home.tsx expects back and this can be built out
- *      properly instead of stubbed.
- */
-export async function loadSmartSuggestions(...args: any[]): Promise<any> {
+/** Placeholder until meal-history-based suggestions are implemented. */
+export async function loadSmartSuggestions(): Promise<SmartSuggestion[]> {
   console.warn(
     '[mealReminders] loadSmartSuggestions() is a temporary stub. ' +
     'See the comment above this function in services/mealReminders.ts.'
   );
-  return null;
+  return [];
 }
 
 /**
@@ -264,8 +258,6 @@ export async function initMealReminders(): Promise<void> {
     }
   }
 }
-
-
 
 
 

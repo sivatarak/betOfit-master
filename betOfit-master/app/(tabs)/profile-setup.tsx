@@ -4,7 +4,7 @@ import { useLocalSearchParams } from "expo-router";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, SafeAreaView, Platform, Dimensions,
-  Image, Modal, ActivityIndicator, Animated, Easing, LayoutAnimation, KeyboardAvoidingView
+  Image, Modal, ActivityIndicator, Animated, Easing, LayoutAnimation, KeyboardAvoidingView, Keyboard
 } from 'react-native';
 import { AppAlert as Alert } from '../utils/appAlert';
 import { ScreenGuide } from '../../components/ScreenGuide';
@@ -117,12 +117,15 @@ const sanitizeNumericInput = (
 
 export default function ProfileScreen() {
   const { colors, theme } = useTheme();
-  const { mode } = useLocalSearchParams();
-  const guideEnabled = (Array.isArray(mode) ? mode[0] : mode) === 'all';
+  const { mode: routeMode } = useLocalSearchParams();
+  const mode = Array.isArray(routeMode) ? routeMode[0] : routeMode;
+  const isOnboardingFlow = mode === 'basic' || mode === 'goals' || mode === 'workout';
+  const guideEnabled = mode === 'all';
   const isDark = theme === 'dark';
   const styles = makeStyles(colors);
   const [profile, setProfile] = useState<UserProfile>(defaultProfile);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [targetWeightInput, setTargetWeightInput] = useState('');
   const [userPhoto, setUserPhoto] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -130,24 +133,48 @@ export default function ProfileScreen() {
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const sectionOpacity = useRef(new Animated.Value(1)).current;
   const sectionTranslateY = useRef(new Animated.Value(0)).current;
+  const formScrollRef = useRef<ScrollView>(null);
+  const formScrollOffset = useRef(0);
+  const focusedInput = useRef<TextInput | null>(null);
+  const inputRefs = useRef<Record<string, TextInput | null>>({});
+  const keyboardTop = useRef<number | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const swipeStart = useRef({ x: 0, y: 0 });
   const horizontalSwipeActive = useRef(false);
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const [showSwipeTooltip, setShowSwipeTooltip] = useState(false);
   const { refreshProfile } = useProfile();
+  const saveInProgress = useRef(false);
 
   // Step navigator — mirrors the "Step X of 3" flow in the design.
   // If a specific mode was passed (basic/goals/workout) we start there;
   // "all" (or anything else) starts at basic and lets the user move through all three.
   const stepOrder: Array<'basic' | 'goals' | 'workout'> = ['basic', 'goals', 'workout'];
   const [activeStep, setActiveStep] = useState<'basic' | 'goals' | 'workout'>(
-    mode === 'basic' || mode === 'goals' || mode === 'workout' ? (mode as any) : 'basic'
+    mode === 'basic' || mode === 'goals' || mode === 'workout' ? mode : 'basic'
   );
   const stepIndex = stepOrder.indexOf(activeStep);
   const stepLabels: Record<'basic' | 'goals' | 'workout', string> = {
     basic: 'Basic Info',
     goals: 'Weight Goals',
     workout: 'Workout Schedule',
+  };
+  const onboardingStepContent = {
+    basic: {
+      title: "Let's get to know you",
+      description: 'A few details help us personalize your fitness plan.',
+      icon: 'person-outline' as const,
+    },
+    goals: {
+      title: 'Set a goal that feels right',
+      description: 'Choose a target and timeline that work for you.',
+      icon: 'flag-outline' as const,
+    },
+    workout: {
+      title: 'Build your weekly routine',
+      description: 'Pick the days you want to make time for exercise.',
+      icon: 'barbell-outline' as const,
+    },
   };
 
   const [expandedSections, setExpandedSections] = useState({
@@ -161,6 +188,53 @@ export default function ProfileScreen() {
     workout: mode === "workout" || (mode === "all" && !profile.workoutDaysPerWeek),
   });
   const editSnapshots = useRef<Record<string, string>>({});
+
+  const scrollFocusedInputIntoView = () => {
+    const input = focusedInput.current;
+    const keyboardTopY = keyboardTop.current;
+    if (!input || keyboardTopY === null) return;
+
+    setTimeout(() => {
+      input.measureInWindow((_x, y, _width, height) => {
+        const obscuredBy = y + height + 40 - keyboardTopY;
+        if (obscuredBy > 0) {
+          formScrollRef.current?.scrollTo({
+            y: formScrollOffset.current + obscuredBy,
+            animated: true,
+          });
+        }
+      });
+    }, 60);
+  };
+
+  const handleTextInputFocus = (field: string) => {
+    focusedInput.current = inputRefs.current[field];
+    scrollFocusedInputIntoView();
+  };
+
+  const handleTextInputBlur = (field: string) => {
+    if (focusedInput.current === inputRefs.current[field]) {
+      focusedInput.current = null;
+    }
+  };
+
+  useEffect(() => {
+    const keyboardShowSubscription = Keyboard.addListener('keyboardDidShow', (event) => {
+      keyboardTop.current = event.endCoordinates.screenY;
+      setKeyboardHeight(event.endCoordinates.height);
+      scrollFocusedInputIntoView();
+    });
+    const keyboardHideSubscription = Keyboard.addListener('keyboardDidHide', () => {
+      keyboardTop.current = null;
+      setKeyboardHeight(0);
+      focusedInput.current = null;
+    });
+
+    return () => {
+      keyboardShowSubscription.remove();
+      keyboardHideSubscription.remove();
+    };
+  }, []);
 
   const getSectionSnapshot = (section: 'basic' | 'goals' | 'workout') => {
     if (section === 'basic') {
@@ -538,7 +612,69 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleSave = async () => {
+  const validateStep = (
+    step: 'basic' | 'goals' | 'workout',
+    values: UserProfile
+  ): boolean => {
+    if (step === 'basic') {
+      const trimmedName = values.name.trim();
+
+      if (!trimmedName) {
+        Alert.alert('Missing Info', 'Please enter your name');
+        return false;
+      }
+      if (!/^[A-Za-z\s]+$/.test(trimmedName)) {
+        Alert.alert('Invalid Name', 'Name can only contain letters and spaces');
+        return false;
+      }
+      if (!Number.isFinite(values.age) || values.age < 1 || values.age > 100) {
+        Alert.alert('Invalid Age', 'Age must be between 1 and 100 years');
+        return false;
+      }
+      if (!Number.isFinite(values.height) || values.height < 50 || values.height > 300) {
+        Alert.alert('Invalid Height', 'Height must be between 50 and 300 cm');
+        return false;
+      }
+      if (!Number.isFinite(values.weight) || values.weight < 1 || values.weight > 300) {
+        Alert.alert('Invalid Weight', 'Weight must be between 1 and 300 kg');
+        return false;
+      }
+      return true;
+    }
+
+    if (step === 'goals') {
+      if (!Number.isFinite(values.targetWeight) || values.targetWeight < 1 || values.targetWeight > 300) {
+        Alert.alert('Invalid Target Weight', 'Target weight must be between 1 and 300 kg');
+        return false;
+      }
+      if (!Number.isInteger(values.timeline) || values.timeline < 1 || values.timeline > 104) {
+        Alert.alert('Invalid Timeline', 'Timeline must be between 1 and 104 weeks');
+        return false;
+      }
+      return true;
+    }
+
+    if (!Number.isInteger(values.workoutDaysPerWeek) || values.workoutDaysPerWeek < 1 || values.workoutDaysPerWeek > 7) {
+      Alert.alert('Invalid Workout Days', 'Choose between 1 and 7 workout days per week');
+      return false;
+    }
+    const uniqueWorkoutDays = new Set(values.workoutDays);
+    if (
+      uniqueWorkoutDays.size !== values.workoutDays.length ||
+      values.workoutDays.some(day => !WEEKDAYS.includes(day)) ||
+      values.workoutDays.length !== values.workoutDaysPerWeek
+    ) {
+      Alert.alert('Missing Info', `Please select ${values.workoutDaysPerWeek} different workout days`);
+      return false;
+    }
+    return true;
+  };
+
+  const handleSave = async (): Promise<boolean> => {
+    if (saveInProgress.current) return false;
+    saveInProgress.current = true;
+    setSaving(true);
+
     console.log("🟡 [handleSave] Started");
     try {
       const currentUser = auth().currentUser;
@@ -574,55 +710,15 @@ export default function ProfileScreen() {
 
       console.log("🟡 Merged profile:", mergedProfile);
 
-      if (mode === "basic") {
-        const trimmedName = mergedProfile.name?.trim() || '';
-
-        if (!trimmedName) {
-          Alert.alert('Missing Info', 'Please enter your name');
-          return;
-        }
-
-        if (!/^[A-Za-z\s]+$/.test(trimmedName)) {
-          Alert.alert('Invalid Name', 'Name can only contain letters and spaces');
-          return;
-        }
-
-        if (!mergedProfile.age || mergedProfile.age < 1 || mergedProfile.age > 100) {
-          Alert.alert('Invalid Age', 'Age must be between 1 and 100 years');
-          return;
-        }
-
-        if (!mergedProfile.height || mergedProfile.height < 50 || mergedProfile.height > 300) {
-          Alert.alert('Invalid Height', 'Height must be between 50 and 300 cm');
-          return;
-        }
-
-        if (!mergedProfile.weight || mergedProfile.weight < 1 || mergedProfile.weight > 300) {
-          Alert.alert('Invalid Weight', 'Weight must be between 1 and 300 kg');
-          return;
-        }
-      }
-
-      if (mode === "goals") {
-        if (!mergedProfile.targetWeight || mergedProfile.targetWeight <= 0) {
-          Alert.alert('Missing Info', 'Please enter your target weight');
-          return;
-        }
-        if (!mergedProfile.timeline || mergedProfile.timeline <= 0) {
-          Alert.alert('Missing Info', 'Please enter your timeline in weeks');
-          return;
-        }
-      }
-
-      if (mode === "workout") {
-        if (!mergedProfile.workoutDaysPerWeek || mergedProfile.workoutDaysPerWeek <= 0) {
-          Alert.alert('Missing Info', 'Please enter how many days per week you workout');
-          return;
-        }
-        if (mergedProfile.workoutDays.length !== mergedProfile.workoutDaysPerWeek) {
-          Alert.alert('Missing Info', `Please select ${mergedProfile.workoutDaysPerWeek} workout days`);
-          return;
-        }
+      const sectionsToValidate: Array<'basic' | 'goals' | 'workout'> = mode === 'basic'
+        ? stepOrder
+        : mode === 'goals'
+          ? ['goals']
+          : mode === 'workout'
+            ? ['workout']
+            : [];
+      for (const section of sectionsToValidate) {
+        if (!validateStep(section, mergedProfile)) return false;
       }
 
       const bmr = calculateBMR(mergedProfile.weight, mergedProfile.height, mergedProfile.age, mergedProfile.gender);
@@ -637,16 +733,29 @@ export default function ProfileScreen() {
       if (mergedProfile.targetWeight > 0 && mergedProfile.timeline > 0) {
         const weightDiff = Math.abs(mergedProfile.weight - mergedProfile.targetWeight);
         weeklyWeightLoss = weightDiff / mergedProfile.timeline;
-        dailyDeficit = Math.round((weeklyWeightLoss * 7700) / 7);
         const isLosingWeight = mergedProfile.weight > mergedProfile.targetWeight;
-        dailyCalorieGoal = isLosingWeight ? tdee - dailyDeficit : tdee + dailyDeficit;
+        const requestedDailyDeficit = Math.round((weeklyWeightLoss * 7700) / 7);
+
+        if (isLosingWeight) {
+          const minimumDailyGoal = Math.min(1200, Math.max(1, tdee));
+          dailyCalorieGoal = Math.max(minimumDailyGoal, tdee - requestedDailyDeficit);
+          dailyDeficit = Math.max(0, tdee - dailyCalorieGoal);
+          weeklyWeightLoss = (dailyDeficit * 7) / 7700;
+        } else {
+          dailyDeficit = requestedDailyDeficit;
+          dailyCalorieGoal = tdee + dailyDeficit;
+        }
       }
 
       let basicCompleted = existingProfile.basic_completed || dbProfile?.basic_completed || false;
       let goalsCompleted = existingProfile.goals_completed || dbProfile?.goals_completed || false;
       let workoutCompleted = existingProfile.workout_completed || dbProfile?.workout_completed || false;
 
-      if (mode === "basic") basicCompleted = true;
+      if (mode === "basic") {
+        basicCompleted = true;
+        goalsCompleted = true;
+        workoutCompleted = true;
+      }
       if (mode === "goals") goalsCompleted = true;
       if (mode === "workout") workoutCompleted = true;
 
@@ -676,31 +785,6 @@ export default function ProfileScreen() {
         workout_completed: workoutCompleted,
         setupDate: new Date().toISOString(),
       };
-
-      await AsyncStorage.setItem(`USER_PROFILE_${userId}`, JSON.stringify(fullProfileData));
-      await AsyncStorage.setItem(STORAGE_KEYS.BF_WEIGHT_KG, mergedProfile.weight.toString());
-      await AsyncStorage.setItem(STORAGE_KEYS.USER_NAME, mergedProfile.name);
-
-      if (waterGoal) {
-        const waterData = {
-          date: new Date().toISOString().split("T")[0],
-          current: 0,
-          goal: waterGoal,
-          history: [],
-          streak: 0,
-        };
-        await AsyncStorage.setItem(STORAGE_KEYS.WATER_DATA, JSON.stringify(waterData));
-      }
-
-      if (dailyCalorieGoal && dailyCalorieGoal > 0) {
-        const calData = await AsyncStorage.getItem(STORAGE_KEYS.CALORIES_DATA);
-        const parsedCalData = calData ? JSON.parse(calData) : {};
-        await AsyncStorage.setItem(STORAGE_KEYS.CALORIES_DATA, JSON.stringify({
-          ...parsedCalData,
-          goal: dailyCalorieGoal,
-          profile: fullProfileData,
-        }));
-      }
 
       const dbProfileData = {
         userId: userId,
@@ -733,7 +817,37 @@ export default function ProfileScreen() {
         await saveProfile(dbProfileData);
         console.log("✅ Profile saved to backend successfully");
       } catch (error) {
-        console.error('⚠️ Database save failed:', error);
+        console.error('Profile backend save failed:', error);
+        Alert.alert(
+          'Sync Failed',
+          "Your profile couldn't be saved. Check your internet connection and try again."
+        );
+        return false;
+      }
+
+      await AsyncStorage.setItem(`USER_PROFILE_${userId}`, JSON.stringify(fullProfileData));
+      await AsyncStorage.setItem(STORAGE_KEYS.BF_WEIGHT_KG, mergedProfile.weight.toString());
+      await AsyncStorage.setItem(STORAGE_KEYS.USER_NAME, mergedProfile.name);
+
+      if (waterGoal) {
+        const waterData = {
+          date: new Date().toISOString().split("T")[0],
+          current: 0,
+          goal: waterGoal,
+          history: [],
+          streak: 0,
+        };
+        await AsyncStorage.setItem(STORAGE_KEYS.WATER_DATA, JSON.stringify(waterData));
+      }
+
+      if (dailyCalorieGoal && dailyCalorieGoal > 0) {
+        const calData = await AsyncStorage.getItem(STORAGE_KEYS.CALORIES_DATA);
+        const parsedCalData = calData ? JSON.parse(calData) : {};
+        await AsyncStorage.setItem(STORAGE_KEYS.CALORIES_DATA, JSON.stringify({
+          ...parsedCalData,
+          goal: dailyCalorieGoal,
+          profile: fullProfileData,
+        }));
       }
 
       await refreshProfile();
@@ -760,14 +874,23 @@ export default function ProfileScreen() {
         router.replace('/(tabs)/workout');
       }
 
+      return true;
     } catch (error) {
       console.error("❌ Save error:", error);
       Alert.alert("Error", "Failed to save profile. Please try again.");
+      return false;
+    } finally {
+      saveInProgress.current = false;
+      setSaving(false);
     }
   };
 
   // Advances the visual stepper. On the last step, triggers the actual save.
   const goToNextStep = () => {
+    if (mode === 'basic' && !validateStep(activeStep, profile)) {
+      return;
+    }
+
     if (stepIndex < stepOrder.length - 1) {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setActiveStep(stepOrder[stepIndex + 1]);
@@ -792,7 +915,8 @@ export default function ProfileScreen() {
       const hasChanges = snapshot !== undefined && snapshot !== getSectionSnapshot(section);
 
       if (hasChanges) {
-        await handleSave();
+        const saved = await handleSave();
+        if (!saved) return;
       }
 
       delete editSnapshots.current[section];
@@ -898,43 +1022,71 @@ export default function ProfileScreen() {
         {/* Ambient glow */}
           <AmbientGlow />
 
-        {/* Header */}
-        <View style={styles.newHeader}>
-           
-          <TouchableOpacity onPress={goToPreviousStep} activeOpacity={0.85}>
-            <View style={[styles.backButton, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Ionicons name="arrow-back" size={18} color={colors.text} />
+        {isOnboardingFlow ? (
+          <View style={styles.onboardingHeader}>
+            <View style={styles.onboardingBrand}>
+              <LinearGradient
+                colors={[colors.primary, colors.secondary]}
+                style={styles.onboardingBrandIcon}
+              >
+                <Ionicons name="fitness" size={18} color="#FFFFFF" />
+              </LinearGradient>
+              <View>
+                <Text style={[styles.onboardingBrandName, { color: colors.text }]}>BETOFIT</Text>
+                <Text style={[styles.onboardingBrandCaption, { color: colors.textSecondary }]}>PERSONAL SETUP</Text>
+              </View>
             </View>
-          </TouchableOpacity>
-          <View style={{ alignItems: 'center' }}>
-            <Text style={[styles.stepEyebrow, { color: colors.primary }]}>
-              STEP {stepIndex + 1} OF {stepOrder.length}
-            </Text>
-            <Text style={[styles.stepTitle, { color: colors.text }]}>
-              {activeStep === 'basic' ? 'BODY SPECS & METRICS' : stepLabels[activeStep].toUpperCase()}
-            </Text>
+            <TouchableOpacity onPress={handleSignOut} activeOpacity={0.85} style={styles.onboardingExit}>
+              <Text style={[styles.onboardingExitText, { color: colors.textSecondary }]}>Exit</Text>
+              <Feather name="log-out" size={14} color={colors.textSecondary} />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={handleSignOut} activeOpacity={0.85}>
-            <LinearGradient
-              colors={[colors.primary, colors.secondary]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.signOutGradientButton}
-            >
-              <Feather name="log-out" size={17} color="#FFFFFF" />
-              <Text style={styles.signOutButtonText}>Exit</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
+        ) : (
+          <View style={styles.newHeader}>
+            <TouchableOpacity onPress={goToPreviousStep} activeOpacity={0.85}>
+              <View style={[styles.backButton, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Ionicons name="arrow-back" size={18} color={colors.text} />
+              </View>
+            </TouchableOpacity>
+            <View style={{ alignItems: 'center' }}>
+              <Text style={[styles.stepEyebrow, { color: colors.primary }]}>
+                STEP {stepIndex + 1} OF {stepOrder.length}
+              </Text>
+              <Text style={[styles.stepTitle, { color: colors.text }]}>
+                {activeStep === 'basic' ? 'BODY SPECS & METRICS' : stepLabels[activeStep].toUpperCase()}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={handleSignOut} activeOpacity={0.85}>
+              <LinearGradient
+                colors={[colors.primary, colors.secondary]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.signOutGradientButton}
+              >
+                <Feather name="log-out" size={17} color="#FFFFFF" />
+                <Text style={styles.signOutButtonText}>Exit</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <ScrollView
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: 28, paddingTop: 12 }]}
+          ref={formScrollRef}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: Platform.OS === 'android' ? keyboardHeight + 40 : 28, paddingTop: 12 },
+          ]}
           showsVerticalScrollIndicator={false}
           scrollEnabled={scrollEnabled}
           directionalLockEnabled
           bounces={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+          scrollEventThrottle={16}
+          onScroll={(event) => {
+            formScrollOffset.current = event.nativeEvent.contentOffset.y;
+          }}
           onTouchStart={handleSwipeStart}
           onTouchMove={handleSwipeMove}
           onTouchEnd={handleSwipeEnd}
@@ -944,7 +1096,46 @@ export default function ProfileScreen() {
           }}
         >
 
-          {/* Step navigator pill */}
+          {isOnboardingFlow ? (
+            <View style={[styles.onboardingIntroCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={styles.onboardingStepTopline}>
+                <View style={[styles.onboardingStepIcon, { backgroundColor: hexToRgba(colors.primary, 0.12) }]}>
+                  <Ionicons name={onboardingStepContent[activeStep].icon} size={22} color={colors.primary} />
+                </View>
+                <Text style={[styles.onboardingStepCount, { color: colors.primary }]}>
+                  STEP {stepIndex + 1} <Text style={{ color: colors.textSecondary }}>/ {stepOrder.length}</Text>
+                </Text>
+              </View>
+              <Text style={[styles.onboardingTitle, { color: colors.text }]}>
+                {onboardingStepContent[activeStep].title}
+              </Text>
+              <Text style={[styles.onboardingDescription, { color: colors.textSecondary }]}>
+                {onboardingStepContent[activeStep].description}
+              </Text>
+              <View style={[styles.onboardingProgressTrack, { backgroundColor: colors.border }]}>
+                <LinearGradient
+                  colors={[colors.primary, colors.secondary]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={[styles.onboardingProgressFill, { width: `${((stepIndex + 1) / stepOrder.length) * 100}%` }]}
+                />
+              </View>
+              <View style={styles.onboardingStepLabels}>
+                {stepOrder.map((step, index) => (
+                  <Text
+                    key={step}
+                    style={[
+                      styles.onboardingStepLabel,
+                      { color: index <= stepIndex ? colors.primary : colors.textMuted },
+                    ]}
+                  >
+                    {stepLabels[step]}
+                  </Text>
+                ))}
+              </View>
+            </View>
+          ) : (
+          /* Step navigator pill */
           <View style={styles.stepNavigatorWrap}>
             <View style={[styles.stepPill, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={styles.stepDotsRow}>
@@ -974,9 +1165,10 @@ export default function ProfileScreen() {
               </View>
             )}
           </View>
+          )}
 
           {/* User identity hero */}
-          <View style={styles.identityHero}>
+          {!isOnboardingFlow && <View style={styles.identityHero}>
             <TouchableOpacity
               style={styles.avatarWrap}
               onPress={showBottomSheetModal}
@@ -1042,7 +1234,7 @@ export default function ProfileScreen() {
                 </View>
               </View>
             </View>
-          </View>
+          </View>}
 
           <Animated.View
             style={[
@@ -1057,20 +1249,25 @@ export default function ProfileScreen() {
           {activeStep === 'basic' && (
             <View style={{ marginTop: 20 }}>
               <View style={styles.sectionRow}>
-                <Text style={[styles.sectionEyebrow, { color: colors.textSecondary }]}>PHYSICAL PROFILE</Text>
-                <TouchableOpacity
-                  onPress={() => handleSectionEdit('basic')}
-                >
-                  <Text style={[styles.editSpecsLink, { color: colors.primary }]}>
+                <Text style={[styles.sectionEyebrow, { color: colors.textSecondary }]}>
+                  {isOnboardingFlow ? 'YOUR DETAILS' : 'PHYSICAL PROFILE'}
+                </Text>
+                {!isOnboardingFlow && (
+                  <TouchableOpacity onPress={() => handleSectionEdit('basic')}>
+                    <Text style={[styles.editSpecsLink, { color: colors.primary }]}>
                       <Ionicons name={editMode.basic ? 'checkmark' : 'create-outline'} size={13} color={colors.primary} />
                       {editMode.basic ? ' Done' : ' Edit Specs'}
-                  </Text>
-                </TouchableOpacity>
-
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
 
-              {editMode.basic ? (
-                <View style={[styles.editPanel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              {isOnboardingFlow || editMode.basic ? (
+                <View style={[
+                  styles.editPanel,
+                  isOnboardingFlow && styles.onboardingEditPanel,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}>
                   <View style={styles.editPanelHeader}>
                     <View style={[styles.editPanelIcon, { backgroundColor: hexToRgba(colors.primary, 0.12) }]}>
                       <Ionicons name="person-outline" size={16} color={colors.primary} />
@@ -1083,9 +1280,12 @@ export default function ProfileScreen() {
                   <View style={styles.inputGroup}>
                     <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Full Name</Text>
                     <TextInput
+                      ref={(input) => { inputRefs.current.name = input; }}
                       style={[styles.input, { backgroundColor: colors.surfaceContainerLow ?? colors.surface, color: colors.text, borderColor: colors.border }]}
                       value={profile.name}
                       onChangeText={handleNameChange}
+                      onFocus={() => handleTextInputFocus('name')}
+                      onBlur={() => handleTextInputBlur('name')}
                       placeholder="Enter your name"
                       placeholderTextColor={colors.textMuted}
                       autoCapitalize="words"
@@ -1097,9 +1297,12 @@ export default function ProfileScreen() {
                     <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
                       <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Age</Text>
                       <TextInput
+                        ref={(input) => { inputRefs.current.age = input; }}
                         style={[styles.input, { backgroundColor: colors.surfaceContainerLow ?? colors.surface, color: colors.text, borderColor: colors.border }]}
                         value={profile.age === 0 ? "" : profile.age.toString()}
                         onChangeText={(val) => handleNumericChange('age', val, { min: 1, max: 100, integer: true })}
+                        onFocus={() => handleTextInputFocus('age')}
+                        onBlur={() => handleTextInputBlur('age')}
                         keyboardType="number-pad"
                         placeholder="Years"
                         placeholderTextColor={colors.textMuted}
@@ -1110,9 +1313,12 @@ export default function ProfileScreen() {
                     <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
                       <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Height (cm)</Text>
                       <TextInput
+                        ref={(input) => { inputRefs.current.height = input; }}
                         style={[styles.input, { backgroundColor: colors.surfaceContainerLow ?? colors.surface, color: colors.text, borderColor: colors.border }]}
                         value={profile.height === 0 ? "" : profile.height.toString()}
                         onChangeText={(val) => handleNumericChange('height', val, { min: 50, max: 300, allowDecimal: true, enforceRange: false })}
+                        onFocus={() => handleTextInputFocus('height')}
+                        onBlur={() => handleTextInputBlur('height')}
                         keyboardType="decimal-pad"
                         placeholder="cm"
                         placeholderTextColor={colors.textMuted}
@@ -1124,9 +1330,12 @@ export default function ProfileScreen() {
                   <View style={styles.inputGroup}>
                     <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Current Weight (kg)</Text>
                     <TextInput
+                      ref={(input) => { inputRefs.current.weight = input; }}
                       style={[styles.input, { backgroundColor: colors.surfaceContainerLow ?? colors.surface, color: colors.text, borderColor: colors.border }]}
                       value={profile.weight === 0 ? "" : profile.weight.toString()}
                       onChangeText={(val) => handleNumericChange('weight', val, { min: 1, max: 300, allowDecimal: true })}
+                      onFocus={() => handleTextInputFocus('weight')}
+                      onBlur={() => handleTextInputBlur('weight')}
                       keyboardType="decimal-pad"
                       placeholder="kg"
                       placeholderTextColor={colors.textMuted}
@@ -1199,7 +1408,7 @@ export default function ProfileScreen() {
                       {profile.height || '—'} <Text style={styles.specUnit}>cm</Text>
                     </Text>
                     <Text style={[styles.specSubtext, { color: colors.primary }]}>
-                      {profile.height ? `${Math.floor(profile.height / 30.48)}' ${Math.round((profile.height / 2.54) % 12)}"` : '—'}
+                      {profile.height ? `${Math.floor(profile.height / 30.48)}\u0027 ${Math.round((profile.height / 2.54) % 12)}\u0022` : '—'}
                     </Text>
                   </View>
 
@@ -1226,19 +1435,25 @@ export default function ProfileScreen() {
           {activeStep === 'goals' && (
             <View style={{ marginTop: 20 }}>
               <View style={styles.sectionRow}>
-                <Text style={[styles.sectionEyebrow, { color: colors.textSecondary }]}>WEIGHT GOALS</Text>
-                <TouchableOpacity
-                  onPress={() => handleSectionEdit('goals')}
-                >
-                  <Text style={[styles.editSpecsLink, { color: colors.primary }]}>
-                    <Ionicons name={editMode.goals ? 'checkmark' : 'create-outline'} size={13} color={colors.primary} />
-                    {editMode.goals ? ' Done' : ' Edit Goals'}
-                  </Text>
-                </TouchableOpacity>
+                <Text style={[styles.sectionEyebrow, { color: colors.textSecondary }]}>
+                  {isOnboardingFlow ? 'YOUR GOAL' : 'WEIGHT GOALS'}
+                </Text>
+                {!isOnboardingFlow && (
+                  <TouchableOpacity onPress={() => handleSectionEdit('goals')}>
+                    <Text style={[styles.editSpecsLink, { color: colors.primary }]}>
+                      <Ionicons name={editMode.goals ? 'checkmark' : 'create-outline'} size={13} color={colors.primary} />
+                      {editMode.goals ? ' Done' : ' Edit Goals'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
 
-              {editMode.goals ? (
-                <View style={[styles.editPanel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              {isOnboardingFlow || editMode.goals ? (
+                <View style={[
+                  styles.editPanel,
+                  isOnboardingFlow && styles.onboardingEditPanel,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}>
                   <View style={styles.editPanelHeader}>
                     <View style={[styles.editPanelIcon, { backgroundColor: hexToRgba(colors.primary, 0.12) }]}>
                       <Ionicons name="flag-outline" size={16} color={colors.primary} />
@@ -1252,11 +1467,14 @@ export default function ProfileScreen() {
                     <View style={[styles.inputGroup, styles.goalsInputGroup]}>
                       <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Target Weight</Text>
                       <View style={styles.weightInputContainer}>
-                        <TextInput
-                          style={[styles.weightInput, styles.goalsInput, { backgroundColor: colors.surfaceContainerLow ?? colors.surface, color: colors.text, borderColor: colors.border }]}
-                          value={targetWeightInput}
-                          onChangeText={(val) => handleNumericChange('targetWeight', val, { min: 1, max: 300, allowDecimal: true })}
-                          keyboardType="decimal-pad"
+                      <TextInput
+                        ref={(input) => { inputRefs.current.targetWeight = input; }}
+                        style={[styles.weightInput, styles.goalsInput, { backgroundColor: colors.surfaceContainerLow ?? colors.surface, color: colors.text, borderColor: colors.border }]}
+                        value={targetWeightInput}
+                        onChangeText={(val) => handleNumericChange('targetWeight', val, { min: 1, max: 300, allowDecimal: true })}
+                        onFocus={() => handleTextInputFocus('targetWeight')}
+                        onBlur={() => handleTextInputBlur('targetWeight')}
+                        keyboardType="decimal-pad"
                           placeholder="0"
                           placeholderTextColor={colors.textMuted}
                           maxLength={5}
@@ -1269,9 +1487,12 @@ export default function ProfileScreen() {
                       <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Timeline</Text>
                       <View style={styles.timelineContainer}>
                         <TextInput
+                          ref={(input) => { inputRefs.current.timeline = input; }}
                           style={[styles.timelineInput, styles.goalsInput, { backgroundColor: colors.surfaceContainerLow ?? colors.surface, color: colors.text, borderColor: colors.border }]}
                           value={profile.timeline === 0 ? "" : profile.timeline.toString()}
                           onChangeText={(val) => handleNumericChange('timeline', val, { min: 1, max: 104, integer: true })}
+                          onFocus={() => handleTextInputFocus('timeline')}
+                          onBlur={() => handleTextInputBlur('timeline')}
                           keyboardType="number-pad"
                           placeholder="12"
                           placeholderTextColor={colors.textMuted}
@@ -1367,19 +1588,25 @@ export default function ProfileScreen() {
           {activeStep === 'workout' && (
             <View style={{ marginTop: 20 }}>
               <View style={styles.sectionRow}>
-                <Text style={[styles.sectionEyebrow, { color: colors.textSecondary }]}>WORKOUT SCHEDULE</Text>
-               <TouchableOpacity
-                  onPress={() => handleSectionEdit('workout')}
-                >
-                  <Text style={[styles.editSpecsLink, { color: colors.primary }]}>
-                    <Ionicons name={editMode.workout ? 'checkmark' : 'create-outline'} size={13} color={colors.primary} />
-                    {editMode.workout ? ' Done' : ' Edit Schedule'}
-                  </Text>
-                </TouchableOpacity>
+                <Text style={[styles.sectionEyebrow, { color: colors.textSecondary }]}>
+                  {isOnboardingFlow ? 'YOUR ROUTINE' : 'WORKOUT SCHEDULE'}
+                </Text>
+                {!isOnboardingFlow && (
+                  <TouchableOpacity onPress={() => handleSectionEdit('workout')}>
+                    <Text style={[styles.editSpecsLink, { color: colors.primary }]}>
+                      <Ionicons name={editMode.workout ? 'checkmark' : 'create-outline'} size={13} color={colors.primary} />
+                      {editMode.workout ? ' Done' : ' Edit Schedule'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
 
-              {editMode.workout ? (
-                <View style={[styles.editPanel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              {isOnboardingFlow || editMode.workout ? (
+                <View style={[
+                  styles.editPanel,
+                  isOnboardingFlow && styles.onboardingEditPanel,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}>
                   <View style={styles.editPanelHeader}>
                     <View style={[styles.editPanelIcon, { backgroundColor: hexToRgba(colors.primary, 0.12) }]}>
                       <Ionicons name="barbell-outline" size={16} color={colors.primary} />
@@ -1494,7 +1721,45 @@ export default function ProfileScreen() {
 
           </Animated.View>
 
-          {/* Next / Finish CTA — shared across all three steps */}
+          {isOnboardingFlow ? (
+            <View style={styles.onboardingActions}>
+              <TouchableOpacity
+                onPress={goToPreviousStep}
+                disabled={stepIndex === 0}
+                activeOpacity={0.75}
+                style={[
+                  styles.onboardingBackButton,
+                  { borderColor: colors.border, opacity: stepIndex === 0 ? 0.45 : 1 },
+                ]}
+              >
+                <Ionicons name="arrow-back" size={17} color={colors.text} />
+                <Text style={[styles.onboardingBackText, { color: colors.text }]}>Back</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={goToNextStep}
+                disabled={saving}
+                activeOpacity={0.85}
+                style={[styles.onboardingContinueWrap, saving && { opacity: 0.7 }]}
+              >
+                <LinearGradient
+                  colors={[colors.primary, colors.secondary]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.onboardingContinue}
+                >
+                  <Text style={styles.onboardingContinueText}>
+                    {saving ? 'Saving...' : stepIndex === stepOrder.length - 1 ? 'Create my plan' : 'Continue'}
+                  </Text>
+                  {saving ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Ionicons name={stepIndex === stepOrder.length - 1 ? 'checkmark' : 'arrow-forward'} size={18} color="#FFFFFF" />
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          ) : (
+          /* Next / Finish CTA for Profile update mode */
           <View style={styles.nextCta}>
             <LinearGradient
               colors={[colors.primary, colors.secondary]}
@@ -1522,6 +1787,7 @@ export default function ProfileScreen() {
               <TouchableOpacity
                 style={styles.nextCtaRight}
                 onPress={goToNextStep}
+                disabled={saving}
                 activeOpacity={0.7}
               >
                 <View style={styles.nextCtaDots}>
@@ -1535,20 +1801,27 @@ export default function ProfileScreen() {
                     />
                   ))}
                 </View>
-                <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+                {saving ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+                )}
               </TouchableOpacity>
             </LinearGradient>
           </View>
+          )}
 
-          <View style={styles.resetSyncRow}>
-            <TouchableOpacity style={styles.resetButton} onPress={loadCompleteProfile}>
-              <Feather name="refresh-cw" size={13} color={colors.textSecondary} />
-              <Text style={[styles.resetText, { color: colors.textSecondary }]}>Reset</Text>
-            </TouchableOpacity>
-            <Text style={[styles.syncedAgoText, { color: colors.textMuted }]}>Synced 2 mins ago</Text>
-          </View>
+          {!isOnboardingFlow && (
+            <View style={styles.resetSyncRow}>
+              <TouchableOpacity style={styles.resetButton} onPress={loadCompleteProfile}>
+                <Feather name="refresh-cw" size={13} color={colors.textSecondary} />
+                <Text style={[styles.resetText, { color: colors.textSecondary }]}>Reset</Text>
+              </TouchableOpacity>
+              <Text style={[styles.syncedAgoText, { color: colors.textMuted }]}>Synced 2 mins ago</Text>
+            </View>
+          )}
 
-          <View style={{ height: 40 }} />
+          <View style={{ height: isOnboardingFlow ? 20 : 40 }} />
         </ScrollView>
       </SafeAreaView>
 
@@ -1635,6 +1908,34 @@ const makeStyles = (colors: any) => StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 10,
   },
+  onboardingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 10,
+  },
+  onboardingBrand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  onboardingBrandIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  onboardingBrandName: { fontSize: 13, fontWeight: '900', letterSpacing: 1.2 },
+  onboardingBrandCaption: { fontSize: 9, fontWeight: '700', letterSpacing: 1.1, marginTop: 2 },
+  onboardingExit: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 18,
+    backgroundColor: 'rgba(128,128,128,0.1)',
+  },
+  onboardingExitText: { fontSize: 12, fontWeight: '700' },
   circleIconButton: {
     width: 36,
     height: 36,
@@ -1680,6 +1981,28 @@ const makeStyles = (colors: any) => StyleSheet.create({
   stepDot: { width: 8, height: 8, borderRadius: 4 },
   stepPillLabel: { fontSize: 13, fontWeight: '700', marginLeft: 6 },
   stepNavigatorWrap: { position: 'relative', zIndex: 5 },
+  onboardingIntroCard: {
+    marginHorizontal: 0,
+    marginTop: 14,
+    marginBottom: 8,
+    padding: 20,
+    borderWidth: 1,
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 3,
+  },
+  onboardingStepTopline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  onboardingStepIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  onboardingStepCount: { fontSize: 11, fontWeight: '900', letterSpacing: 1 },
+  onboardingTitle: { fontSize: 23, fontWeight: '900', marginTop: 18 },
+  onboardingDescription: { fontSize: 13, lineHeight: 19, marginTop: 6 },
+  onboardingProgressTrack: { height: 6, borderRadius: 3, marginTop: 20, overflow: 'hidden' },
+  onboardingProgressFill: { height: '100%', borderRadius: 3 },
+  onboardingStepLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
+  onboardingStepLabel: { fontSize: 9, fontWeight: '700' },
   swipeTooltip: {
     position: 'absolute',
     top: 39,
@@ -1776,6 +2099,11 @@ const makeStyles = (colors: any) => StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 2,
+  },
+  onboardingEditPanel: {
+    borderRadius: 22,
+    padding: 16,
+    marginTop: 6,
   },
   editPanelHeader: {
     flexDirection: 'row',
@@ -2016,6 +2344,34 @@ const makeStyles = (colors: any) => StyleSheet.create({
   },
 
   nextCta: { marginTop: 20, borderRadius: 18, overflow: 'hidden' },
+  onboardingActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 18,
+  },
+  onboardingBackButton: {
+    minWidth: 76,
+    minHeight: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  onboardingBackText: { fontSize: 12, fontWeight: '700' },
+  onboardingContinueWrap: { width: 156, borderRadius: 14, overflow: 'hidden' },
+  onboardingContinue: {
+    minHeight: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+  },
+  onboardingContinueText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
   sectionFrame: { width: '96%', alignSelf: 'center' },
   nextCtaArrowButton: { width: 28, alignItems: 'center', justifyContent: 'center' },
   nextCtaGradient: {

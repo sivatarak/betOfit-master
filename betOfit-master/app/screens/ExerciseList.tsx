@@ -476,7 +476,7 @@ export default function ExerciseListScreen() {
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={exercises.length > 0 ? renderHeader : null}
           ListEmptyComponent={
-            !loading && (
+            !loading ? (
               <View style={styles.emptyContainer}>
                 <Ionicons name="barbell-outline" size={64} color="#ccc" />
                 <Text style={styles.emptyText}>
@@ -500,7 +500,7 @@ export default function ExerciseListScreen() {
                   </TouchableOpacity>
                 )}
               </View>
-            )
+            ) : null
           }
           refreshControl={
             <RefreshControl

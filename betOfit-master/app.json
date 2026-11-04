@@ -10,6 +10,7 @@
     "android": {
       "package": "com.sivatarak.betofit",
       "googleServicesFile": "./google-services.json",
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#111114",
         "foregroundImage": "./assets/images/icon.png"
@@ -59,7 +60,8 @@
           "androidAppId": "ca-app-pub-5710308532604049~2728759162",
           "iosAppId": "ca-app-pub-5710308532604049~2728759162"
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

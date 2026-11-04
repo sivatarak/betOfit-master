@@ -424,7 +424,7 @@ export const getTodayFoodLogs = async (userId: string): Promise<any> => {
     return data; // Returns { logs, totals }
   } catch (error) {
     console.error("Get food logs error:", error);
-    return { logs: [], totals: { total_calories: 0, total_protein: 0, total_carbs: 0, total_fat: 0 } };
+    throw error;
   }
 };
 
@@ -461,7 +461,7 @@ export const getWorkoutHistory = async (userId: string): Promise<any[]> => {
     return await response.json();
   } catch (error) {
     console.error("Get workouts error:", error);
-    return [];
+    throw error;
   }
 };
 // ========================================

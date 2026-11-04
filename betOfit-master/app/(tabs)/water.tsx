@@ -412,7 +412,7 @@ export default function WaterScreen() {
           {waterData.history.length > 0 && (
             <View style={styles.historySection}>
               <View style={styles.historyHeader}>
-                <Text style={[styles.historyTitle, { color: colors.text }]}>Today's Logs</Text>
+                <Text style={[styles.historyTitle, { color: colors.text }]}>Today&apos;s Logs</Text>
                 <TouchableOpacity onPress={removeLast} style={styles.historyUndoButton}>
                   <Text style={styles.historyUndoText}>Undo last</Text>
                 </TouchableOpacity>
@@ -445,7 +445,7 @@ export default function WaterScreen() {
 
           {/* RESET */}
           <TouchableOpacity onPress={reset} activeOpacity={0.7} style={styles.resetButton}>
-            <Text style={styles.resetButtonText}>Reset today's intake</Text>
+            <Text style={styles.resetButtonText}>Reset today&apos;s intake</Text>
           </TouchableOpacity>
 
           <View style={{ height: 40 }} />

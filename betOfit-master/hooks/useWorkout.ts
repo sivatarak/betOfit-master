@@ -398,7 +398,13 @@ export const useWorkoutTracking = () => {
   };
 
   const getProgressChartData = (days: number = 30) => {
-    const chartData = [];
+    const chartData: {
+      date: string;
+      volume: number;
+      caloriesBurned: number;
+      caloriesConsumed: number;
+      workouts: number;
+    }[] = [];
     const today = new Date();
     
     // Initialize with empty data for all days

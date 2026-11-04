@@ -33,6 +33,7 @@ import {
 } from '../utils/activeWorkoutSession';
 
 const { width, height } = Dimensions.get('window');
+const YOUTUBE_API_KEY = process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
 
 interface Exercise {
   id?: string;
@@ -197,6 +198,11 @@ export default function ExerciseDetailScreen() {
     } catch (e) { }
 
     // Call YouTube API
+    if (!YOUTUBE_API_KEY) {
+      setVideoError(true);
+      return;
+    }
+
     setVideoLoading(true);
     try {
       const q = encodeURIComponent(`${exerciseName} exercise tutorial proper form`);
@@ -293,14 +299,9 @@ export default function ExerciseDetailScreen() {
         }
 
         if (maxWeight > 0) {
-          let maxWeightSet: WorkoutSet | null = null;
-          exerciseWorkouts.forEach(workout => {
-            workout.sets?.forEach(set => {
-              if (set.weight === maxWeight && set.reps) {
-                maxWeightSet = set;
-              }
-            });
-          });
+          const maxWeightSet = exerciseWorkouts
+            .flatMap(workout => workout.sets ?? [])
+            .find(set => set.weight === maxWeight && set.reps) ?? null;
 
           if (maxWeightSet && maxWeightSet.reps) {
             if (maxWeightSet.reps <= 10) {
@@ -560,7 +561,7 @@ export default function ExerciseDetailScreen() {
           </View>
           <Text style={[styles.errorTitle, { color: colors.text }]}>Exercise Not Found</Text>
           <Text style={[styles.errorSubtext, { color: colors.textSecondary }]}>
-            The exercise you're looking for doesn't exist
+            The exercise you&apos;re looking for doesn&apos;t exist
           </Text>
         </View>
       </SafeAreaView>

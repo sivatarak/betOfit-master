@@ -1410,7 +1410,7 @@ export default function LogExerciseScreen() {
                   <Ionicons name="time-outline" size={18} color={colors.primary} />
                 </View>
                 <View style={styles.summaryHistoryCopy}>
-                  <Text style={[styles.summaryHistoryTitle, { color: colors.text }]}>Looking for today's activity?</Text>
+                  <Text style={[styles.summaryHistoryTitle, { color: colors.text }]}>Looking for today&apos;s activity?</Text>
                   <Text style={[styles.summaryHistorySubtitle, { color: colors.textSecondary }]}>
                     Open History to review your workout and daily logs.
                   </Text>

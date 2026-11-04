@@ -1,4 +1,3 @@
-// components/SmartSuggestions.tsx
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -9,15 +8,13 @@ import {
   ScrollView,
   Animated,
   Dimensions,
-  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
-import { useTheme } from '../../context/themecontext';
-import { loadSmartSuggestions, SmartSuggestion } from '../../app/services/mealReminders';
+import { useTheme } from '../context/themecontext';
+import { loadSmartSuggestions, SmartSuggestion } from '../app/services/mealReminders';
 
-const { width, height } = Dimensions.get('window');
+const { height } = Dimensions.get('window');
 
 // ─── Meal icon + color map ─────────────────────────────────
 const MEAL_META: Record<string, { icon: string; gradient: [string, string]; label: string }> = {

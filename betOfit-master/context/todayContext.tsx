@@ -180,6 +180,10 @@ export const TodayProvider: React.FC<{
         getWorkoutHistory(userId),
       ]);
 
+      if (!Array.isArray(foodData?.logs) || !Array.isArray(workoutData)) {
+        throw new Error('Backend returned invalid food or workout data');
+      }
+
       // ── FOOD ──
       let eaten = 0, protein = 0, carbs = 0, fat = 0;
       if (foodData?.logs?.length > 0) {
@@ -188,27 +192,20 @@ export const TodayProvider: React.FC<{
         carbs = foodData.totals?.total_carbs || 0;
         fat = foodData.totals?.total_fat || 0;
 
-        // Sync to AsyncStorage
-        const formattedLogs = foodData.logs.map((log: any) => ({
-          id: log.id,
-          name: log.food_name,
-          calories: log.calories,
-          protein: log.protein,
-          carbs: log.carbs,
-          fat: log.fat,
-          quantity: log.quantity,
-          unit: 'g',
-          date: new Date(log.logged_at).toISOString().split('T')[0],
-          time: new Date(log.logged_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          mealType: log.meal_type,
-        }));
-
-        await AsyncStorage.setItem('CALORIES_DATA_V2', JSON.stringify({
-          current: eaten,
-          goal,
-          history: formattedLogs,
-        }));
       }
+      const formattedLogs = foodData.logs.map((log: any) => ({
+        id: log.id,
+        name: log.food_name,
+        calories: log.calories,
+        protein: log.protein,
+        carbs: log.carbs,
+        fat: log.fat,
+        quantity: log.quantity,
+        unit: 'g',
+        date: new Date(log.logged_at).toISOString().split('T')[0],
+        time: new Date(log.logged_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        mealType: log.meal_type,
+      }));
 
       // ── WORKOUT ──
       let burned = 0, workoutCount = 0, activeMinutes = 0;
@@ -224,8 +221,13 @@ export const TodayProvider: React.FC<{
         activeMinutes = todayWorkouts.reduce((s: number, w: any) =>
           s + (w.duration_minutes || w.duration || 0), 0);
 
-        // Sync to AsyncStorage
-        const formattedWorkouts = todayWorkouts.map((w: any) => ({
+      }
+      const formattedWorkouts = workoutData
+        .filter((w: any) => {
+          const workoutDate = new Date(w.logged_at || w.date).toISOString().split('T')[0];
+          return workoutDate === TODAY;
+        })
+        .map((w: any) => ({
           id: w.id,
           exerciseName: w.exercise_name || w.exerciseName,
           date: TODAY,
@@ -235,13 +237,20 @@ export const TodayProvider: React.FC<{
           totalVolume: w.total_volume || 0,
         }));
 
-        await AsyncStorage.setItem('WORKOUT_HISTORY', JSON.stringify(formattedWorkouts));
-      }
-
       // ── WATER (still from AsyncStorage only) ──
       let water = 0;
       const waterData = await getStoredWaterData();
       if (waterData?.date === TODAY) water = waterData.current || 0;
+
+      await Promise.all([
+        AsyncStorage.setItem('CALORIES_DATA_V2', JSON.stringify({
+          current: eaten,
+          goal,
+          history: formattedLogs,
+        })),
+        AsyncStorage.setItem('WORKOUT_HISTORY', JSON.stringify(formattedWorkouts)),
+      ]);
+
       console.log('🌐 loadFromBackend computed burned =', burned);
       return calculate(eaten, burned, protein, carbs, fat, water, workoutCount, activeMinutes, goal);
 

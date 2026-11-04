@@ -30,7 +30,21 @@ export default function ActiveWorkoutScreen() {
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   
   const activeSession = workoutTracking.activeSession;
-  
+
+  // Timer effect
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | undefined;
+    if (isTimerRunning && timer > 0) {
+      interval = setInterval(() => {
+        setTimer(prev => prev - 1);
+      }, 1000);
+    } else if (timer === 0 && isTimerRunning) {
+      setIsTimerRunning(false);
+      Alert.alert('Rest Time Over', 'Ready for next set?');
+    }
+    return () => clearInterval(interval);
+  }, [isTimerRunning, timer]);
+
   if (!activeSession) {
     return (
       <View style={styles.container}>
@@ -56,21 +70,6 @@ export default function ActiveWorkoutScreen() {
 
   const activeExercise = activeSession.exercises[activeExerciseIndex];
   const activeSet = activeExercise?.sets[activeSetIndex];
-
-  // Timer effect
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isTimerRunning && timer > 0) {
-      interval = setInterval(() => {
-        setTimer(prev => prev - 1);
-      }, 1000);
-    } else if (timer === 0 && isTimerRunning) {
-      setIsTimerRunning(false);
-      // Timer completed - show notification
-      Alert.alert('Rest Time Over', 'Ready for next set?');
-    }
-    return () => clearInterval(interval);
-  }, [isTimerRunning, timer]);
 
   const startRestTimer = (seconds: number) => {
     setTimer(seconds);

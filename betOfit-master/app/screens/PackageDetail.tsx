@@ -41,13 +41,13 @@ export default function PackageDetailScreen() {
     }
     
     router.push({
-      pathname: '/screens/WorkoutSession',
+      pathname: '/screens/WorkoutTracking',
       params: {
-        day: day.day,
-        workout: day.workout,
-        exercises: JSON.stringify(day.exercises),
-        packageId,
-        packageName,
+        startWorkout: 'true',
+        workoutName: `${packageName} - ${day.workout}`,
+        muscleGroups: JSON.stringify(
+          day.workout.split('+').map(group => group.trim()).filter(Boolean)
+        ),
       }
     });
   };

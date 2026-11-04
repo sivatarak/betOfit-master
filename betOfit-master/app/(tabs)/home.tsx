@@ -562,7 +562,7 @@ export default function Home() {
               
               <View style={styles.balanceHeaderLeft}>
                 <Ionicons name="stats-chart" size={18} color={colors.primary} />
-                <Text style={[styles.balanceTitle, { color: colors.text }]}>Today's Balance</Text>
+                <Text style={[styles.balanceTitle, { color: colors.text }]}>Today&apos;s Balance</Text>
               </View>
               <View style={styles.goalPill}>
                 <Text style={styles.goalPillText}>{Math.round(dailyProgress)}% of daily goal</Text>

@@ -9,6 +9,19 @@ export interface WorkoutEntry {
   calories: number;     // estimated kcal burned
   date: string;         // YYYY-MM-DD
   time: string;         // HH:MM
+  sets: number;
+  reps: number;
+  weight: number;
+  volume: number;
+}
+
+interface WorkoutInput {
+  name: string;
+  sets: number;
+  reps: number;
+  weight: number;
+  muscleGroup: string;
+  type: string;
 }
 
 const WORKOUT_STORAGE_KEY = 'BF_WORKOUTS_V1';
@@ -68,14 +81,21 @@ export const useWorkoutStore = () => {
       setHistory(newHistory);
     } catch (err) {
       console.error('Failed to save workouts', err);
+      throw err;
     }
   };
 
-  const addWorkout = async (name: string, durationMin: number) => {
+  const addWorkout = async ({
+    name,
+    sets,
+    reps,
+    weight,
+  }: WorkoutInput): Promise<WorkoutEntry> => {
     const weightKgStr = await AsyncStorage.getItem('BF_WEIGHT_KG');
     const weightKg = weightKgStr ? parseFloat(weightKgStr) : 70;
 
     const met = EXERCISE_MET[name] ?? 6.0;
+    const durationMin = sets * 2.5;
     const hours = durationMin / 60;
     const caloriesBurned = Math.round(met * weightKg * hours);
 
@@ -86,10 +106,15 @@ export const useWorkoutStore = () => {
       calories: caloriesBurned,
       date: today,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      sets,
+      reps,
+      weight,
+      volume: sets * reps * weight,
     };
 
     const updated = [entry, ...history];
     await saveWorkouts(updated);
+    return entry;
   };
 
   // Today's summary

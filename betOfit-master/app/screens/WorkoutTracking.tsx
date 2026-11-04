@@ -20,9 +20,11 @@ import { LineChart } from 'react-native-chart-kit';
 
 // Import the hook from the correct path
 import { useWorkoutTracking } from '../../hooks/useWorkout';
+import { WEEKLY_PLAN } from '../../hooks/useWorkoutstore';
 import { CustomLoader } from '../../components/CustomLoader';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 
 export default function WorkoutTrackingScreen() {
   const params = useLocalSearchParams();
@@ -37,7 +39,7 @@ export default function WorkoutTrackingScreen() {
     carbs: '',
     fat: '',
     servingSize: '',
-    mealType: 'lunch' as const,
+    mealType: 'lunch' as MealType,
   });
 
   const today = new Date().toLocaleDateString('en-US', { 
@@ -184,7 +186,22 @@ export default function WorkoutTrackingScreen() {
             
             <TouchableOpacity
               style={styles.quickStartCard}
-              onPress={() => router.push('/workout-package')}
+              onPress={() => router.push({
+                pathname: '/screens/PackageDetail',
+                params: {
+                  packageId: 'weekly-plan',
+                  packageName: 'Weekly Plan',
+                  packageData: JSON.stringify({
+                    color: '#4ECDC4',
+                    weeklySchedule: WEEKLY_PLAN.map(({ day, focus, suggested }) => ({
+                      day,
+                      workout: focus,
+                      exercises: suggested,
+                      duration: suggested.length ? '30 min' : 'Rest',
+                    })),
+                  }),
+                },
+              })}
             >
               <View style={[styles.quickStartIcon, { backgroundColor: '#4ECDC4' }]}>
                 <Ionicons name="barbell" size={24} color="#fff" />
@@ -194,7 +211,7 @@ export default function WorkoutTrackingScreen() {
             
             <TouchableOpacity
               style={styles.quickStartCard}
-              onPress={() => router.push('/(app)/workout')}
+              onPress={() => router.push('/(tabs)/exercise-library')}
             >
               <View style={[styles.quickStartIcon, { backgroundColor: '#FFD166' }]}>
                 <Ionicons name="fitness" size={24} color="#fff" />
@@ -246,7 +263,7 @@ export default function WorkoutTrackingScreen() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Recent Workouts</Text>
             {recentWorkouts.length > 0 && (
-              <TouchableOpacity onPress={() => router.push('/screens/WorkoutHistory')}>
+              <TouchableOpacity onPress={() => router.push('/(tabs)/history')}>
                 <Text style={styles.seeAllText}>See All</Text>
               </TouchableOpacity>
             )}
@@ -258,8 +275,7 @@ export default function WorkoutTrackingScreen() {
                 key={session.id}
                 style={styles.workoutItem}
                 onPress={() => router.push({
-                  pathname: '/screens/WorkoutDetail',
-                  params: { sessionId: session.id }
+                  pathname: '/(tabs)/history',
                 })}
               >
                 <View style={styles.workoutInfo}>
@@ -326,7 +342,7 @@ export default function WorkoutTrackingScreen() {
           >
             <View style={styles.calorieHeader}>
               <View>
-                <Text style={styles.calorieTitle}>Today's Nutrition</Text>
+                <Text style={styles.calorieTitle}>Today&apos;s Nutrition</Text>
                 <Text style={styles.calorieDate}>{today}</Text>
               </View>
               <TouchableOpacity
@@ -618,7 +634,7 @@ export default function WorkoutTrackingScreen() {
           </View>
           <TouchableOpacity 
             style={styles.settingsButton}
-            onPress={() => router.push('/screens/Settings')}
+            onPress={() => router.push('/(tabs)/profile-setup?mode=all')}
           >
             <Ionicons name="settings-outline" size={24} color="#8a8a9e" />
           </TouchableOpacity>

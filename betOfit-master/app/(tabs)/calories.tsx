@@ -20,6 +20,7 @@ import {
   KeyboardAvoidingView,
   StatusBar,
   Animated as RNAnimated,
+  Alert,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
@@ -444,13 +445,24 @@ export default function CaloriesScreen() {
     setShowQuantityModal(true);
   };
 
+  const adjustQuantity = (change: number) => {
+    const currentQuantity = Number(quantity);
+    const baseQuantity = Number.isFinite(currentQuantity) ? currentQuantity : 100;
+    setQuantity(String(Math.max(10, baseQuantity + change)));
+  };
+
   const addFoodWithQuantity = async () => {
     if (!selectedFood) return;
 
     const serving = selectedFood.servings?.serving;
     if (!serving) return;
 
-    const grams = parseFloat(quantity) || 100;
+    const grams = Number(quantity.trim());
+    if (!quantity.trim() || !Number.isFinite(grams) || grams <= 0) {
+      Alert.alert("Invalid quantity", "Enter a quantity greater than 0 grams.");
+      return;
+    }
+
     const multiplier = grams / 100;
 
     const calories = Math.round(serving.calories * multiplier);
@@ -922,7 +934,8 @@ export default function CaloriesScreen() {
               const serving = selectedFood.servings?.serving;
               if (!serving) return null;
 
-              const currentGrams = parseFloat(quantity || "100");
+              const parsedGrams = Number(quantity);
+              const currentGrams = Number.isFinite(parsedGrams) ? Math.max(0, parsedGrams) : 0;
               const multiplier = currentGrams / 100;
 
               return (
@@ -958,7 +971,7 @@ export default function CaloriesScreen() {
                     <Text style={[styles.quantityLabel, { color: colors.text }]}>Quantity (grams)</Text>
                     <View style={styles.quantityControls}>
                       <TouchableOpacity
-                        onPress={() => setQuantity(Math.max(10, parseFloat(quantity) - 10).toString())}
+                        onPress={() => adjustQuantity(-10)}
                         style={[styles.quantityButton, { backgroundColor: colors.border }]}
                       >
                         <Ionicons name="remove" size={20} color={colors.text} />
@@ -971,7 +984,7 @@ export default function CaloriesScreen() {
                         textAlign="center"
                       />
                       <TouchableOpacity
-                        onPress={() => setQuantity((parseFloat(quantity) + 10).toString())}
+                        onPress={() => adjustQuantity(10)}
                         style={[styles.quantityButton, { backgroundColor: colors.border }]}
                       >
                         <Ionicons name="add" size={20} color={colors.text} />
