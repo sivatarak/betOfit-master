@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import auth from '@react-native-firebase/auth';
+import { getUserStorageKey } from '../constants/userStorage';
 
 export const useAppData = () => {
   const [weight, setWeight] = useState<number | null>(null);
@@ -10,12 +12,19 @@ export const useAppData = () => {
 
   const refresh = useCallback(async () => {
     try {
+      const userId = auth().currentUser?.uid;
+      if (!userId) {
+        setWeight(null);
+        setCaloriesCurrent(0);
+        return;
+      }
+
       // Weight
-      const w = await AsyncStorage.getItem('BF_WEIGHT_KG');
+      const w = await AsyncStorage.getItem(getUserStorageKey(userId, 'BF_WEIGHT_KG'));
       if (w) setWeight(parseFloat(w));
 
       // Today's calories (very basic version - expand as needed)
-      const calData = await AsyncStorage.getItem('CALORIES_DATA_V2');
+      const calData = await AsyncStorage.getItem(getUserStorageKey(userId, 'CALORIES_DATA_V2'));
       if (calData) {
         const parsed = JSON.parse(calData);
         const today = new Date().toISOString().split("T")[0];

@@ -27,6 +27,8 @@ import { useTheme } from '../../context/themecontext';
 import { AmbientGlow } from '../../components/AmbientGlow';
 import { ContextualTip } from '../../components/ContextualTip';
 import { fetchExercisesByMuscle } from '../services/exerciseApi';
+import auth from '@react-native-firebase/auth';
+import { getUserStorageKey } from '../../constants/userStorage';
 
 const { width } = Dimensions.get('window');
 const CACHE_KEY = 'EXERCISE_CACHE_BY_MUSCLE';
@@ -214,7 +216,10 @@ export default function ExerciseLibraryScreen() {
 
   const loadRecentWorkouts = async () => {
     try {
-      const history = await AsyncStorage.getItem('WORKOUT_HISTORY');
+      const userId = auth().currentUser?.uid;
+      const history = userId
+        ? await AsyncStorage.getItem(getUserStorageKey(userId, 'WORKOUT_HISTORY'))
+        : null;
       if (history) {
         const parsed = JSON.parse(history);
         const recentExerciseNames = [...new Set(
@@ -262,7 +267,10 @@ export default function ExerciseLibraryScreen() {
 
   const getMostFrequentExercise = async (): Promise<string | null> => {
     try {
-      const history = await AsyncStorage.getItem('WORKOUT_HISTORY');
+      const userId = auth().currentUser?.uid;
+      const history = userId
+        ? await AsyncStorage.getItem(getUserStorageKey(userId, 'WORKOUT_HISTORY'))
+        : null;
       if (!history) return null;
       const parsed = JSON.parse(history);
 

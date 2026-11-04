@@ -36,6 +36,7 @@ import {
 } from '../utils/activeWorkoutSession';
 import { ACTIVE_WORKOUT_UPDATED, appEvents } from '../utils/eventEmitter';
 import { AppAlert as Alert } from '../utils/appAlert';
+import { getUserStorageKey } from '../../constants/userStorage';
 
 const { width, height } = Dimensions.get('window');
 
@@ -231,9 +232,13 @@ export default function LogExerciseScreen() {
 
     const restoreSession = async () => {
       try {
+        const userId = auth().currentUser?.uid;
+        if (!userId) return;
+        const activeSessionKey = getUserStorageKey(userId, ACTIVE_WORKOUT_SESSION_KEY);
+        const activeMetaKey = getUserStorageKey(userId, ACTIVE_WORKOUT_SESSION_META_KEY);
         const [stored, storedMeta] = await Promise.all([
-          AsyncStorage.getItem(ACTIVE_WORKOUT_SESSION_KEY),
-          AsyncStorage.getItem(ACTIVE_WORKOUT_SESSION_META_KEY),
+          AsyncStorage.getItem(activeSessionKey),
+          AsyncStorage.getItem(activeMetaKey),
         ]);
         if (!mounted) return;
 
@@ -246,7 +251,7 @@ export default function LogExerciseScreen() {
             (meta.lastCompletedAt ?? 0) >= draft.workoutStartTime
           );
           if (draftWasAlreadySaved) {
-            await AsyncStorage.removeItem(ACTIVE_WORKOUT_SESSION_KEY);
+            await AsyncStorage.removeItem(activeSessionKey);
           } else if (
             draft.sessionId !== sessionId ||
             (draft.workoutId && draft.workoutId !== workoutId) ||
@@ -291,6 +296,9 @@ export default function LogExerciseScreen() {
 
   useEffect(() => {
     if (!sessionHydrated || blockedByExistingSessionRef.current || workoutSaved) return;
+    const userId = auth().currentUser?.uid;
+    if (!userId) return;
+    const activeSessionKey = getUserStorageKey(userId, ACTIVE_WORKOUT_SESSION_KEY);
 
     if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
     draftSaveTimerRef.current = setTimeout(() => {
@@ -315,7 +323,7 @@ export default function LogExerciseScreen() {
         restStartTime,
         modalVisible,
       };
-      draftWriteRef.current = AsyncStorage.setItem(ACTIVE_WORKOUT_SESSION_KEY, JSON.stringify(draft))
+      draftWriteRef.current = AsyncStorage.setItem(activeSessionKey, JSON.stringify(draft))
         .then(() => {
           appEvents.emit(ACTIVE_WORKOUT_UPDATED);
         })
@@ -691,6 +699,16 @@ export default function LogExerciseScreen() {
       return;
     }
 
+    const currentUser = auth().currentUser;
+    const userId = currentUser?.uid;
+    if (!userId) {
+      Alert.alert('Sign in required', 'Please sign in again before saving this workout.');
+      return;
+    }
+    const workoutHistoryKey = getUserStorageKey(userId, 'WORKOUT_HISTORY');
+    const activeSessionKey = getUserStorageKey(userId, ACTIVE_WORKOUT_SESSION_KEY);
+    const activeMetaKey = getUserStorageKey(userId, ACTIVE_WORKOUT_SESSION_META_KEY);
+
     saveStartedRef.current = true;
     setSavingWorkout(true);
     let savedLocally = false;
@@ -729,13 +747,13 @@ export default function LogExerciseScreen() {
       };
 
       // ✅ STEP 1: Save to AsyncStorage (fast)
-      const histStr = await AsyncStorage.getItem('WORKOUT_HISTORY') || '[]';
+      const histStr = await AsyncStorage.getItem(workoutHistoryKey) || '[]';
       const hist = JSON.parse(histStr);
       hist.unshift(workoutLog);
-      await AsyncStorage.setItem('WORKOUT_HISTORY', JSON.stringify(hist.slice(0, 100)));
+      await AsyncStorage.setItem(workoutHistoryKey, JSON.stringify(hist.slice(0, 100)));
       savedLocally = true;
       try {
-        const storedMeta = await AsyncStorage.getItem(ACTIVE_WORKOUT_SESSION_META_KEY);
+        const storedMeta = await AsyncStorage.getItem(activeMetaKey);
         const meta: ActiveWorkoutSessionMeta = storedMeta
           ? JSON.parse(storedMeta) as ActiveWorkoutSessionMeta
           : { sessionId, completedWorkoutCount: 0 };
@@ -749,7 +767,7 @@ export default function LogExerciseScreen() {
           lastCompletedAt: Date.now(),
         };
         await AsyncStorage.setItem(
-          ACTIVE_WORKOUT_SESSION_META_KEY,
+          activeMetaKey,
           JSON.stringify(updatedMeta)
         );
       } catch (error) {
@@ -760,7 +778,7 @@ export default function LogExerciseScreen() {
         );
       }
       try {
-        await AsyncStorage.removeItem(ACTIVE_WORKOUT_SESSION_KEY);
+        await AsyncStorage.removeItem(activeSessionKey);
       } catch (error) {
         console.error('Could not clear the saved workout draft:', error);
         Alert.alert('Workout saved', 'The exercise was saved, but its temporary draft could not be cleared.');
@@ -768,27 +786,20 @@ export default function LogExerciseScreen() {
       appEvents.emit(ACTIVE_WORKOUT_UPDATED);
 
       // Save to the backend; keep the local workout if sync is unavailable.
-      const currentUser = auth().currentUser;
-      const userId = currentUser?.uid;
-
-      if (userId) {
-        try {
-          await saveWorkoutToBackend({
-            userId,
-            exerciseId,
-            exerciseName,
-            sets: completedSets,
-            durationMinutes: Math.max(1, Math.floor(totalTimeSec / 60)),
-            caloriesBurned: totalCalories,
-            notes,
-          });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'Unknown backend error';
-          console.error('Workout saved locally but backend sync failed:', error);
-          setBackendSaveError(message);
-        }
-      } else {
-        setBackendSaveError('No signed-in user is available to sync this workout.');
+      try {
+        await saveWorkoutToBackend({
+          userId,
+          exerciseId,
+          exerciseName,
+          sets: completedSets,
+          durationMinutes: Math.max(1, Math.floor(totalTimeSec / 60)),
+          caloriesBurned: totalCalories,
+          notes,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown backend error';
+        console.error('Workout saved locally but backend sync failed:', error);
+        setBackendSaveError(message);
       }
       console.log("totalCalories:", totalCalories, "totalTimeSec:", totalTimeSec);
 
@@ -1450,9 +1461,13 @@ export default function LogExerciseScreen() {
                           if (summaryNavigationStartedRef.current) return;
                           summaryNavigationStartedRef.current = true;
                           try {
+                            const userId = auth().currentUser?.uid;
+                            if (!userId) throw new Error('Cannot clear workout session without a signed-in user.');
+                            const activeSessionKey = getUserStorageKey(userId, ACTIVE_WORKOUT_SESSION_KEY);
+                            const activeMetaKey = getUserStorageKey(userId, ACTIVE_WORKOUT_SESSION_META_KEY);
                             await Promise.all([
-                              AsyncStorage.removeItem(ACTIVE_WORKOUT_SESSION_KEY),
-                              AsyncStorage.removeItem(ACTIVE_WORKOUT_SESSION_META_KEY),
+                              AsyncStorage.removeItem(activeSessionKey),
+                              AsyncStorage.removeItem(activeMetaKey),
                             ]);
                             appEvents.emit(ACTIVE_WORKOUT_UPDATED);
                             setSummaryVisible(false);

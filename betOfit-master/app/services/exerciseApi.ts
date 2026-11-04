@@ -2,6 +2,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import auth from '@react-native-firebase/auth';
+import { getUserStorageKey } from '../../constants/userStorage';
 
 const BACKEND_BASE_URL   = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -70,7 +71,9 @@ const fetchWithTimeout = async (
 
 const getUserProfile = async (): Promise<UserProfile | null> => {
   try {
-    const profile = await AsyncStorage.getItem('USER_PROFILE');
+    const userId = auth().currentUser?.uid;
+    if (!userId) return null;
+    const profile = await AsyncStorage.getItem(getUserStorageKey(userId, 'USER_PROFILE'));
     return profile ? JSON.parse(profile) : null;
   } catch {
     return null;
@@ -489,8 +492,9 @@ export const checkServerHealth = async (): Promise<boolean> => {
 export const saveUserProfile = async (profile: UserProfile) => {
 
   try {
-
-    await AsyncStorage.setItem('USER_PROFILE', JSON.stringify(profile));
+    const userId = auth().currentUser?.uid;
+    if (!userId) return false;
+    await AsyncStorage.setItem(getUserStorageKey(userId, 'USER_PROFILE'), JSON.stringify(profile));
 
     return true;
 

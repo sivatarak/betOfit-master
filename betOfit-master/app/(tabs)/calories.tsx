@@ -34,6 +34,7 @@ import { useTheme } from "../../context/themecontext";
 import { CustomLoader } from "@/components/CustomLoader";
 import { AmbientGlow } from "../../components/AmbientGlow";
 import { ContextualTip } from "../../components/ContextualTip";
+import { getUserStorageKey } from "../../constants/userStorage";
 
 const { width } = Dimensions.get("window");
 const CIRCLE_SIZE = Math.min(width * 0.42, 156);
@@ -366,7 +367,9 @@ export default function CaloriesScreen() {
       const userId = currentUser?.uid;
 
       // Load from AsyncStorage
-      const localSaved = await AsyncStorage.getItem("CALORIES_DATA_V2");
+      const localSaved = userId
+        ? await AsyncStorage.getItem(getUserStorageKey(userId, "CALORIES_DATA_V2"))
+        : null;
       if (localSaved) {
         const data = JSON.parse(localSaved);
         const today = new Date().toISOString().split("T")[0];
@@ -483,21 +486,24 @@ export default function CaloriesScreen() {
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       mealType: selectedMealType,
     };
+    const userId = auth().currentUser?.uid;
+    if (!userId) {
+      Alert.alert("Sign in required", "Please sign in again before logging food.");
+      return;
+    }
+    const caloriesStorageKey = getUserStorageKey(userId, "CALORIES_DATA_V2");
 
     // ✅ STEP 1: Update UI immediately (optimistic update)
     const updatedHistory = [newEntry, ...history];
     setHistory(updatedHistory);
     updateAfterFoodLog(calories, protein, carbs, fat); // ← replaces setCurrent
     // ✅ STEP 2: Save to AsyncStorage (fast, for next load)
-    await AsyncStorage.setItem("CALORIES_DATA_V2", JSON.stringify({
+    await AsyncStorage.setItem(caloriesStorageKey, JSON.stringify({
       history: updatedHistory,
     }));
 
     // ✅ STEP 3: Save to backend (async, don't wait for UI)
-    const currentUser = auth().currentUser;
-    const userId = currentUser?.uid;
-
-    if (userId) {
+    {
       logFoodToBackend({
         userId,
         foodName: selectedFood.food_name,
@@ -517,7 +523,7 @@ export default function CaloriesScreen() {
 
           // Update AsyncStorage with real ID
           // ✅ only history, no removed variables
-          AsyncStorage.setItem("CALORIES_DATA_V2", JSON.stringify({
+          AsyncStorage.setItem(caloriesStorageKey, JSON.stringify({
             history: updatedHistoryWithDbId,
           }));
         }
@@ -607,16 +613,14 @@ export default function CaloriesScreen() {
 
     updateAfterFoodLog(-calories, -protein, -carbs, -fat);
 
-    await AsyncStorage.setItem("CALORIES_DATA_V2", JSON.stringify({
+    const userId = auth().currentUser?.uid;
+    if (!userId) return;
+    await AsyncStorage.setItem(getUserStorageKey(userId, "CALORIES_DATA_V2"), JSON.stringify({
       history: updatedHistory,
     }));
 
-    const currentUser = auth().currentUser;
-    const userId = currentUser?.uid;
-    if (userId) {
-      await deleteFoodLog(String(id));
-      console.log('✅ Deleted from backend:', id);
-    }
+    await deleteFoodLog(String(id));
+    console.log('✅ Deleted from backend:', id);
   };
 
   const refreshFromBackend = async () => {
@@ -648,7 +652,7 @@ export default function CaloriesScreen() {
         // ✅ let TodayContext handle the numbers
         await refreshToday();
 
-        await AsyncStorage.setItem("CALORIES_DATA_V2", JSON.stringify({
+        await AsyncStorage.setItem(getUserStorageKey(userId, "CALORIES_DATA_V2"), JSON.stringify({
           history: formattedLogs,
         }));
       }

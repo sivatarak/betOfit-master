@@ -30,6 +30,7 @@ import { useToday } from "../../context/todayContext";
 import { generateSmartSuggestion, SuggestionInput } from "../utils/smartsuggestionengine";
 import { getStoredWaterData } from "../utils/waterUtils";
 import { ScreenGuide } from "../../components/ScreenGuide";
+import { getUserStorageKey } from "../../constants/userStorage";
 
 const { width } = Dimensions.get("window");
 const SLIDE_WIDTH = width;
@@ -218,7 +219,10 @@ export default function Home() {
 
   const loadWorkoutWidget = useCallback(async () => {
     try {
-      const historyStr = await AsyncStorage.getItem("WORKOUT_HISTORY");
+      const userId = auth().currentUser?.uid;
+      const historyStr = userId
+        ? await AsyncStorage.getItem(getUserStorageKey(userId, "WORKOUT_HISTORY"))
+        : null;
 
       if (!historyStr || JSON.parse(historyStr).length === 0) {
         setIsNewUser(true);

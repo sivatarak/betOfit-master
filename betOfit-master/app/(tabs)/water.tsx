@@ -47,6 +47,7 @@ import {
   resetWaterFromBackend,
 } from "../utils/waterUtils";
 import { useProfile } from "../../context/profileContext";
+import { getUserStorageKey } from "../../constants/userStorage";
 import Svg, {
   Circle,
   Path,
@@ -126,8 +127,10 @@ export default function WaterScreen() {
     const load = async () => {
       try {
         await onFirstAppOpen();
+        const userId = auth().currentUser?.uid;
+        if (!userId) return;
         const goalValue = waterGoal > 0 ? waterGoal : 2500;
-        const data = await loadWaterData(weight || 70);
+        const data = await loadWaterData(weight || 70, userId);
         setWaterData({ ...data, goal: goalValue });
         await scheduleMorningReminders();
         await scheduleDailyWaterReminders();
@@ -152,13 +155,17 @@ export default function WaterScreen() {
       const refresh = async () => {
         if (!loading) {
           await syncWaterWithBackend();
-          const wStr = await AsyncStorage.getItem(WEIGHT_KEY);
+          const userId = auth().currentUser?.uid;
+          const wStr = userId
+            ? await AsyncStorage.getItem(getUserStorageKey(userId, WEIGHT_KEY))
+            : null;
           let w = weight || 70;
           if (wStr) {
             const parsed = parseFloat(wStr);
             if (parsed > 0) w = parsed;
           }
-          const data = await loadWaterData(w);
+          if (!userId) return;
+          const data = await loadWaterData(w, userId);
           setWaterData((prev) => ({ ...data, goal: waterGoal > 0 ? waterGoal : prev.goal }));
         }
       };
@@ -191,12 +198,11 @@ export default function WaterScreen() {
     const newCurrent = Math.max(0, waterData.current - lastAmount);
     const newHistory = waterData.history.slice(1);
     const updated: WaterData = { ...waterData, current: newCurrent, history: newHistory };
-    await AsyncStorage.setItem(WATER_KEY, JSON.stringify(updated));
-    setWaterData(updated);
     const userId = auth().currentUser?.uid;
-    if (userId) {
-      await deleteWaterFromBackend(userId);
-    }
+    if (!userId) return;
+    await AsyncStorage.setItem(getUserStorageKey(userId, WATER_KEY), JSON.stringify(updated));
+    setWaterData(updated);
+    await deleteWaterFromBackend(userId);
   };
 
   const reset = async () => {
@@ -218,14 +224,13 @@ export default function WaterScreen() {
               history: [],
               streak: waterData.streak,
             };
-            await AsyncStorage.setItem(WATER_KEY, JSON.stringify(resetData));
+            const userId = auth().currentUser?.uid;
+            if (!userId) return;
+            await AsyncStorage.setItem(getUserStorageKey(userId, WATER_KEY), JSON.stringify(resetData));
             setWaterData(resetData);
             await cancelAllWaterNotifications();
             await scheduleMorningReminders();
-            const userId = auth().currentUser?.uid;
-            if (userId) {
-              await resetWaterFromBackend(userId);
-            }
+            await resetWaterFromBackend(userId);
           },
         },
       ]

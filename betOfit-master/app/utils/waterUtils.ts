@@ -1,12 +1,18 @@
 // app/utils/waterUtils.ts
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import auth from '@react-native-firebase/auth';
+import { getUserStorageKey } from '../../constants/userStorage';
 
 export const WEIGHT_KEY = "BF_WEIGHT_KG";
 export const WATER_KEY = "BF_WATER_DATA";
 export const WATER_WEEKLY_KEY = "BF_WATER_WEEKLY";
 
 const BACKEND_URL = 'https://fitness-backend-iota.vercel.app';
+
+const getWaterStorageKey = (key: string, userId?: string): string | null => {
+  const resolvedUserId = userId ?? auth().currentUser?.uid;
+  return resolvedUserId ? getUserStorageKey(resolvedUserId, key) : null;
+};
 
 export interface WaterLog {
   ml: number;
@@ -28,52 +34,18 @@ export interface WaterData {
   streak: number;
 }
 
-export const getStoredWaterData = async (): Promise<WaterData | null> => {
-  const stored = await AsyncStorage.getItem(WATER_KEY);
+export const getStoredWaterData = async (userId?: string): Promise<WaterData | null> => {
+  const storageKey = getWaterStorageKey(WATER_KEY, userId);
+  if (!storageKey) return null;
+
+  const stored = await AsyncStorage.getItem(storageKey);
   if (stored) {
     try {
       return JSON.parse(stored) as WaterData;
     } catch (error) {
       console.error("Could not parse saved water data:", error);
-      await AsyncStorage.removeItem(WATER_KEY);
+      await AsyncStorage.removeItem(storageKey);
     }
-  }
-
-  let legacyData: WaterData | null = null;
-  const legacyStored = await AsyncStorage.getItem("WATER_DATA");
-  if (legacyStored) {
-    try {
-      legacyData = JSON.parse(legacyStored) as WaterData;
-    } catch (error) {
-      console.error("Could not migrate legacy water data:", error);
-      await AsyncStorage.removeItem("WATER_DATA");
-    }
-  }
-
-  const today = getToday();
-  const legacyDailyKey = `WATER_INTAKE_${today}`;
-  const legacyDailyIntake = await AsyncStorage.getItem(legacyDailyKey);
-  const amount = legacyDailyIntake ? Number.parseInt(legacyDailyIntake, 10) : 0;
-  const migratedData = legacyData && legacyData.date === today
-    ? {
-        ...legacyData,
-        current: Number.isFinite(amount) ? Math.max(legacyData.current, amount) : legacyData.current,
-      }
-    : legacyData ?? (Number.isFinite(amount) && amount > 0
-      ? {
-          date: today,
-          current: amount,
-          goal: 2500,
-          history: [],
-          streak: 0,
-        }
-      : null);
-
-  if (migratedData) {
-    await AsyncStorage.setItem(WATER_KEY, JSON.stringify(migratedData));
-    await AsyncStorage.removeItem("WATER_DATA");
-    await AsyncStorage.removeItem(legacyDailyKey);
-    return migratedData;
   }
 
   return null;
@@ -183,9 +155,16 @@ export const calculateDailyGoal = (weightKg: number): number => {
   return Math.round(weightKg * 30);
 };
 
-export const saveWaterDailySummary = async (date: string, amount: number, goal: number) => {
+export const saveWaterDailySummary = async (
+  date: string,
+  amount: number,
+  goal: number,
+  userId?: string
+) => {
   try {
-    const stored = await AsyncStorage.getItem(WATER_WEEKLY_KEY);
+    const storageKey = getWaterStorageKey(WATER_WEEKLY_KEY, userId);
+    if (!storageKey) return;
+    const stored = await AsyncStorage.getItem(storageKey);
     let summaries: DailyWaterSummary[] = stored ? JSON.parse(stored) : [];
 
     const existingIndex = summaries.findIndex(s => s.date === date);
@@ -196,7 +175,7 @@ export const saveWaterDailySummary = async (date: string, amount: number, goal: 
     }
 
     summaries = summaries.slice(-30);
-    await AsyncStorage.setItem(WATER_WEEKLY_KEY, JSON.stringify(summaries));
+    await AsyncStorage.setItem(storageKey, JSON.stringify(summaries));
   } catch (e) {
     console.error("Failed to save water weekly summary", e);
   }
@@ -206,12 +185,15 @@ export const saveWaterDailySummary = async (date: string, amount: number, goal: 
 // UPDATED LOAD FUNCTION WITH BACKEND SYNC
 // ========================================
 
-export const loadWaterData = async (weightKg: number): Promise<WaterData> => {
+export const loadWaterData = async (weightKg: number, userId?: string): Promise<WaterData> => {
+  const storageKey = getWaterStorageKey(WATER_KEY, userId);
+  if (!storageKey) throw new Error('Cannot load water data without a signed-in user.');
+
   const today = getToday();
   const currentGoal = calculateDailyGoal(weightKg);
 
   // Try to load from AsyncStorage first (fast)
-  const stored = await getStoredWaterData();
+  const stored = await getStoredWaterData(userId);
 
   if (stored) {
     try {
@@ -227,13 +209,13 @@ export const loadWaterData = async (weightKg: number): Promise<WaterData> => {
           history: [],
           streak: 0,
         };
-        await AsyncStorage.setItem(WATER_KEY, JSON.stringify(freshData));
+        await AsyncStorage.setItem(storageKey, JSON.stringify(freshData));
         return freshData;
       }
 
       if (parsed.date === today) {
         // Same day - return cached data, KEEP THE EXISTING GOAL
-        await saveWaterDailySummary(today, parsed.current, parsed.goal);
+        await saveWaterDailySummary(today, parsed.current, parsed.goal, userId);
         return parsed; // Just return parsed, don't modify goal
       }
 
@@ -249,8 +231,8 @@ export const loadWaterData = async (weightKg: number): Promise<WaterData> => {
         streak: newStreak,
       };
 
-      await AsyncStorage.setItem(WATER_KEY, JSON.stringify(newData));
-      await saveWaterDailySummary(today, 0, currentGoal);
+      await AsyncStorage.setItem(storageKey, JSON.stringify(newData));
+      await saveWaterDailySummary(today, 0, currentGoal, userId);
       return newData;
     } catch (e) {
       console.log("Parse error, resetting");
@@ -265,8 +247,8 @@ export const loadWaterData = async (weightKg: number): Promise<WaterData> => {
     history: [],
     streak: 0,
   };
-  await AsyncStorage.setItem(WATER_KEY, JSON.stringify(newData));
-  await saveWaterDailySummary(today, 0, currentGoal);
+  await AsyncStorage.setItem(storageKey, JSON.stringify(newData));
+  await saveWaterDailySummary(today, 0, currentGoal, userId);
   return newData;
 };
 
@@ -274,8 +256,12 @@ export const loadWaterData = async (weightKg: number): Promise<WaterData> => {
 // UPDATED ADD FUNCTION WITH BACKEND SAVE
 // ========================================
 
-export const addWaterIntake = async (amount: number): Promise<WaterData> => {
-  const stored = await getStoredWaterData();
+export const addWaterIntake = async (amount: number, userId?: string): Promise<WaterData> => {
+  const resolvedUserId = userId ?? auth().currentUser?.uid;
+  const storageKey = getWaterStorageKey(WATER_KEY, resolvedUserId ?? undefined);
+  if (!resolvedUserId || !storageKey) throw new Error('Cannot save water data without a signed-in user.');
+
+  const stored = await getStoredWaterData(resolvedUserId);
   if (!stored) throw new Error("No water data");
 
   const parsed = stored;
@@ -298,18 +284,13 @@ export const addWaterIntake = async (amount: number): Promise<WaterData> => {
   console.log('💧 After add - current:', updated.current, 'goal:', updated.goal);
 
   // Save to AsyncStorage
-  await AsyncStorage.setItem(WATER_KEY, JSON.stringify(updated));
-  await saveWaterDailySummary(parsed.date, newCurrent, parsed.goal);
+  await AsyncStorage.setItem(storageKey, JSON.stringify(updated));
+  await saveWaterDailySummary(parsed.date, newCurrent, parsed.goal, resolvedUserId);
 
   // Save to backend
-  const currentUser = auth().currentUser;
-  const userId = currentUser?.uid;
-
-  if (userId) {
-    saveWaterToBackend(userId, amount).catch(err =>
-      console.log('Background save failed:', err)
-    );
-  }
+  saveWaterToBackend(resolvedUserId, amount).catch(err =>
+    console.log('Background save failed:', err)
+  );
 
   return updated;
 };
@@ -329,7 +310,9 @@ export const syncWaterWithBackend = async (): Promise<void> => {
 
     if (!userId) return;
 
-    const stored = await AsyncStorage.getItem(WATER_KEY);
+    const storageKey = getWaterStorageKey(WATER_KEY, userId);
+    if (!storageKey) return;
+    const stored = await AsyncStorage.getItem(storageKey);
 
     if (!stored) return;
 
@@ -349,8 +332,8 @@ export const syncWaterWithBackend = async (): Promise<void> => {
     if (backendTotal > localData.current && backendTotal <= maxReasonable) {
       // Backend has more data, sync to local
       localData.current = backendTotal;
-      await AsyncStorage.setItem(WATER_KEY, JSON.stringify(localData));
-      await saveWaterDailySummary(today, backendTotal, localData.goal);
+      await AsyncStorage.setItem(storageKey, JSON.stringify(localData));
+      await saveWaterDailySummary(today, backendTotal, localData.goal, userId);
       console.log('✅ Water data synced from backend');
     } else if (backendTotal > maxReasonable) {
       // Backend has corrupted data - ignore it
@@ -361,7 +344,10 @@ export const syncWaterWithBackend = async (): Promise<void> => {
   }
 };
 
-export const resetWaterDay = async (goal: number): Promise<WaterData> => {
+export const resetWaterDay = async (goal: number, userId?: string): Promise<WaterData> => {
+  const storageKey = getWaterStorageKey(WATER_KEY, userId);
+  if (!storageKey) throw new Error('Cannot reset water data without a signed-in user.');
+
   const today = getToday();
   const newData: WaterData = {
     date: today,
@@ -370,6 +356,6 @@ export const resetWaterDay = async (goal: number): Promise<WaterData> => {
     history: [],
     streak: 0,
   };
-  await AsyncStorage.setItem(WATER_KEY, JSON.stringify(newData));
+  await AsyncStorage.setItem(storageKey, JSON.stringify(newData));
   return newData;
 };

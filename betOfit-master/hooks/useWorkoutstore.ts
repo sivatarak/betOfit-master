@@ -1,6 +1,8 @@
 // src/hooks/useWorkoutStore.ts
 import { useEffect, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import auth from '@react-native-firebase/auth';
+import { getUserStorageKey } from '../constants/userStorage';
 
 export interface WorkoutEntry {
   id: string;
@@ -64,7 +66,12 @@ export const useWorkoutStore = () => {
 
   const loadWorkouts = useCallback(async () => {
     try {
-      const json = await AsyncStorage.getItem(WORKOUT_STORAGE_KEY);
+      const userId = auth().currentUser?.uid;
+      if (!userId) {
+        setHistory([]);
+        return;
+      }
+      const json = await AsyncStorage.getItem(getUserStorageKey(userId, WORKOUT_STORAGE_KEY));
       if (json) {
         setHistory(JSON.parse(json));
       }
@@ -75,9 +82,9 @@ export const useWorkoutStore = () => {
     }
   }, []);
 
-  const saveWorkouts = async (newHistory: WorkoutEntry[]) => {
+  const saveWorkouts = async (newHistory: WorkoutEntry[], userId: string) => {
     try {
-      await AsyncStorage.setItem(WORKOUT_STORAGE_KEY, JSON.stringify(newHistory));
+      await AsyncStorage.setItem(getUserStorageKey(userId, WORKOUT_STORAGE_KEY), JSON.stringify(newHistory));
       setHistory(newHistory);
     } catch (err) {
       console.error('Failed to save workouts', err);
@@ -91,7 +98,9 @@ export const useWorkoutStore = () => {
     reps,
     weight,
   }: WorkoutInput): Promise<WorkoutEntry> => {
-    const weightKgStr = await AsyncStorage.getItem('BF_WEIGHT_KG');
+    const userId = auth().currentUser?.uid;
+    if (!userId) throw new Error('Cannot add a workout without a signed-in user.');
+    const weightKgStr = await AsyncStorage.getItem(getUserStorageKey(userId, 'BF_WEIGHT_KG'));
     const weightKg = weightKgStr ? parseFloat(weightKgStr) : 70;
 
     const met = EXERCISE_MET[name] ?? 6.0;
@@ -113,7 +122,7 @@ export const useWorkoutStore = () => {
     };
 
     const updated = [entry, ...history];
-    await saveWorkouts(updated);
+    await saveWorkouts(updated, userId);
     return entry;
   };
 

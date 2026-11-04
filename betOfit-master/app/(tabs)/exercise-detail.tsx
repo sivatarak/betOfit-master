@@ -31,6 +31,8 @@ import {
   ActiveWorkoutSession,
   ActiveWorkoutSessionMeta,
 } from '../utils/activeWorkoutSession';
+import auth from '@react-native-firebase/auth';
+import { getUserStorageKey } from '../../constants/userStorage';
 
 const { width, height } = Dimensions.get('window');
 const YOUTUBE_API_KEY = process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
@@ -227,7 +229,10 @@ export default function ExerciseDetailScreen() {
 
   const loadWorkoutHistory = async (exerciseName: string) => {
     try {
-      const history = await AsyncStorage.getItem('WORKOUT_HISTORY');
+      const userId = auth().currentUser?.uid;
+      const history = userId
+        ? await AsyncStorage.getItem(getUserStorageKey(userId, 'WORKOUT_HISTORY'))
+        : null;
       if (history) {
         const parsed: WorkoutHistory[] = JSON.parse(history);
 
@@ -331,7 +336,10 @@ export default function ExerciseDetailScreen() {
 
   const checkIfFavorite = async (exerciseName: string) => {
     try {
-      const favorites = await AsyncStorage.getItem('FAVORITE_EXERCISES');
+      const userId = auth().currentUser?.uid;
+      const favorites = userId
+        ? await AsyncStorage.getItem(getUserStorageKey(userId, 'FAVORITE_EXERCISES'))
+        : null;
       if (favorites) {
         const parsed = JSON.parse(favorites);
         setIsFavorite(parsed.includes(exerciseName));
@@ -345,7 +353,10 @@ export default function ExerciseDetailScreen() {
     if (!exercise) return;
 
     try {
-      const favorites = await AsyncStorage.getItem('FAVORITE_EXERCISES') || '[]';
+      const userId = auth().currentUser?.uid;
+      if (!userId) return;
+      const favoriteKey = getUserStorageKey(userId, 'FAVORITE_EXERCISES');
+      const favorites = await AsyncStorage.getItem(favoriteKey) || '[]';
       let parsed = JSON.parse(favorites);
 
       if (isFavorite) {
@@ -354,7 +365,7 @@ export default function ExerciseDetailScreen() {
         parsed.push(exercise.name);
       }
 
-      await AsyncStorage.setItem('FAVORITE_EXERCISES', JSON.stringify(parsed));
+      await AsyncStorage.setItem(favoriteKey, JSON.stringify(parsed));
       setIsFavorite(!isFavorite);
     } catch (error) {
       console.error('Error toggling favorite:', error);
@@ -365,9 +376,13 @@ export default function ExerciseDetailScreen() {
     if (!exercise) return;
 
     try {
+      const userId = auth().currentUser?.uid;
+      if (!userId) throw new Error('Cannot start a workout without a signed-in user.');
+      const activeSessionKey = getUserStorageKey(userId, ACTIVE_WORKOUT_SESSION_KEY);
+      const activeMetaKey = getUserStorageKey(userId, ACTIVE_WORKOUT_SESSION_META_KEY);
       const [storedDraft, storedMeta] = await Promise.all([
-        AsyncStorage.getItem(ACTIVE_WORKOUT_SESSION_KEY),
-        AsyncStorage.getItem(ACTIVE_WORKOUT_SESSION_META_KEY),
+        AsyncStorage.getItem(activeSessionKey),
+        AsyncStorage.getItem(activeMetaKey),
       ]);
       let activeDraft = storedDraft ? JSON.parse(storedDraft) as ActiveWorkoutSession : null;
       let sessionMeta = storedMeta ? JSON.parse(storedMeta) as ActiveWorkoutSessionMeta : null;
@@ -379,7 +394,7 @@ export default function ExerciseDetailScreen() {
         (sessionMeta.lastCompletedAt ?? 0) >= activeDraft.workoutStartTime
       );
       if (draftWasAlreadySaved) {
-        await AsyncStorage.removeItem(ACTIVE_WORKOUT_SESSION_KEY);
+        await AsyncStorage.removeItem(activeSessionKey);
         activeDraft = null;
       }
 
@@ -393,7 +408,7 @@ export default function ExerciseDetailScreen() {
 
       if (!sessionMeta) {
         sessionMeta = { sessionId: Date.now().toString(), completedWorkoutCount: 0 };
-        await AsyncStorage.setItem(ACTIVE_WORKOUT_SESSION_META_KEY, JSON.stringify(sessionMeta));
+        await AsyncStorage.setItem(activeMetaKey, JSON.stringify(sessionMeta));
       }
 
       router.push({

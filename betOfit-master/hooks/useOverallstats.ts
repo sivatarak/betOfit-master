@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import auth from '@react-native-firebase/auth';
+import { getUserStorageKey } from '../constants/userStorage';
 
 interface WeeklyAvgData {
   labels: string[];
@@ -37,10 +39,12 @@ export const useWeeklyAverages = () => {
 
   useEffect(() => {
     const load = async () => {
+      const userId = auth().currentUser?.uid;
+      if (!userId) return;
       const days = getLast7Days();
 
       /* -------- CALORIES -------- */
-      const calStr = await AsyncStorage.getItem("CALORIES_DATA_V2");
+      const calStr = await AsyncStorage.getItem(getUserStorageKey(userId, "CALORIES_DATA_V2"));
       const calHistory = calStr ? JSON.parse(calStr).history || [] : [];
 
       const caloriesArr: number[] = [];
@@ -56,7 +60,7 @@ export const useWeeklyAverages = () => {
       });
 
       /* -------- WATER -------- */
-      const waterStr = await AsyncStorage.getItem("BF_WATER_WEEKLY");
+      const waterStr = await AsyncStorage.getItem(getUserStorageKey(userId, "BF_WATER_WEEKLY"));
       const waterWeekly = waterStr ? JSON.parse(waterStr) : [];
 
       const waterArr: number[] = [];

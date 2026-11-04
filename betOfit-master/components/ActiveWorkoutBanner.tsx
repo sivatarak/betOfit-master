@@ -5,6 +5,8 @@ import { router, useLocalSearchParams, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { AppAlert as Alert } from '../app/utils/appAlert';
+import auth from '@react-native-firebase/auth';
+import { getUserStorageKey } from '../constants/userStorage';
 import {
   ACTIVE_WORKOUT_SESSION_KEY,
   ACTIVE_WORKOUT_SESSION_META_KEY,
@@ -30,9 +32,14 @@ export function ActiveWorkoutBanner() {
 
   const loadSession = useCallback(async () => {
     try {
+      const userId = auth().currentUser?.uid;
+      if (!userId) {
+        setSession({ draft: null, meta: null });
+        return;
+      }
       const [storedDraft, storedMeta] = await Promise.all([
-        AsyncStorage.getItem(ACTIVE_WORKOUT_SESSION_KEY),
-        AsyncStorage.getItem(ACTIVE_WORKOUT_SESSION_META_KEY),
+        AsyncStorage.getItem(getUserStorageKey(userId, ACTIVE_WORKOUT_SESSION_KEY)),
+        AsyncStorage.getItem(getUserStorageKey(userId, ACTIVE_WORKOUT_SESSION_META_KEY)),
       ]);
       setSession({
         draft: storedDraft ? JSON.parse(storedDraft) as ActiveWorkoutSession : null,
@@ -86,9 +93,13 @@ export function ActiveWorkoutBanner() {
     if (!session.draft || discarding) return;
     setDiscarding(true);
     try {
+      const userId = auth().currentUser?.uid;
+      if (!userId) return;
+      const activeSessionKey = getUserStorageKey(userId, ACTIVE_WORKOUT_SESSION_KEY);
+      const activeMetaKey = getUserStorageKey(userId, ACTIVE_WORKOUT_SESSION_META_KEY);
       const [storedDraft, storedMeta] = await Promise.all([
-        AsyncStorage.getItem(ACTIVE_WORKOUT_SESSION_KEY),
-        AsyncStorage.getItem(ACTIVE_WORKOUT_SESSION_META_KEY),
+        AsyncStorage.getItem(activeSessionKey),
+        AsyncStorage.getItem(activeMetaKey),
       ]);
       const currentDraft = storedDraft
         ? JSON.parse(storedDraft) as ActiveWorkoutSession
@@ -111,12 +122,12 @@ export function ActiveWorkoutBanner() {
         return;
       }
 
-      await AsyncStorage.removeItem(ACTIVE_WORKOUT_SESSION_KEY);
+      await AsyncStorage.removeItem(activeSessionKey);
       if (
         currentMeta?.sessionId === currentDraft.sessionId &&
         currentMeta.completedWorkoutCount === 0
       ) {
-        await AsyncStorage.removeItem(ACTIVE_WORKOUT_SESSION_META_KEY);
+        await AsyncStorage.removeItem(activeMetaKey);
       }
       appEvents.emit(ACTIVE_WORKOUT_UPDATED);
     } catch (error) {

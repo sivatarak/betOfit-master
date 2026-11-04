@@ -5,6 +5,7 @@ import { AppState, AppStateStatus } from 'react-native';
 import auth from '@react-native-firebase/auth';
 import { getTodayFoodLogs, getWorkoutHistory } from '../app/services/exerciseApi';
 import { getStoredWaterData } from '../app/utils/waterUtils';
+import { getUserStorageKey } from '../constants/userStorage';
 
 interface TodayData {
   todayEaten: number;
@@ -105,12 +106,12 @@ export const TodayProvider: React.FC<{
   // ─────────────────────────────────────────
   // STEP 1: TRY ASYNCSTORAGE (fast)
   // ─────────────────────────────────────────
-  const loadFromCache = async (goal: number): Promise<TodayData | null> => {
+  const loadFromCache = async (goal: number, userId: string): Promise<TodayData | null> => {
     try {
       const TODAY = getToday();
 
       // Check snapshot first — fastest path
-      const snapshot = await AsyncStorage.getItem('TODAY_SNAPSHOT');
+      const snapshot = await AsyncStorage.getItem(getUserStorageKey(userId, 'TODAY_SNAPSHOT'));
       if (snapshot) {
         const parsed = JSON.parse(snapshot);
         // Only use if same day and same goal
@@ -125,7 +126,7 @@ export const TodayProvider: React.FC<{
       let eaten = 0, protein = 0, carbs = 0, fat = 0, water = 0;
       let burned = 0, workoutCount = 0, activeMinutes = 0;
 
-      const caloriesRaw = await AsyncStorage.getItem('CALORIES_DATA_V2');
+      const caloriesRaw = await AsyncStorage.getItem(getUserStorageKey(userId, 'CALORIES_DATA_V2'));
       if (caloriesRaw) {
         const caloriesData = JSON.parse(caloriesRaw);
         const todayEntries = (caloriesData.history || []).filter(
@@ -139,10 +140,10 @@ export const TodayProvider: React.FC<{
         }
       }
 
-      const waterData = await getStoredWaterData();
+      const waterData = await getStoredWaterData(userId);
       if (waterData?.date === TODAY) water = waterData.current || 0;
 
-      const workoutRaw = await AsyncStorage.getItem('WORKOUT_HISTORY');
+      const workoutRaw = await AsyncStorage.getItem(getUserStorageKey(userId, 'WORKOUT_HISTORY'));
       if (workoutRaw) {
         const history = JSON.parse(workoutRaw);
         const todayWorkouts = history.filter((w: any) => w.date === TODAY);
@@ -165,13 +166,9 @@ export const TodayProvider: React.FC<{
   // ─────────────────────────────────────────
   // STEP 2: FETCH FROM BACKEND (permanent)
   // ─────────────────────────────────────────
-  const loadFromBackend = async (goal: number): Promise<TodayData | null> => {
+  const loadFromBackend = async (goal: number, userId: string): Promise<TodayData | null> => {
     try {
       const TODAY = getToday();
-      const currentUser = auth().currentUser;
-      const userId = currentUser?.uid;
-      if (!userId) return null;
-
       console.log('🌐 TodayContext: fetching from backend...');
 
       // Fetch both in parallel
@@ -239,16 +236,16 @@ export const TodayProvider: React.FC<{
 
       // ── WATER (still from AsyncStorage only) ──
       let water = 0;
-      const waterData = await getStoredWaterData();
+      const waterData = await getStoredWaterData(userId);
       if (waterData?.date === TODAY) water = waterData.current || 0;
 
       await Promise.all([
-        AsyncStorage.setItem('CALORIES_DATA_V2', JSON.stringify({
+        AsyncStorage.setItem(getUserStorageKey(userId, 'CALORIES_DATA_V2'), JSON.stringify({
           current: eaten,
           goal,
           history: formattedLogs,
         })),
-        AsyncStorage.setItem('WORKOUT_HISTORY', JSON.stringify(formattedWorkouts)),
+        AsyncStorage.setItem(getUserStorageKey(userId, 'WORKOUT_HISTORY'), JSON.stringify(formattedWorkouts)),
       ]);
 
       console.log('🌐 loadFromBackend computed burned =', burned);
@@ -265,11 +262,16 @@ export const TodayProvider: React.FC<{
   // ─────────────────────────────────────────
   const refreshToday = useCallback(async () => {
     const goal = baseCalorieGoal || 2000;
+    const userId = auth().currentUser?.uid;
+    if (!userId) {
+      setData(defaultData);
+      return;
+    }
 
     // Try cache first (instant)
-    const cached = await loadFromCache(goal);
+    const cached = await loadFromCache(goal, userId);
     if (cached) {
-      const waterData = await getStoredWaterData();
+      const waterData = await getStoredWaterData(userId);
       setData({
         ...cached,
         waterIntake: waterData?.date === getToday() ? waterData.current : 0,
@@ -278,11 +280,11 @@ export const TodayProvider: React.FC<{
 
     // Always sync with backend in background
     // (keeps data fresh even if cache had values)
-    const fresh = await loadFromBackend(goal);
+    const fresh = await loadFromBackend(goal, userId);
     if (fresh) {
       setData(fresh);
       // Save snapshot for next fast load
-      await AsyncStorage.setItem('TODAY_SNAPSHOT', JSON.stringify({
+      await AsyncStorage.setItem(getUserStorageKey(userId, 'TODAY_SNAPSHOT'), JSON.stringify({
         ...fresh,
         date: getToday(),
         baseGoal: goal,
@@ -329,7 +331,9 @@ export const TodayProvider: React.FC<{
 
       console.log('🟢 updateAfterWorkout computed updated.todayBurned =', updated.todayBurned);
 
-      AsyncStorage.setItem('TODAY_SNAPSHOT', JSON.stringify({
+      const userId = auth().currentUser?.uid;
+      if (!userId) return updated;
+      AsyncStorage.setItem(getUserStorageKey(userId, 'TODAY_SNAPSHOT'), JSON.stringify({
         ...updated,
         date: getToday(),
         baseGoal: baseCalorieGoal,

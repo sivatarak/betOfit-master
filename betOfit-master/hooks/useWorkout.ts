@@ -1,6 +1,8 @@
 // hooks/useWorkoutTracking.ts
 import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import auth from '@react-native-firebase/auth';
+import { getUserStorageKey } from '../constants/userStorage';
 
 interface WorkoutSet {
   weight: number;
@@ -86,11 +88,20 @@ export const useWorkoutTracking = () => {
   const loadSavedData = async () => {
     try {
       setIsLoading(true);
+      const userId = auth().currentUser?.uid;
+      if (!userId) {
+        setActiveSession(null);
+        setSessions([]);
+        setDailySummary(null);
+        setNutritionLogs([]);
+        setUserWeight(70);
+        return;
+      }
       const [savedSessions, savedNutrition, savedWeight, savedSummary] = await Promise.all([
-        AsyncStorage.getItem('workout_sessions'),
-        AsyncStorage.getItem('nutrition_logs'),
-        AsyncStorage.getItem('user_weight'),
-        AsyncStorage.getItem('daily_summary'),
+        AsyncStorage.getItem(getUserStorageKey(userId, 'workout_sessions')),
+        AsyncStorage.getItem(getUserStorageKey(userId, 'nutrition_logs')),
+        AsyncStorage.getItem(getUserStorageKey(userId, 'user_weight')),
+        AsyncStorage.getItem(getUserStorageKey(userId, 'daily_summary')),
       ]);
 
       if (savedSessions) setSessions(JSON.parse(savedSessions));
@@ -100,7 +111,7 @@ export const useWorkoutTracking = () => {
       
       // Calculate today's summary if not exists
       if (!savedSummary) {
-        calculateDailySummary();
+        calculateDailySummary(userId);
       }
     } catch (error) {
       console.error('Error loading saved data:', error);
@@ -283,19 +294,21 @@ export const useWorkoutTracking = () => {
     setActiveSession(null);
 
     // Save to storage
+    const userId = auth().currentUser?.uid;
+    if (!userId) throw new Error('Cannot save a workout without a signed-in user.');
     await Promise.all([
-      AsyncStorage.setItem('workout_sessions', JSON.stringify(updatedSessions)),
-      AsyncStorage.setItem('last_workout_date', new Date().toISOString()),
+      AsyncStorage.setItem(getUserStorageKey(userId, 'workout_sessions'), JSON.stringify(updatedSessions)),
+      AsyncStorage.setItem(getUserStorageKey(userId, 'last_workout_date'), new Date().toISOString()),
     ]);
     
     // Update daily summary
-    await calculateDailySummary();
+    await calculateDailySummary(userId);
 
     return completedSession;
   };
 
   // Calculate daily summary
-  const calculateDailySummary = async () => {
+  const calculateDailySummary = async (userIdOverride?: string) => {
     const today = new Date().toISOString().split('T')[0];
     const todaySessions = sessions.filter(session => 
       session.date.startsWith(today)
@@ -328,7 +341,9 @@ export const useWorkoutTracking = () => {
     };
 
     setDailySummary(summary);
-    await AsyncStorage.setItem('daily_summary', JSON.stringify(summary));
+    const userId = userIdOverride ?? auth().currentUser?.uid;
+    if (!userId) return summary;
+    await AsyncStorage.setItem(getUserStorageKey(userId, 'daily_summary'), JSON.stringify(summary));
     return summary;
   };
 
@@ -342,9 +357,10 @@ export const useWorkoutTracking = () => {
 
     const updatedLogs = [newLog, ...nutritionLogs];
     setNutritionLogs(updatedLogs);
-    
-    await AsyncStorage.setItem('nutrition_logs', JSON.stringify(updatedLogs));
-    await calculateDailySummary();
+    const userId = auth().currentUser?.uid;
+    if (!userId) throw new Error('Cannot save nutrition without a signed-in user.');
+    await AsyncStorage.setItem(getUserStorageKey(userId, 'nutrition_logs'), JSON.stringify(updatedLogs));
+    await calculateDailySummary(userId);
     
     return newLog;
   };
@@ -352,14 +368,17 @@ export const useWorkoutTracking = () => {
   const removeNutritionLog = async (logId: string) => {
     const updatedLogs = nutritionLogs.filter(log => log.id !== logId);
     setNutritionLogs(updatedLogs);
-    
-    await AsyncStorage.setItem('nutrition_logs', JSON.stringify(updatedLogs));
-    await calculateDailySummary();
+    const userId = auth().currentUser?.uid;
+    if (!userId) throw new Error('Cannot remove nutrition without a signed-in user.');
+    await AsyncStorage.setItem(getUserStorageKey(userId, 'nutrition_logs'), JSON.stringify(updatedLogs));
+    await calculateDailySummary(userId);
   };
 
   const updateUserWeight = async (weight: number) => {
     setUserWeight(weight);
-    await AsyncStorage.setItem('user_weight', weight.toString());
+    const userId = auth().currentUser?.uid;
+    if (!userId) throw new Error('Cannot update weight without a signed-in user.');
+    await AsyncStorage.setItem(getUserStorageKey(userId, 'user_weight'), weight.toString());
   };
 
   // Get statistics

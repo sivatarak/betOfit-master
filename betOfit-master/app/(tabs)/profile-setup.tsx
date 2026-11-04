@@ -23,6 +23,7 @@ import auth from '@react-native-firebase/auth';
 import { appEvents, PROFILE_UPDATED } from '../utils/eventEmitter';
 import { uploadPhotoToFirebase } from '../utils/uploadToFirebaseStorage';
 import { useProfile } from '../../context/profileContext';
+import { getUserStorageKey } from '../../constants/userStorage';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -826,8 +827,8 @@ export default function ProfileScreen() {
       }
 
       await AsyncStorage.setItem(`USER_PROFILE_${userId}`, JSON.stringify(fullProfileData));
-      await AsyncStorage.setItem(STORAGE_KEYS.BF_WEIGHT_KG, mergedProfile.weight.toString());
-      await AsyncStorage.setItem(STORAGE_KEYS.USER_NAME, mergedProfile.name);
+      await AsyncStorage.setItem(getUserStorageKey(userId, STORAGE_KEYS.BF_WEIGHT_KG), mergedProfile.weight.toString());
+      await AsyncStorage.setItem(getUserStorageKey(userId, STORAGE_KEYS.USER_NAME), mergedProfile.name);
 
       if (waterGoal) {
         const waterData = {
@@ -837,13 +838,14 @@ export default function ProfileScreen() {
           history: [],
           streak: 0,
         };
-        await AsyncStorage.setItem(STORAGE_KEYS.WATER_DATA, JSON.stringify(waterData));
+        await AsyncStorage.setItem(getUserStorageKey(userId, STORAGE_KEYS.WATER_DATA), JSON.stringify(waterData));
       }
 
       if (dailyCalorieGoal && dailyCalorieGoal > 0) {
-        const calData = await AsyncStorage.getItem(STORAGE_KEYS.CALORIES_DATA);
+        const caloriesStorageKey = getUserStorageKey(userId, STORAGE_KEYS.CALORIES_DATA);
+        const calData = await AsyncStorage.getItem(caloriesStorageKey);
         const parsedCalData = calData ? JSON.parse(calData) : {};
-        await AsyncStorage.setItem(STORAGE_KEYS.CALORIES_DATA, JSON.stringify({
+        await AsyncStorage.setItem(caloriesStorageKey, JSON.stringify({
           ...parsedCalData,
           goal: dailyCalorieGoal,
           profile: fullProfileData,

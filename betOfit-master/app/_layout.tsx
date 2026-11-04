@@ -14,6 +14,7 @@ import { CustomLoader } from "../components/CustomLoader";
 import { ActiveWorkoutBanner } from "../components/ActiveWorkoutBanner";
 import { AppAlertProvider } from "../components/AppAlertProvider";
 import { BackHandler } from 'react-native';
+import { getUserStorageKey } from '../constants/userStorage';
 // Event for pending navigation to prevent bounce-back
 export const PENDING_NAVIGATION = 'PENDING_NAVIGATION';
 import * as Notifications from 'expo-notifications';
@@ -73,7 +74,7 @@ function RootLayoutNav() {
     try {
       const [storedProfile, storedStatus] = await Promise.all([
         AsyncStorage.getItem(`USER_PROFILE_${userId}`),
-        AsyncStorage.getItem(`USER_PROFILE_STATUS_${userId}`),
+        AsyncStorage.getItem(getUserStorageKey(userId, 'USER_PROFILE_STATUS')),
       ]);
       const cachedProfile = storedProfile ? JSON.parse(storedProfile) : {};
       const cachedStatus = storedStatus ? JSON.parse(storedStatus) : {};
@@ -97,7 +98,7 @@ function RootLayoutNav() {
         };
         setProfileStatus({ ...freshStatus, checking: false });
         await AsyncStorage.setItem(
-          `USER_PROFILE_STATUS_${userId}`,
+          getUserStorageKey(userId, 'USER_PROFILE_STATUS'),
           JSON.stringify(freshStatus)
         );
       }
@@ -139,7 +140,7 @@ function RootLayoutNav() {
         console.log('📢 Profile update received with fresh data, skipping reload');
         setProfileStatus({ ...updatedStatus, checking: false });
         if (user?.uid) {
-          AsyncStorage.setItem(`USER_PROFILE_STATUS_${user.uid}`, JSON.stringify(updatedStatus))
+          AsyncStorage.setItem(getUserStorageKey(user.uid, 'USER_PROFILE_STATUS'), JSON.stringify(updatedStatus))
             .catch(error => console.error('Could not cache updated profile status:', error));
         }
       } else {
@@ -301,6 +302,18 @@ function TodayWrapper({ children }: { children: React.ReactNode }) {
     </TodayProvider>
   );
 }
+
+function UserScopedProviders({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const userScope = user?.uid ?? 'signed-out';
+
+  return (
+    <ProfileProvider key={userScope}>
+      <TodayWrapper>{children}</TodayWrapper>
+    </ProfileProvider>
+  );
+}
+
 export default function RootLayout() {
   const [showSplash, setShowSplash] = useState(true);
   
@@ -330,11 +343,9 @@ export default function RootLayout() {
     <ThemeProvider>
       <AppAlertProvider>
         <AuthProvider>
-          <ProfileProvider>
-            <TodayWrapper>
-              <RootLayoutNav />
-            </TodayWrapper>
-          </ProfileProvider>
+          <UserScopedProviders>
+            <RootLayoutNav />
+          </UserScopedProviders>
         </AuthProvider>
       </AppAlertProvider>
     </ThemeProvider>
