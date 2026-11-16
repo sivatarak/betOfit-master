@@ -1,5 +1,6 @@
 // services/profileApi.ts
 // Frontend API service for profile and history
+import { fetchWithAuth } from './authenticatedFetch';
 
 const API_BASE = process.env.EXPO_PUBLIC_BACKEND_URL ;
 
@@ -41,7 +42,7 @@ export async function saveProfile(profileData: any) {
     console.log("🔵 2. Sending payload to backend:", JSON.stringify(payload, null, 2));
     console.log("🔵 3. API URL:", `${API_BASE}/api/profile`);
 
-    const response = await fetch(`${API_BASE}/api/profile`, {
+    const response = await fetchWithAuth(`${API_BASE}/api/profile`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -71,7 +72,7 @@ export async function saveProfile(profileData: any) {
 
 export async function getProfile(userId: string) {
   try {
-    const response = await fetch(`${API_BASE}/api/profile/${userId}`);
+    const response = await fetchWithAuth(`${API_BASE}/api/profile/${encodeURIComponent(userId)}`);
 
     // If 404, return null (no profile found)
     if (response.status === 404) {
@@ -97,8 +98,8 @@ export async function getStats(userId: string, period: 'week' | 'month' | 'year'
   try {
     console.log(`📊 Fetching stats for ${userId}, period: ${period}`);
 
-    const response = await fetch(
-      `${API_BASE}/api/stats/${userId}?period=${period}`,
+    const response = await fetchWithAuth(
+      `${API_BASE}/api/stats/${encodeURIComponent(userId)}?period=${period}`,
       {
         method: 'GET',
         headers: {
@@ -135,7 +136,7 @@ export async function getDashboard(userId: string) {
     console.log('📡 Fetching dashboard for userId:', userId);
     console.log('🔗 URL:', `${API_BASE}/api/dashboard/${userId}`);
 
-    const response = await fetch(`${API_BASE}/api/dashboard/${userId}`);
+    const response = await fetchWithAuth(`${API_BASE}/api/dashboard/${encodeURIComponent(userId)}`);
 
     console.log('📊 Response status:', response.status);
     console.log('📊 Response ok:', response.ok);
@@ -163,8 +164,8 @@ export async function getDashboard(userId: string) {
 
 export async function getWorkoutHistory(userId: string, days: number = 7) {
   try {
-    const response = await fetch(
-      `${API_BASE}/api/history/workouts/${userId}?days=${days}`
+    const response = await fetchWithAuth(
+      `${API_BASE}/api/history/workouts/${encodeURIComponent(userId)}?days=${days}`
     );
 
     if (!response.ok) {
@@ -180,8 +181,8 @@ export async function getWorkoutHistory(userId: string, days: number = 7) {
 
 export async function getFoodHistory(userId: string, days: number = 7) {
   try {
-    const response = await fetch(
-      `${API_BASE}/api/history/food/${userId}?days=${days}`
+    const response = await fetchWithAuth(
+      `${API_BASE}/api/history/food/${encodeURIComponent(userId)}?days=${days}`
     );
 
     if (!response.ok) {
@@ -197,8 +198,8 @@ export async function getFoodHistory(userId: string, days: number = 7) {
 
 export async function getWaterHistory(userId: string, days: number = 7) {
   try {
-    const response = await fetch(
-      `${API_BASE}/api/history/water/${userId}?days=${days}`
+    const response = await fetchWithAuth(
+      `${API_BASE}/api/history/water/${encodeURIComponent(userId)}?days=${days}`
     );
 
     if (!response.ok) {
@@ -214,8 +215,8 @@ export async function getWaterHistory(userId: string, days: number = 7) {
 
 export async function getWeightHistory(userId: string, days: number = 30) {
   try {
-    const response = await fetch(
-      `${API_BASE}/api/history/weight/${userId}?days=${days}`
+    const response = await fetchWithAuth(
+      `${API_BASE}/api/history/weight/${encodeURIComponent(userId)}?days=${days}`
     );
 
     if (!response.ok) {
@@ -231,7 +232,7 @@ export async function getWeightHistory(userId: string, days: number = 30) {
 
 export async function logWeight(userId: string, weight: number, notes?: string) {
   try {
-    const response = await fetch(`${API_BASE}/api/history/weight`, {
+    const response = await fetchWithAuth(`${API_BASE}/api/history/weight`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, weight, notes }),
@@ -250,7 +251,7 @@ export async function logWeight(userId: string, weight: number, notes?: string) 
 
 export async function getWeeklySummary(userId: string) {
   try {
-    const response = await fetch(`${API_BASE}/api/history/weekly/${userId}`);
+    const response = await fetchWithAuth(`${API_BASE}/api/history/weekly/${encodeURIComponent(userId)}`);
 
     if (!response.ok) {
       throw new Error('Failed to get weekly summary');

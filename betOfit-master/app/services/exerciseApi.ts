@@ -3,6 +3,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import auth from '@react-native-firebase/auth';
 import { getUserStorageKey } from '../../constants/userStorage';
+import { fetchWithAuth } from './authenticatedFetch';
 
 const BACKEND_BASE_URL   = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -158,10 +159,9 @@ export const calculateCaloriesBurned = async (
 
 
 
-// ✅ Add this helper at the top of exerciseApi.ts (outside functions)
 const getAuthToken = async (): Promise<string> => {
   const currentUser = auth().currentUser;
-  if (!currentUser) return '';
+  if (!currentUser) throw new Error('You must be signed in to access this resource.');
   return await currentUser.getIdToken();
 };
 
@@ -398,7 +398,7 @@ export const logFoodToBackend = async (foodData: {
   try {
     console.log("Sending to backend:", foodData); // ← ADD THIS
 
-    const response = await fetch(`${BACKEND_BASE_URL   }/api/food/log`, {
+    const response = await fetchWithAuth(`${BACKEND_BASE_URL   }/api/food/log`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(foodData)
@@ -421,7 +421,7 @@ export const logFoodToBackend = async (foodData: {
 // Get today's food logs from backend
 export const getTodayFoodLogs = async (userId: string): Promise<any> => {
   try {
-    const response = await fetch(`${BACKEND_BASE_URL   }/api/food/logs/${userId}`);
+    const response = await fetchWithAuth(`${BACKEND_BASE_URL   }/api/food/logs/${encodeURIComponent(userId)}`);
     if (!response.ok) throw new Error("Failed to get food logs");
     const data = await response.json();
     return data; // Returns { logs, totals }
@@ -442,7 +442,7 @@ export const saveWorkoutToBackend = async (workoutData: {
   notes: string;
   caloriesBurned: number;
 }): Promise<void> => {
-  const response = await fetch(`${BACKEND_BASE_URL   }/api/workouts`, {
+  const response = await fetchWithAuth(`${BACKEND_BASE_URL   }/api/workouts`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(workoutData)
@@ -459,7 +459,7 @@ export const saveWorkoutToBackend = async (workoutData: {
 // Get workout history from backend
 export const getWorkoutHistory = async (userId: string): Promise<any[]> => {
   try {
-    const response = await fetch(`${BACKEND_BASE_URL   }/api/workouts/${userId}`);
+    const response = await fetchWithAuth(`${BACKEND_BASE_URL   }/api/workouts/${encodeURIComponent(userId)}`);
     if (!response.ok) throw new Error("Failed to get workouts");
     return await response.json();
   } catch (error) {
@@ -505,7 +505,7 @@ export const saveUserProfile = async (profile: UserProfile) => {
 };
 export const deleteFoodLog = async (logId: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${BACKEND_BASE_URL   }/api/food/log/${logId}`, {
+    const response = await fetchWithAuth(`${BACKEND_BASE_URL   }/api/food/log/${encodeURIComponent(logId)}`, {
       method: "DELETE",
     });
     if (!response.ok) {

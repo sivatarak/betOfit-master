@@ -2,6 +2,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import auth from '@react-native-firebase/auth';
 import { getUserStorageKey } from '../../constants/userStorage';
+import { fetchWithAuth } from '../services/authenticatedFetch';
 
 export const WEIGHT_KEY = "BF_WEIGHT_KG";
 export const WATER_KEY = "BF_WATER_DATA";
@@ -53,7 +54,7 @@ export const getStoredWaterData = async (userId?: string): Promise<WaterData | n
 // Delete single log from backend
 export const deleteWaterFromBackend = async (userId: string) => {
   try {
-    const response = await fetch(`${BACKEND_URL}/api/water/delete`, {
+    const response = await fetchWithAuth(`${BACKEND_URL}/api/water/delete`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId }) // ✅ only userId needed
@@ -76,8 +77,8 @@ export const deleteWaterFromBackend = async (userId: string) => {
 // Reset today from backend
 export const resetWaterFromBackend = async (userId: string) => {
   try {
-    const response = await fetch(
-      `${BACKEND_URL}/api/water/reset/${userId}`,
+    const response = await fetchWithAuth(
+      `${BACKEND_URL}/api/water/reset/${encodeURIComponent(userId)}`,
       {
         method: 'DELETE',
       }
@@ -105,7 +106,7 @@ export const resetWaterFromBackend = async (userId: string) => {
 // Save water log to backend
 const saveWaterToBackend = async (userId: string, amountMl: number) => {
   try {
-    const response = await fetch(`${BACKEND_URL}/api/water`, {
+    const response = await fetchWithAuth(`${BACKEND_URL}/api/water`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, amountMl })
@@ -127,7 +128,7 @@ const saveWaterToBackend = async (userId: string, amountMl: number) => {
 // Get today's total water from backend
 const getTodayWaterFromBackend = async (userId: string): Promise<number> => {
   try {
-    const response = await fetch(`${BACKEND_URL}/api/water/${userId}`);
+    const response = await fetchWithAuth(`${BACKEND_URL}/api/water/${encodeURIComponent(userId)}`);
     if (!response.ok) return 0;
     const data = await response.json();
     return data.total_ml || 0;
